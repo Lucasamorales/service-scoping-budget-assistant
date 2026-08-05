@@ -12,14 +12,26 @@ mid-answer has still delivered the part that carries the consequences.
 
 from __future__ import annotations
 
+import hashlib
+import hmac
 import json
 from collections.abc import Iterator
 
 import structlog
 from fastapi import APIRouter, Request
-from fastapi.responses import StreamingResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 
-from app.api.schemas import ChatRequest, ChatResponse, HealthResponse, StateModel, Verdict
+from app.api.schemas import (
+    ChatRequest,
+    ChatResponse,
+    HealthResponse,
+    SessionRequest,
+    SessionResponse,
+    StateModel,
+    Verdict,
+)
+from app.api.session import SessionError, issue_token
+from app.core.config import Settings
 from app.orchestrator.pipeline import Pipeline, StreamEnd, StreamStart, TextPiece
 from app.orchestrator.resolver import Resolution
 from app.orchestrator.router import ConversationState
@@ -66,6 +78,7 @@ def health(request: Request) -> HealthResponse:
     turn a reduced capability into an outage.
     """
     pipeline = _pipeline(request)
+    settings: Settings = request.app.state.settings
     return HealthResponse(
         status="ok",
         services=len(pipeline.catalog),
@@ -73,6 +86,48 @@ def health(request: Request) -> HealthResponse:
         index_build=pipeline.index.build_id,
         model=pipeline.model.name if pipeline.model else "deterministic",
         embeddings=pipeline.index.has_embeddings,
+        auth_required=settings.session_auth_enabled,
+    )
+
+
+@router.post("/session", response_model=SessionResponse)
+def create_session(payload: SessionRequest, request: Request) -> SessionResponse | JSONResponse:
+    """Mint a bearer token for the internal MVP page.
+
+    Gated by a shared password, not by individual accounts. That is enough for
+    a password-protected internal tool and deliberately not enough for a
+    customer-facing launch — put Identity-Aware Proxy in front before then.
+    """
+    settings: Settings = request.app.state.settings
+    if not settings.session_issuance_enabled:
+        return JSONResponse(
+            status_code=503,
+            content={"detail": "Session issuance is not configured."},
+        )
+
+    if not _password_matches(payload.password, settings.internal_access_password):
+        logger.info("session.bad_password")
+        return JSONResponse(status_code=401, content={"detail": "Unauthorised."})
+
+    try:
+        token, claims = issue_token(
+            secret=settings.session_token_secret,
+            subject=payload.subject,
+            role=payload.role,
+            country=payload.country,
+            branch=payload.branch,
+            ttl_seconds=settings.session_token_ttl_seconds,
+        )
+    except SessionError as exc:
+        logger.error("session.issue_failed", error=str(exc))
+        return JSONResponse(status_code=503, content={"detail": "Could not issue a session."})
+
+    return SessionResponse(
+        token=token,
+        expires_at=claims.expires_at,
+        role=claims.role,
+        country=claims.country,
+        branch=claims.branch,
     )
 
 
@@ -98,6 +153,14 @@ def chat_stream(payload: ChatRequest, request: Request) -> StreamingResponse:
             # delivering the whole answer at once and defeating the point.
             "X-Accel-Buffering": "no",
         },
+    )
+
+
+def _password_matches(provided: str, expected: str) -> bool:
+    """Constant-time compare that tolerates different lengths."""
+    return hmac.compare_digest(
+        hashlib.sha256(provided.encode("utf-8")).digest(),
+        hashlib.sha256(expected.encode("utf-8")).digest(),
     )
 
 

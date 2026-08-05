@@ -18,6 +18,7 @@ from __future__ import annotations
 from pydantic import BaseModel, ConfigDict, Field
 from pydantic.alias_generators import to_camel
 
+from app.api.session import Role
 from app.core.types import Status
 from app.orchestrator.pipeline import Answer
 from app.orchestrator.router import ConversationState
@@ -27,6 +28,8 @@ __all__ = [
     "ChatRequest",
     "ChatResponse",
     "HealthResponse",
+    "SessionRequest",
+    "SessionResponse",
     "StateModel",
     "Verdict",
 ]
@@ -132,6 +135,24 @@ class ChatResponse(Base):
         )
 
 
+class SessionRequest(Base):
+    """Credentials for minting a session on the internal MVP page."""
+
+    password: str = Field(min_length=1, max_length=200)
+    subject: str = Field(default="internal", max_length=120)
+    role: Role = Role.ACCOUNT_MANAGER
+    country: str | None = Field(default=None, max_length=80)
+    branch: str | None = Field(default=None, max_length=120)
+
+
+class SessionResponse(Base):
+    token: str
+    expires_at: int
+    role: Role
+    country: str | None = None
+    branch: str | None = None
+
+
 class HealthResponse(Base):
     """What is working, stated per subsystem.
 
@@ -147,3 +168,4 @@ class HealthResponse(Base):
     index_build: str = ""
     model: str = "deterministic"
     embeddings: bool = False
+    auth_required: bool = False

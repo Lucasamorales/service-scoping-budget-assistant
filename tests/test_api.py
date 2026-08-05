@@ -17,7 +17,13 @@ from app.main import create_app
 
 @pytest.fixture(scope="module")
 def client():
-    settings = Settings(environment="local", allowed_origins="https://example.org")
+    settings = Settings(
+        environment="local",
+        allowed_origins="https://example.org",
+        # Module-scoped client shares one limiter across every test in this file.
+        rate_limit_requests=1_000,
+        rate_limit_window_seconds=60,
+    )
     with TestClient(create_app(settings)) as test_client:
         yield test_client
 
@@ -188,11 +194,12 @@ class TestCors:
         )
         assert response.headers["access-control-allow-origin"] == "https://example.org"
 
-    def test_an_unlisted_origin_gets_no_grant(self, client: TestClient) -> None:
+    def test_an_unlisted_origin_is_rejected(self, client: TestClient) -> None:
         """Without this, any site could drive the API using a visitor's session."""
         response = client.post(
             "/api/chat",
             json={"message": "merch"},
             headers={"Origin": "https://not-acme.example"},
         )
+        assert response.status_code == 403
         assert "access-control-allow-origin" not in response.headers

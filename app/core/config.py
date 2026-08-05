@@ -54,6 +54,10 @@ class Settings(BaseSettings):
     allowed_origins: str = ""
     session_token_secret: str = ""
     session_token_ttl_seconds: int = 3600
+    internal_access_password: str = ""
+    """Shared password for the internal MVP page to mint a session. Empty
+    disables ``POST /api/session``. Not a substitute for IAP in production."""
+
     rate_limit_requests: int = 20
     rate_limit_window_seconds: int = 60
 
@@ -86,6 +90,15 @@ class Settings(BaseSettings):
     @property
     def origins(self) -> tuple[str, ...]:
         return tuple(part.strip() for part in self.allowed_origins.split(",") if part.strip())
+
+    @property
+    def session_auth_enabled(self) -> bool:
+        """Chat requires a bearer token when a signing secret is configured."""
+        return bool(self.session_token_secret)
+
+    @property
+    def session_issuance_enabled(self) -> bool:
+        return bool(self.session_token_secret and self.internal_access_password)
 
 
 @lru_cache(maxsize=1)

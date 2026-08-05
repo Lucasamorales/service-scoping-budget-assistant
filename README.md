@@ -400,6 +400,7 @@ CITED      Merch (required by the resolver); Graphic design for emails & templat
 | Endpoint | Purpose |
 |---|---|
 | `GET /api/health` | Liveness plus what is actually working |
+| `POST /api/session` | Mint a bearer token (internal MVP password) |
 | `POST /api/chat` | The finished answer |
 | `POST /api/chat/stream` | The same answer as server-sent events |
 
@@ -452,6 +453,18 @@ caller could have asked for directly — but a malformed client cannot produce a
 
 Messages are capped at 2,000 characters and unknown fields are rejected, which bounds prompt cost
 and removes the easiest way to bury instructions in padding.
+
+### Security
+
+When `SESSION_TOKEN_SECRET` is set, `/api/chat` requires `Authorization: Bearer <token>`. Tokens
+are HMAC-signed claims — subject, role, country, branch, expiry — so budget and mail routing can
+use them later without revisiting the widget. `POST /api/session` mints one against
+`INTERNAL_ACCESS_PASSWORD`; that is enough for an internal tool and deliberately not enough for a
+customer launch (put IAP in front first).
+
+Also enforced on every request: an Origin allowlist when configured, an in-memory rate limit, and
+hardening headers (`X-Content-Type-Options`, `frame-ancestors 'none'`, …). Locally, leave the secret
+and origin list empty and the interactive docs keep working without a login ceremony.
 
 ### Tests: invariants versus anchors
 
@@ -511,9 +524,9 @@ The remaining warnings are cosmetic or expected:
   across two sections. These are real domain overlaps and the resolver disambiguates by asking,
   which is exactly why a similarity score is not allowed to choose the verdict.
 
-Not built yet: the budget tracker, the quoting engine, mail, session tokens, rate limiting, and the
-chat widget. Embeddings and Gemini are wired and activate once `GCP_PROJECT_ID` is set; neither has
-been run against a real project yet.
+Not built yet: the budget tracker, the quoting engine, mail, and the chat widget. Session tokens,
+rate limiting and origin checks are in place. Embeddings and Gemini are wired and activate once
+`GCP_PROJECT_ID` is set; neither has been run against a real project yet.
 
 ## Inputs still needed
 

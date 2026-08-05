@@ -25,6 +25,7 @@ from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
+from app.api.middleware import install_security
 from app.api.routes import router
 from app.core.config import Settings, get_settings
 from app.core.errors import CatalogError
@@ -52,7 +53,8 @@ async def _lifespan(application: FastAPI) -> AsyncIterator[None]:
         model=pipeline.model.name if pipeline.model else "deterministic",
         embeddings=pipeline.index.has_embeddings,
         embedder=pipeline.embedder.contract.model if pipeline.embedder else None,
-        origins=settings.origins or "all (local only)",
+        origins=settings.origins or "unchecked (local only)",
+        auth=settings.session_auth_enabled,
     )
     yield
     logger.info("shutdown")
@@ -85,6 +87,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         )
 
     application.include_router(router, prefix="/api")
+    install_security(application, settings)
     _install_middleware(application)
     return application
 
