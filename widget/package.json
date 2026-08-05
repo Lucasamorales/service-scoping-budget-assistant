@@ -1,0 +1,13 @@
+{
+  "name": "acme-scoping-widget",
+  "private": true,
+  "version": "0.1.0",
+  "scripts": {
+    "build": "esbuild src/chat.ts --bundle --outfile=dist/acme-chat.js --format=esm --target=es2022 --minify",
+    "watch": "esbuild src/chat.ts --bundle --outfile=dist/acme-chat.js --format=esm --target=es2022 --watch"
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.0",
+    "typescript": "^5.7.0"
+  }
+}

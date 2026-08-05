@@ -19,11 +19,13 @@ from __future__ import annotations
 import time
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 import structlog
 from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
 
 from app.api.middleware import install_security
 from app.api.routes import router
@@ -31,6 +33,10 @@ from app.core.config import Settings, get_settings
 from app.core.errors import CatalogError
 from app.core.logging import configure_logging
 from app.orchestrator.pipeline import Pipeline
+
+WIDGET_DIR = Path("widget")
+WIDGET_DIST = WIDGET_DIR / "dist"
+WIDGET_INDEX = WIDGET_DIR / "index.html"
 
 __all__ = ["app", "create_app"]
 
@@ -87,9 +93,30 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         )
 
     application.include_router(router, prefix="/api")
+    _mount_widget(application)
     install_security(application, settings)
     _install_middleware(application)
     return application
+
+
+def _mount_widget(application: FastAPI) -> None:
+    """Serve the internal chat page and its bundled script.
+
+    Absent files are fine: the API still runs, and a missing widget just means
+    the bundle has not been built yet (``npm run build`` in ``widget/``).
+    """
+    if WIDGET_DIST.is_dir():
+        application.mount(
+            "/widget",
+            StaticFiles(directory=WIDGET_DIST),
+            name="widget-assets",
+        )
+
+    if WIDGET_INDEX.is_file():
+
+        @application.get("/", include_in_schema=False)
+        def internal_page() -> FileResponse:
+            return FileResponse(WIDGET_INDEX)
 
 
 def _install_middleware(application: FastAPI) -> None:

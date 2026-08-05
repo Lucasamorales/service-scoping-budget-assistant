@@ -100,6 +100,7 @@ app/
   tools/         quoting, budget tracker, mail proposals
   store/         Firestore, Sheets, mailer clients
 scripts/         offline tooling; none of it runs inside the deployed service
+widget/          Shadow DOM chat page (TypeScript → dist/acme-chat.js)
 documents/       the corpus, plus manifest.json declaring each file's type
 prompts/         the always-on instructions, editable without a deployment
 evals/           scored test cases for retrieval, scoping and routing
@@ -394,7 +395,14 @@ CITED      Merch (required by the resolver); Graphic design for emails & templat
 
 ```powershell
 .\.venv\Scripts\python.exe -m uvicorn app.main:app --reload
-# http://127.0.0.1:8000/docs
+# http://127.0.0.1:8000/       internal chat page
+# http://127.0.0.1:8000/docs   API docs (local only)
+```
+
+Build the widget once (or after changing TypeScript under `widget/src/`):
+
+```powershell
+cd widget; npm install; npm run build; cd ..
 ```
 
 | Endpoint | Purpose |
@@ -524,9 +532,17 @@ The remaining warnings are cosmetic or expected:
   across two sections. These are real domain overlaps and the resolver disambiguates by asking,
   which is exactly why a similarity score is not allowed to choose the verdict.
 
-Not built yet: the budget tracker, the quoting engine, mail, and the chat widget. Session tokens,
-rate limiting and origin checks are in place. Embeddings and Gemini are wired and activate once
-`GCP_PROJECT_ID` is set; neither has been run against a real project yet.
+## The internal chat page
+
+[`widget/`](widget/) is a Shadow DOM custom element (`<acme-chat>`) served at `/`. It streams
+answers over SSE, renders the verdict badge as soon as the first event arrives, carries
+conversation state in `sessionStorage`, and signs in via `POST /api/session` when auth is enabled.
+
+Styles and markup live inside the shadow root so a host page cannot break the layout. Model text is
+HTML-escaped before a tiny markdown subset is applied — never injected raw.
+
+Not built yet: the budget tracker, the quoting engine, and mail. Embeddings and Gemini are wired
+and activate once `GCP_PROJECT_ID` is set; neither has been run against a real project yet.
 
 ## Inputs still needed
 

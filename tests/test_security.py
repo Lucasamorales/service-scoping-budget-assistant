@@ -125,8 +125,23 @@ class TestRateLimit:
 
 
 class TestSecurityHeaders:
-    def test_responses_carry_hardening_headers(self) -> None:
+    def test_api_responses_carry_hardening_headers(self) -> None:
         with _client() as client:
             headers = client.get("/api/health").headers
             assert headers["X-Content-Type-Options"] == "nosniff"
-            assert "frame-ancestors 'none'" in headers["Content-Security-Policy"]
+            assert "default-src 'none'" in headers["Content-Security-Policy"]
+
+    def test_the_widget_page_may_load_its_own_assets(self) -> None:
+        with _client() as client:
+            page = client.get("/")
+            assert page.status_code == 200
+            assert "acme-chat" in page.text
+            csp = page.headers.get("Content-Security-Policy", "")
+            assert "script-src 'self'" in csp
+            assert "default-src 'none'" not in csp
+
+    def test_the_widget_bundle_is_served(self) -> None:
+        with _client() as client:
+            bundle = client.get("/widget/acme-chat.js")
+            assert bundle.status_code == 200
+            assert "acme-chat" in bundle.text

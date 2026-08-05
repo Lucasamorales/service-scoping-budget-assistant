@@ -31,7 +31,7 @@ __all__ = ["install_security"]
 logger = structlog.get_logger(__name__)
 
 # Paths that never require a session and never consume rate-limit budget.
-_PUBLIC = frozenset({"/api/health", "/docs", "/openapi.json", "/redoc"})
+_PUBLIC = frozenset({"/", "/api/health", "/docs", "/openapi.json", "/redoc"})
 
 
 def install_security(application: FastAPI, settings: Settings) -> None:
@@ -51,7 +51,7 @@ def install_security(application: FastAPI, settings: Settings) -> None:
         if denied := _check_origin(request, settings):
             return denied
 
-        if path not in _PUBLIC and (limited := _check_rate_limit(request, limiter)):
+        if _should_rate_limit(path) and (limited := _check_rate_limit(request, limiter)):
             return limited
 
         if require_auth and path.startswith("/api/chat"):
@@ -62,8 +62,15 @@ def install_security(application: FastAPI, settings: Settings) -> None:
                 return JSONResponse(status_code=401, content={"detail": "Unauthorised."})
 
         response = await call_next(request)
-        _apply_security_headers(response)
+        _apply_security_headers(response, path=path)
         return response
+
+
+def _should_rate_limit(path: str) -> bool:
+    """Chat and session issuance only. Static assets and health stay free."""
+    if path in _PUBLIC or path.startswith("/widget"):
+        return False
+    return path.startswith("/api/")
 
 
 def _check_origin(request: Request, settings: Settings) -> JSONResponse | None:
@@ -127,12 +134,23 @@ def _client_key(request: Request) -> str:
     return "unknown"
 
 
-def _apply_security_headers(response: Response) -> None:
+def _apply_security_headers(response: Response, *, path: str) -> None:
     response.headers.setdefault("X-Content-Type-Options", "nosniff")
     response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
     response.headers.setdefault("X-Frame-Options", "DENY")
-    # The API is never embedded; the widget is a separate static page. Framing
-    # the JSON endpoints would only help a clickjacking attempt.
-    response.headers.setdefault(
-        "Content-Security-Policy", "frame-ancestors 'none'; default-src 'none'"
-    )
+
+    # API responses carry no executable content, so the strictest policy is safe.
+    # The internal page needs its own script, fonts, and same-origin fetches.
+    if path.startswith("/api/"):
+        policy = "frame-ancestors 'none'; default-src 'none'"
+    else:
+        policy = (
+            "default-src 'self'; "
+            "script-src 'self'; "
+            "style-src 'self' https://fonts.googleapis.com; "
+            "font-src 'self' https://fonts.gstatic.com; "
+            "connect-src 'self'; "
+            "img-src 'self' data:; "
+            "frame-ancestors 'none'"
+        )
+    response.headers.setdefault("Content-Security-Policy", policy)
