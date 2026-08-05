@@ -81,6 +81,13 @@ class ScoredChunk:
     chunk: Chunk
     score: float
     matched: tuple[str, ...] = ()
+    """The query terms this chunk actually contains. Kept free of derived
+    signals so callers can compare two hits and see which one the query
+    genuinely distinguishes."""
+
+    coverage: float = 0.0
+    """How much of the item's own name the query accounted for."""
+
     forced: bool = False
     """True when the resolver required this slice rather than the score earning it."""
 
@@ -213,7 +220,9 @@ class InMemoryRetriever:
             for token, count in document_frequency.items()
         }
 
-    def _keyword_score(self, tokens: Sequence[str], terms: _ChunkTerms) -> tuple[float, list[str]]:
+    def _keyword_score(
+        self, tokens: Sequence[str], terms: _ChunkTerms
+    ) -> tuple[float, list[str], float]:
         score = 0.0
         matched: list[str] = []
 
@@ -243,22 +252,29 @@ class InMemoryRetriever:
                 matched.append(bigram)
 
         coverage = self._name_coverage(tokens, terms)
-        if coverage:
-            score += NAME_COVERAGE_WEIGHT * coverage
-            matched.append(f"covers {coverage:.0%} of its name")
+        score += NAME_COVERAGE_WEIGHT * coverage
 
         # Divided by query length so a long question does not simply outscore a
         # short one, and MIN_SCORE means the same thing for both.
-        return score / max(len(tokens), 1), matched
+        return score / max(len(tokens), 1), matched, coverage
 
-    @staticmethod
-    def _name_coverage(tokens: Sequence[str], terms: _ChunkTerms) -> float:
-        """The largest fraction of any one of this item's names the query covers."""
+    def _name_coverage(self, tokens: Sequence[str], terms: _ChunkTerms) -> float:
+        """How much of this item's identity the query accounts for.
+
+        Weighted by rarity rather than counting words, because words are not
+        interchangeable evidence. Covering "regular" in the alias "regular
+        meetings" is half the words but almost none of the meaning, while
+        covering "translate" in "translation and localisation" is most of it.
+        """
         query = set(tokens)
-        return max(
-            (len(query & phrase) / len(phrase) for phrase in terms.phrases),
-            default=0.0,
-        )
+        best = 0.0
+        for phrase in terms.phrases:
+            total = sum(self._idf.get(token, 0.0) for token in phrase)
+            if not total:
+                continue
+            covered = sum(self._idf.get(token, 0.0) for token in phrase & query)
+            best = max(best, covered / total)
+        return best
 
     @staticmethod
     def _cosine(left: Sequence[float], right: Sequence[float]) -> float:
@@ -298,7 +314,10 @@ class InMemoryRetriever:
         scored: list[ScoredChunk] = []
 
         for chunk, terms in eligible:
-            keyword, matched = self._keyword_score(tokens, terms) if tokens else (0.0, [])
+            if tokens:
+                keyword, matched, coverage = self._keyword_score(tokens, terms)
+            else:
+                keyword, matched, coverage = 0.0, [], 0.0
 
             if use_dense and chunk.embedding is not None and query_vector is not None:
                 dense = self._cosine(query_vector, chunk.embedding)
@@ -307,9 +326,9 @@ class InMemoryRetriever:
                 score = keyword
 
             if chunk.item_id and chunk.item_id in forced_ids:
-                forced.append(ScoredChunk(chunk, score, tuple(matched), forced=True))
+                forced.append(ScoredChunk(chunk, score, tuple(matched), coverage, forced=True))
             elif score >= MIN_SCORE:
-                scored.append(ScoredChunk(chunk, score, tuple(matched)))
+                scored.append(ScoredChunk(chunk, score, tuple(matched), coverage))
 
         scored.sort(key=lambda hit: hit.score, reverse=True)
         forced.sort(key=lambda hit: hit.score, reverse=True)

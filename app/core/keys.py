@@ -110,9 +110,43 @@ def stem(token: str) -> str:
     return token
 
 
+# Words this industry uses interchangeably but which no suffix rule will ever
+# unify, because they are abbreviations rather than inflections. A request
+# saying "advert" was missing an item named "Video editing for ads" entirely.
+#
+# Kept deliberately short. Every entry asserts that two words mean the same
+# thing here, and a wrong entry merges two services that should stay apart.
+_SYNONYM_GROUPS: tuple[tuple[str, ...], ...] = (
+    ("ad", "ads", "advert", "adverts", "advertisement", "advertisements", "advertising"),
+    ("photo", "photos", "photograph", "photographs", "photography", "photographic"),
+    ("email", "emails", "e-mail", "e-mails", "mailer", "mailers"),
+    ("logo", "logos", "branding", "brand"),
+)
+
+_SYNONYMS: dict[str, str] = {
+    stem(variant): stem(group[0]) for group in _SYNONYM_GROUPS for variant in group
+}
+
+
+def canonical_token(token: str) -> str:
+    """Stem a word, then fold it onto the industry's preferred spelling."""
+    stemmed = stem(token)
+    return _SYNONYMS.get(stemmed, stemmed)
+
+
+# "ad hoc" is not an advertisement. Left alone, folding "ad" onto the advert
+# family made a request about an advert match an item named "Video editing ad
+# hoc". Joined into one word before tokenising so the two never meet.
+_AD_HOC_RE = re.compile(r"\bad[ -]+hoc\b")
+
+
 def content_tokens(text: str) -> tuple[str, ...]:
-    """The tokeniser retrieval scores on: normalised, stopword-free and stemmed."""
-    return tuple(stem(token) for token in tokenize(text) if token not in STOPWORDS)
+    """The tokeniser retrieval scores on: normalised, stopword-free, stemmed
+    and folded onto canonical industry vocabulary."""
+    normalized = _AD_HOC_RE.sub("adhoc", normalize_term(text))
+    return tuple(
+        canonical_token(token) for token in normalized.split() if token not in STOPWORDS
+    )
 
 
 def service_key(section: str, item: str) -> str:

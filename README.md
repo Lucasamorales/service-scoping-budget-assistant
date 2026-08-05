@@ -66,6 +66,10 @@ credentials. Unit tests and corpus tooling run entirely offline.
 .\.venv\Scripts\python.exe -m scripts.eval_retrieval
 .\.venv\Scripts\python.exe -m scripts.eval_retrieval --case seo-audit   # show the scoring
 
+# Score the verdicts the resolver actually produces. Fails only on a wrong verdict.
+.\.venv\Scripts\python.exe -m scripts.eval_resolver
+.\.venv\Scripts\python.exe -m scripts.eval_resolver --verbose
+
 .\.venv\Scripts\python.exe -m pytest
 .\.venv\Scripts\python.exe -m ruff check .
 .\.venv\Scripts\python.exe -m mypy app scripts
@@ -153,6 +157,61 @@ This started at 56% at rank 1. The gap was almost entirely plural mismatch, docu
 `leaflets` while users type `leaflet`, which is why `app/core/keys.py` now stems. Reading the eval
 output found each cause; none of them were visible in the code.
 
+## The scope resolver
+
+Which service a request is about, and therefore what it costs, is decided by
+[`app/orchestrator/resolver.py`](app/orchestrator/resolver.py) — a dictionary lookup that no model
+output ever reaches. There are four outcomes, and the middle two carry the design:
+
+| Outcome | Meaning | Verdict available |
+|---|---|---|
+| `RESOLVED` | One service | yes |
+| `AGREED` | Several services that all carry the **same** verdict | yes |
+| `AMBIGUOUS` | Several services whose verdicts **differ** | no — must ask |
+| `UNKNOWN` | Nothing matched well enough | no — hand to a human |
+
+`AGREED` exists because the user asked about scope, not about taxonomy. "Whether you mean
+Billboards or Hoarding, both need a quote" is a better reply than a menu, and the corpus has plenty
+of these overlaps. `AMBIGUOUS` is the opposite case: when `ad editing` could mean an in-scope
+service or one that needs a quote, the choice changes the answer, so only the user may make it.
+
+Matching runs in descending order of confidence. **Phrase containment** first — the longest name or
+alias appearing in the request — which is exact, needs no scoring and no embedding call. Keyword
+scoring is the fallback.
+
+Two rules were forced by real failures rather than designed up front:
+
+- **A phrase only settles a request if it is anchored by a rare word.** The Copywriting section
+  names its items after the thing being written, so the corpus contains items called simply
+  `Emails`, `Web pages` and `Paid ads`. Matching those literally sent "set up emails for people who
+  abandon their booking" to the copywriter. Requiring two words did not help, because "web pages"
+  is two common words.
+- **A runner-up is a real rival when the request named a substantial part of what it is**, measured
+  by rarity-weighted coverage — not when it merely scores close. No score margin works here: one
+  case needed the leader 27% ahead to be trusted while another was still a coin toss at 34%.
+  Coverage separates them because it asks a different question.
+
+### Measuring the resolver
+
+`scripts.eval_resolver` scores the same 25 cases, because what reaches a user is the verdict, not
+the document. It grades on danger rather than accuracy:
+
+```
+  stated a WRONG verdict:   0/25
+  answered well:            21/25 (84%)
+  named the exact item:     13/25
+  asked or handed over when it could have answered: 4/25
+```
+
+**Only a wrong verdict fails the run.** Asking costs a turn; wrong advice about what something
+costs is the failure this whole design exists to prevent. The four over-cautious cases are
+reported, not gated: tuning them away against 25 handwritten cases would fit the cases rather than
+the problem, and real usage is the honest input for that.
+
+Note that for a case whose candidates disagree, stating *any* verdict counts as wrong, including
+the expected one — it would mean ranking decided something only the user can decide, and happened
+to be right.
+
 ### Tests: invariants versus anchors
 
 [`tests/test_catalog_parsing.py`](tests/test_catalog_parsing.py) holds **invariants** that are
@@ -165,9 +224,11 @@ Do not delete the assertion.
 
 ## Current state
 
-Working: the service catalog, chunking, the index artifact, and keyword retrieval. All 81
-documents parse into a typed registry with zero errors and 385 searchable phrases, chunk into 81
-whole-document slices, and the right item is in the top 5 for every case in the eval.
+Working: the service catalog, chunking, the index artifact, keyword retrieval, and the scope
+resolver. All 81 documents parse into a typed registry with zero errors and 385 searchable
+phrases, chunk into 81 whole-document slices, and the right item is in the top 5 for every case in
+the eval. The resolver returns a verdict, a clarifying question, or a handover, and produces no
+wrong verdicts across the eval set.
 
 The corpus itself is unusually clean: `report_corpus` finds no encoding damage, no stray escapes
 and only two non-ASCII characters across 136,000.
@@ -200,8 +261,8 @@ The remaining warnings are cosmetic or expected:
   across two sections. These are real domain overlaps and the resolver disambiguates by asking,
   which is exactly why a similarity score is not allowed to choose the verdict.
 
-Not built yet: embeddings, the router and scope resolver, the LLM orchestrator, the budget
-tracker, the quoting engine, mail, and the chat widget.
+Not built yet: embeddings, the intent router, the LLM orchestrator, the budget tracker, the
+quoting engine, mail, and the chat widget.
 
 ## Inputs still needed
 
