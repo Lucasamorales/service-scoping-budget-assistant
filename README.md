@@ -70,6 +70,9 @@ credentials. Unit tests and corpus tooling run entirely offline.
 .\.venv\Scripts\python.exe -m scripts.eval_resolver
 .\.venv\Scripts\python.exe -m scripts.eval_resolver --verbose
 
+# Score intent routing. Fails outright on any missed handover.
+.\.venv\Scripts\python.exe -m scripts.eval_router
+
 .\.venv\Scripts\python.exe -m pytest
 .\.venv\Scripts\python.exe -m ruff check .
 .\.venv\Scripts\python.exe -m mypy app scripts
@@ -157,6 +160,58 @@ This started at 56% at rank 1. The gap was almost entirely plural mismatch, docu
 `leaflets` while users type `leaflet`, which is why `app/core/keys.py` now stems. Reading the eval
 output found each cause; none of them were visible in the code.
 
+## The intent router
+
+Retrieval is a workflow decision before it is a similarity problem. "How much budget is left at
+Basingstoke?" and "can you do us a billboard?" need different sources and different answers, and no
+amount of semantic search turns one into the other. So
+[`app/orchestrator/router.py`](app/orchestrator/router.py) settles the intent first, by pattern, and
+the rest of the pipeline is chosen from it. Patterns rather than a model call, because this
+decision gates what the assistant is allowed to do, so user text must not be able to argue with it.
+
+Intents: `handover`, `clarification_reply`, `scoping`, `budget`, `quote`, `action`, `follow_up`,
+`capabilities`, `greeting`, `unknown`.
+
+**Order is the load-bearing part.** Handover is checked before everything else, so *"we were
+shooting photos when someone got hurt, can we use them"* goes to a person rather than being
+answered as a photography question.
+
+### Subjects that must reach a person — please review this list
+
+These are subjects where a plausible machine answer is worse than no answer. **I chose this list;
+it is a business policy decision and Acme should confirm or change it.**
+
+| Topic | Triggers on |
+|---|---|
+| safety | injury, accident, hospital, safety incident |
+| legal | lawsuit, solicitor, liability, breach of contract |
+| data protection | GDPR, personal data, data breach, right to be forgotten |
+| press | journalist, press or media enquiry, statement to the press |
+| customer resolution | refund, chargeback, compensation, formal complaint |
+| people | grievance, harassment, disciplinary, dismissal |
+| commercial terms | discount, renegotiation, waiving a fee |
+
+Each carries a reason written for the person who asked, not for a log.
+
+The patterns lean specific deliberately. "Complaint" on its own would swallow legitimate questions
+about **Review management**, which is a real catalog item handled locally — a bad review is
+business as usual, not an escalation.
+
+### Carrying context without inventing it
+
+A bare follow-up like *"and for Basingstoke?"* inherits the previous subject. Two guards keep that
+honest: nothing is carried when there is no history, and a message longer than a few words is
+treated as standing on its own even if it opens with "and". Carrying stale context into a fully
+formed question is invisible to the user, which makes it worse than ignoring it.
+
+When the resolver has asked a clarifying question, the next message is read as an answer to it —
+by number ("1", "the second one") or by name ("the hoarding one"). Two cases deliberately select
+nothing: naming something that fits several options, and changing the subject entirely. People walk
+away from questions, and answering the abandoned one is worse than dropping it.
+
+`scripts.eval_router` scores 31 messages and **fails outright on any missed handover**, which is a
+different class of failure from an ordinary misroute.
+
 ## The scope resolver
 
 Which service a request is about, and therefore what it costs, is decided by
@@ -224,8 +279,8 @@ Do not delete the assertion.
 
 ## Current state
 
-Working: the service catalog, chunking, the index artifact, keyword retrieval, and the scope
-resolver. All 81 documents parse into a typed registry with zero errors and 385 searchable
+Working: the service catalog, chunking, the index artifact, keyword retrieval, the scope resolver
+and the intent router. All 81 documents parse into a typed registry with zero errors and 385 searchable
 phrases, chunk into 81 whole-document slices, and the right item is in the top 5 for every case in
 the eval. The resolver returns a verdict, a clarifying question, or a handover, and produces no
 wrong verdicts across the eval set.
@@ -261,8 +316,8 @@ The remaining warnings are cosmetic or expected:
   across two sections. These are real domain overlaps and the resolver disambiguates by asking,
   which is exactly why a similarity score is not allowed to choose the verdict.
 
-Not built yet: embeddings, the intent router, the LLM orchestrator, the budget tracker, the
-quoting engine, mail, and the chat widget.
+Not built yet: embeddings, the LLM orchestrator, the budget tracker, the quoting engine, mail, and
+the chat widget.
 
 ## Inputs still needed
 

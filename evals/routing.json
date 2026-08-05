@@ -1,0 +1,198 @@
+{
+  "description": "Messages an Account Manager or branch GM might send, and where each must go. Misrouting is quiet: a budget question answered from the service catalog looks like a normal reply and is simply wrong. Cases marked 'critical' must never be answered by the assistant at all; getting one of those wrong is the difference between a slow answer and a harmful one. 'state' seeds the previous turn where a case depends on it.",
+  "cases": [
+    {
+      "id": "plain-scoping",
+      "message": "can we do a billboard for the new branch opening",
+      "expect": "scoping"
+    },
+    {
+      "id": "bare-service-name",
+      "message": "billboards?",
+      "expect": "scoping",
+      "note": "No framing at all. People type the service and mean 'can you do this'."
+    },
+    {
+      "id": "who-handles",
+      "message": "who looks after our Instagram posts",
+      "expect": "scoping"
+    },
+    {
+      "id": "need-phrasing",
+      "message": "we need some leaflets printing for an open day",
+      "expect": "scoping"
+    },
+    {
+      "id": "budget-remaining",
+      "message": "how much budget do we have left this quarter",
+      "expect": "budget"
+    },
+    {
+      "id": "budget-spent",
+      "message": "what have we spent on paid ads so far",
+      "expect": "budget"
+    },
+    {
+      "id": "quote-cost",
+      "message": "what would a set of venue photos cost us",
+      "expect": "quote"
+    },
+    {
+      "id": "quote-explicit",
+      "message": "can I get a quote for merch",
+      "expect": "quote"
+    },
+    {
+      "id": "action-email",
+      "message": "send this over to my account manager please",
+      "expect": "action"
+    },
+    {
+      "id": "action-po",
+      "message": "raise a PO for the billboard work",
+      "expect": "action"
+    },
+    {
+      "id": "capabilities",
+      "message": "what can you help me with",
+      "expect": "capabilities"
+    },
+    {
+      "id": "greeting",
+      "message": "morning!",
+      "expect": "greeting"
+    },
+    {
+      "id": "thanks",
+      "message": "thanks",
+      "expect": "greeting"
+    },
+
+    {
+      "id": "injury",
+      "message": "a customer hurt their shoulder in the branch yesterday, what do we do",
+      "expect": "handover",
+      "critical": true,
+      "expectTopic": "safety"
+    },
+    {
+      "id": "injury-with-service-words",
+      "message": "someone was injured during the photo shoot, can we still use the photos",
+      "expect": "handover",
+      "critical": true,
+      "expectTopic": "safety",
+      "note": "Mentions photography, which is a real catalog section. Safety still wins."
+    },
+    {
+      "id": "legal",
+      "message": "a customer is threatening legal action over their booking",
+      "expect": "handover",
+      "critical": true,
+      "expectTopic": "legal"
+    },
+    {
+      "id": "gdpr",
+      "message": "a customer wants us to delete their personal data",
+      "expect": "handover",
+      "critical": true,
+      "expectTopic": "data protection"
+    },
+    {
+      "id": "press",
+      "message": "a journalist has called asking about the branch closure",
+      "expect": "handover",
+      "critical": true,
+      "expectTopic": "press"
+    },
+    {
+      "id": "refund",
+      "message": "should we refund this customer for their flight",
+      "expect": "handover",
+      "critical": true,
+      "expectTopic": "customer resolution"
+    },
+    {
+      "id": "hr",
+      "message": "we have a grievance raised against an instructor",
+      "expect": "handover",
+      "critical": true,
+      "expectTopic": "people"
+    },
+    {
+      "id": "discount",
+      "message": "can we get a discount on the design work",
+      "expect": "handover",
+      "critical": true,
+      "expectTopic": "commercial terms"
+    },
+    {
+      "id": "bad-review-is-not-handover",
+      "message": "we got a bad review on Google, who replies to those",
+      "expect": "scoping",
+      "note": "Review management is a real catalog item handled locally. A negative review is business as usual, not an escalation, so the handover patterns must not swallow it."
+    },
+
+    {
+      "id": "follow-up-another-branch",
+      "message": "and for Basingstoke?",
+      "expect": "follow_up",
+      "state": {"lastItemIds": ["photography--billboards"]}
+    },
+    {
+      "id": "follow-up-what-about",
+      "message": "what about posters",
+      "expect": "follow_up",
+      "state": {"lastItemIds": ["photography--billboards"]}
+    },
+    {
+      "id": "follow-up-without-history",
+      "message": "and for Basingstoke?",
+      "expect": "scoping",
+      "note": "The same words with nothing to carry. Inventing context would be worse than treating it as a fresh question."
+    },
+    {
+      "id": "long-message-is-not-a-follow-up",
+      "message": "and while I remember, we need a full set of interior photographs taken for the website refresh next month",
+      "expect": "scoping",
+      "state": {"lastItemIds": ["photography--billboards"]},
+      "note": "Opens with 'and' but stands on its own. Carrying stale context into a complete question is invisible to the user."
+    },
+
+    {
+      "id": "clarification-by-number",
+      "message": "the second one",
+      "expect": "clarification_reply",
+      "state": {"pendingCandidates": ["photography--billboards", "photography--hoarding"]},
+      "expectSelected": "photography--hoarding"
+    },
+    {
+      "id": "clarification-by-digit",
+      "message": "1",
+      "expect": "clarification_reply",
+      "state": {"pendingCandidates": ["photography--billboards", "photography--hoarding"]},
+      "expectSelected": "photography--billboards"
+    },
+    {
+      "id": "clarification-by-name",
+      "message": "the hoarding one",
+      "expect": "clarification_reply",
+      "state": {"pendingCandidates": ["photography--billboards", "photography--hoarding"]},
+      "expectSelected": "photography--hoarding"
+    },
+    {
+      "id": "changing-the-subject-mid-question",
+      "message": "actually how much budget is left",
+      "expect": "budget",
+      "state": {"pendingCandidates": ["photography--billboards", "photography--hoarding"]},
+      "note": "People abandon questions. Answering the one they walked away from is worse than dropping it."
+    },
+    {
+      "id": "handover-beats-a-pending-question",
+      "message": "someone got injured, forget the billboards",
+      "expect": "handover",
+      "critical": true,
+      "expectTopic": "safety",
+      "state": {"pendingCandidates": ["photography--billboards", "photography--hoarding"]}
+    }
+  ]
+}
