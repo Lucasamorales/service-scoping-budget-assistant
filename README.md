@@ -89,6 +89,8 @@ app/
   store/         Firestore, Sheets, mailer clients
 scripts/         offline tooling; none of it runs inside the deployed service
 documents/       the corpus, plus manifest.json declaring each file's type
+prompts/         the always-on instructions, editable without a deployment
+evals/           scored test cases for retrieval, scoping and routing
 tests/           invariants and corpus anchors, kept apart on purpose
 ```
 
@@ -267,6 +269,59 @@ Note that for a case whose candidates disagree, stating *any* verdict counts as 
 the expected one — it would mean ranking decided something only the user can decide, and happened
 to be right.
 
+## The context pack
+
+[`app/orchestrator/context.py`](app/orchestrator/context.py) turns those decisions into the prompt.
+Everything upstream produces facts; this is where they become text without becoming negotiable.
+
+The important piece is the **verdict block**. Rather than dropping the documents in and hoping the
+model reads the status correctly, the verdict arrives as a separate statement of what the model is
+permitted to say — and when the resolver could not decide, it says so explicitly:
+
+| Outcome | What the block says |
+|---|---|
+| Resolved | The verdict, in the corpus's wording, and not to be reinterpreted |
+| Agreed | All candidates, one shared verdict, and *do not ask the user to choose* |
+| Ambiguous | **No verdict.** Ask, listing the options. Do not state or hint at one |
+| Unknown | **No verdict.** Say so and offer a handover. Do not guess |
+| Handover | Give the reason and stop. Do not comment on the substance |
+
+Leaving the verdict out for the ambiguous case would not be enough — a model shown two documents
+will happily infer a status from them. The block has to forbid it.
+
+Two smaller rules: **trimming is never silent** (the pack records what was dropped and the prompt
+tells the model to say the answer may be incomplete), and **citations always exist**, including
+"no supporting documents were retrieved".
+
+The always-on instructions live in [`prompts/system.md`](prompts/system.md) rather than in code, so
+whoever owns how Acme talks to its own staff can edit them without a deployment. If that file is
+unreadable the service refuses to start: a model with no instructions is far more dangerous than
+one that will not boot.
+
+### Seeing what the model would see
+
+```powershell
+.\.venv\Scripts\python.exe -m scripts.ask "can we do a billboard for the new branch"
+.\.venv\Scripts\python.exe -m scripts.ask "translate our web pages" --prompt
+.\.venv\Scripts\python.exe -m scripts.ask          # interactive, carries context between turns
+```
+
+No model call, no API key, no network — everything up to the moment of generation is
+deterministic. This is the fastest way to answer "why did it say that?", and it works today, before
+Vertex AI is wired up:
+
+```
+ROUTE      scoping on 'can you'
+RESOLVER   ambiguous via keyword match: Web pages (Copywriting) [5.81],
+           Translation & localisation (Copywriting) [3.17]
+RETRIEVAL  Read from Web pages*, Translation & localisation*, ... (keyword).
+
+MUST ASK
+A few different services could match that, and they are not handled the same way. Which do you mean?
+1. Web pages (Copywriting)
+2. Translation & localisation (Copywriting)
+```
+
 ### Tests: invariants versus anchors
 
 [`tests/test_catalog_parsing.py`](tests/test_catalog_parsing.py) holds **invariants** that are
@@ -279,8 +334,9 @@ Do not delete the assertion.
 
 ## Current state
 
-Working: the service catalog, chunking, the index artifact, keyword retrieval, the scope resolver
-and the intent router. All 81 documents parse into a typed registry with zero errors and 385 searchable
+Working: the whole pipeline up to the model call — catalog, chunking, index, keyword retrieval,
+intent router, scope resolver and context assembly. `scripts.ask` runs a real question through all
+of it and prints the exact prompt. All 81 documents parse into a typed registry with zero errors and 385 searchable
 phrases, chunk into 81 whole-document slices, and the right item is in the top 5 for every case in
 the eval. The resolver returns a verdict, a clarifying question, or a handover, and produces no
 wrong verdicts across the eval set.
@@ -316,8 +372,8 @@ The remaining warnings are cosmetic or expected:
   across two sections. These are real domain overlaps and the resolver disambiguates by asking,
   which is exactly why a similarity score is not allowed to choose the verdict.
 
-Not built yet: embeddings, the LLM orchestrator, the budget tracker, the quoting engine, mail, and
-the chat widget.
+Not built yet: embeddings, the Gemini call itself, the budget tracker, the quoting engine, mail,
+and the chat widget.
 
 ## Inputs still needed
 
