@@ -1,0 +1,328 @@
+{
+  "documents": [
+    {
+      "file": "analytics-tracking-dashboards--campaign-wrap-ups.md",
+      "docType": "service_item"
+    },
+    {
+      "file": "analytics-tracking-dashboards--conversion-rate-report-data-from-ga4-pos-crm.md",
+      "docType": "service_item"
+    },
+    {
+      "file": "analytics-tracking-dashboards--customer-satisfaction-tracker-and-instructor-review-challenge.md",
+      "docType": "service_item"
+    },
+    {
+      "file": "analytics-tracking-dashboards--int-goals-dashboards.md",
+      "docType": "service_item"
+    },
+    {
+      "file": "analytics-tracking-dashboards--media-spend-and-traditional-advertising-tracker.md",
+      "docType": "service_item"
+    },
+    {
+      "file": "analytics-tracking-dashboards--monthly-marketing-reports.md",
+      "docType": "service_item"
+    },
+    {
+      "file": "analytics-tracking-dashboards--qr-code-reports.md",
+      "docType": "service_item"
+    },
+    {
+      "file": "analytics-tracking-dashboards--reports-page-landing-page-with-all-reporting-dashboards.md",
+      "docType": "service_item"
+    },
+    {
+      "file": "analytics-tracking-dashboards--supermetrics-license-pulls-data-for-all-reports-including-cst.md",
+      "docType": "service_item"
+    },
+    {
+      "file": "analytics-tracking-dashboards--website-reports-ga4.md",
+      "docType": "service_item"
+    },
+    {
+      "file": "copywriting--emails.md",
+      "docType": "service_item"
+    },
+    {
+      "file": "copywriting--paid-ads.md",
+      "docType": "service_item"
+    },
+    {
+      "file": "copywriting--seo-aio-implementation.md",
+      "docType": "service_item"
+    },
+    {
+      "file": "copywriting--translation-localisation.md",
+      "docType": "service_item"
+    },
+    {
+      "file": "copywriting--web-pages.md",
+      "docType": "service_item"
+    },
+    {
+      "file": "design-creative--design-for-paid-campaigns-across-all-platforms-inc-web-and-on-site-pla.md",
+      "docType": "service_item"
+    },
+    {
+      "file": "design-creative--graphic-design-for-emails-templates-for-emails.md",
+      "docType": "service_item"
+    },
+    {
+      "file": "design-creative--video-editing-for-ads-pre-existing-or-created-by-others.md",
+      "docType": "service_item"
+    },
+    {
+      "file": "email-marketing-sms--abandoned-carts-flows.md",
+      "docType": "service_item"
+    },
+    {
+      "file": "email-marketing-sms--ad-hoc-email-requests-typically-4-5-per-month.md",
+      "docType": "service_item"
+    },
+    {
+      "file": "email-marketing-sms--audience-segmentation.md",
+      "docType": "service_item"
+    },
+    {
+      "file": "email-marketing-sms--automation-of-all-other-flows-i-e-vouchers-and-birthdays.md",
+      "docType": "service_item"
+    },
+    {
+      "file": "email-marketing-sms--database-clean-up-and-management.md",
+      "docType": "service_item"
+    },
+    {
+      "file": "email-marketing-sms--deliverability-management-quality-metrics.md",
+      "docType": "service_item"
+    },
+    {
+      "file": "email-marketing-sms--email-template-creation.md",
+      "docType": "service_item"
+    },
+    {
+      "file": "email-marketing-sms--promotional-campaign-planning-sms-email.md",
+      "docType": "service_item"
+    },
+    {
+      "file": "email-marketing-sms--transactional-sms-emails.md",
+      "docType": "service_item"
+    },
+    {
+      "file": "organic-social-media-and-community-management--comment-responses.md",
+      "docType": "service_item"
+    },
+    {
+      "file": "organic-social-media-and-community-management--content-planning.md",
+      "docType": "service_item"
+    },
+    {
+      "file": "organic-social-media-and-community-management--content-scheduling.md",
+      "docType": "service_item"
+    },
+    {
+      "file": "organic-social-media-and-community-management--inbox-management.md",
+      "docType": "service_item"
+    },
+    {
+      "file": "organic-social-media-and-community-management--invites-to-like-pages.md",
+      "docType": "service_item"
+    },
+    {
+      "file": "organic-social-media-and-community-management--on-site-content-creation.md",
+      "docType": "service_item"
+    },
+    {
+      "file": "organic-social-media-and-community-management--posting-community-and-venue-updates.md",
+      "docType": "service_item"
+    },
+    {
+      "file": "organic-social-media-and-community-management--profile-updates-and-management.md",
+      "docType": "service_item"
+    },
+    {
+      "file": "organic-social-media-and-community-management--reposting-relevant-content.md",
+      "docType": "service_item"
+    },
+    {
+      "file": "organic-social-media-and-community-management--review-management-google-my-business-trip-advisor-facebook-trust-pilot.md",
+      "docType": "service_item"
+    },
+    {
+      "file": "paid-ads--display-all-networks.md",
+      "docType": "service_item"
+    },
+    {
+      "file": "paid-ads--llms-i-e-gpt.md",
+      "docType": "service_item"
+    },
+    {
+      "file": "paid-ads--search-google-ads-microsoft-ads.md",
+      "docType": "service_item"
+    },
+    {
+      "file": "paid-ads--social-meta-reddit-linkedin-tiktok.md",
+      "docType": "service_item"
+    },
+    {
+      "file": "photography--billboards.md",
+      "docType": "service_item"
+    },
+    {
+      "file": "photography--hoarding.md",
+      "docType": "service_item"
+    },
+    {
+      "file": "photography--internal-decor.md",
+      "docType": "service_item"
+    },
+    {
+      "file": "photography--magazines-and-newspapers.md",
+      "docType": "service_item"
+    },
+    {
+      "file": "photography--signage.md",
+      "docType": "service_item"
+    },
+    {
+      "file": "photography--video-editing-ad-hoc-for-events-like-site-visits-press-conferences.md",
+      "docType": "service_item"
+    },
+    {
+      "file": "photography--video-editing-for-class-waiver-or-in-venue-screens.md",
+      "docType": "service_item"
+    },
+    {
+      "file": "photography--video-editing-for-organic-pre-existing-or-created-by-others.md",
+      "docType": "service_item"
+    },
+    {
+      "file": "renders-and-other-designs-for-venue-exteriors--business-cards.md",
+      "docType": "service_item"
+    },
+    {
+      "file": "renders-and-other-designs-for-venue-exteriors--graphics-animations-and-videos-for-organic-social-media.md",
+      "docType": "service_item"
+    },
+    {
+      "file": "renders-and-other-designs-for-venue-exteriors--graphics-animations-and-videos-for-website.md",
+      "docType": "service_item"
+    },
+    {
+      "file": "renders-and-other-designs-for-venue-exteriors--graphics-for-ipads-and-tablets.md",
+      "docType": "service_item"
+    },
+    {
+      "file": "renders-and-other-designs-for-venue-exteriors--graphics-for-screens.md",
+      "docType": "service_item"
+    },
+    {
+      "file": "renders-and-other-designs-for-venue-exteriors--graphics-for-waiver-photo-stations.md",
+      "docType": "service_item"
+    },
+    {
+      "file": "renders-and-other-designs-for-venue-exteriors--in-venue-signage.md",
+      "docType": "service_item"
+    },
+    {
+      "file": "renders-and-other-designs-for-venue-exteriors--merch.md",
+      "docType": "service_item"
+    },
+    {
+      "file": "renders-and-other-designs-for-venue-exteriors--photo-ops-backdrops.md",
+      "docType": "service_item"
+    },
+    {
+      "file": "renders-and-other-designs-for-venue-exteriors--pitch-presentation-decks-for-sales-pr-sponsorships-and-others.md",
+      "docType": "service_item"
+    },
+    {
+      "file": "renders-and-other-designs-for-venue-exteriors--posters-leaflets-flyer-designs-in-and-out-of-venue.md",
+      "docType": "service_item"
+    },
+    {
+      "file": "renders-and-other-designs-for-venue-exteriors--radio-ads.md",
+      "docType": "service_item"
+    },
+    {
+      "file": "seo-aio--content-calendar-for-writtent-content.md",
+      "docType": "service_item"
+    },
+    {
+      "file": "seo-aio--content-strategy-all-pages-faqs-summaries-and-blogs.md",
+      "docType": "service_item"
+    },
+    {
+      "file": "seo-aio--implement-seo-aio-fixes-that-don-t-require-dev-agency-involvement.md",
+      "docType": "service_item"
+    },
+    {
+      "file": "seo-aio--liaising-with-web-agency-to-implement-audit-fixes.md",
+      "docType": "service_item"
+    },
+    {
+      "file": "seo-aio--regular-seo-aio-audits-every-6-months.md",
+      "docType": "service_item"
+    },
+    {
+      "file": "seo-aio--schema-markup-creation-and-maintenance.md",
+      "docType": "service_item"
+    },
+    {
+      "file": "seo-aio--seo-aio-dashboard.md",
+      "docType": "service_item"
+    },
+    {
+      "file": "seo-aio--seo-aio-monthly-report.md",
+      "docType": "service_item"
+    },
+    {
+      "file": "seo-aio--seo-software-licens-moz.md",
+      "docType": "service_item"
+    },
+    {
+      "file": "strategic-support--campaign-planning-input.md",
+      "docType": "service_item"
+    },
+    {
+      "file": "strategic-support--influencer-sourcing.md",
+      "docType": "service_item"
+    },
+    {
+      "file": "strategic-support--landlord-relationship.md",
+      "docType": "service_item"
+    },
+    {
+      "file": "strategic-support--local-opportunities-radio-magazines-tc-podcasts.md",
+      "docType": "service_item"
+    },
+    {
+      "file": "strategic-support--marketing-calendars.md",
+      "docType": "service_item"
+    },
+    {
+      "file": "strategic-support--marketing-cms-calls-121.md",
+      "docType": "service_item"
+    },
+    {
+      "file": "strategic-support--marketing-gms-calls-121.md",
+      "docType": "service_item"
+    },
+    {
+      "file": "strategic-support--monthly-marketing-catch-ups-group.md",
+      "docType": "service_item"
+    },
+    {
+      "file": "strategic-support--occupancy-calls.md",
+      "docType": "service_item"
+    },
+    {
+      "file": "strategic-support--sales-marketing-managers-x-2-group-calls.md",
+      "docType": "service_item"
+    },
+    {
+      "file": "strategic-support--site-visits-if-required-travel-accommodation-to-be-paid-for-by-acme.md",
+      "docType": "service_item"
+    }
+  ]
+}
