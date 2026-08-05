@@ -73,6 +73,12 @@ credentials. Unit tests and corpus tooling run entirely offline.
 # Score intent routing. Fails outright on any missed handover.
 .\.venv\Scripts\python.exe -m scripts.eval_router
 
+# Ask the assistant something. Works with no GCP project and no network.
+.\.venv\Scripts\python.exe -m scripts.ask "can we do a billboard for the new branch"
+.\.venv\Scripts\python.exe -m scripts.ask "translate our web pages" --trace
+.\.venv\Scripts\python.exe -m scripts.ask --prompt "merch"   # what the model is sent
+.\.venv\Scripts\python.exe -m scripts.ask                    # interactive, carries context
+
 .\.venv\Scripts\python.exe -m pytest
 .\.venv\Scripts\python.exe -m ruff check .
 .\.venv\Scripts\python.exe -m mypy app scripts
@@ -298,29 +304,65 @@ whoever owns how Acme talks to its own staff can edit them without a deployment.
 unreadable the service refuses to start: a model with no instructions is far more dangerous than
 one that will not boot.
 
-### Seeing what the model would see
+## Answering a turn
+
+[`app/orchestrator/pipeline.py`](app/orchestrator/pipeline.py) runs the whole sequence — route,
+resolve, retrieve, assemble, generate — and returns an `Answer` carrying the text, the verdict, the
+citations, which path produced it, and the `ConversationState` for the next turn. Callers pass that
+state straight back; nothing has to reassemble it.
+
+### The model is optional, on purpose
+
+The verdict is read from the catalog, so a correct answer can be assembled without a model at all.
+[`app/orchestrator/composer.py`](app/orchestrator/composer.py) does exactly that, which makes Gemini
+a genuine enhancement — better wording, odd phrasing, conversation — rather than something
+correctness rests on.
+
+Three things follow:
+
+- The assistant keeps working when Vertex AI is unconfigured, unreachable, rate limited or slow. It
+  gets terser, never wrong. `Answer.degraded` says so, so a quiet outage looks like an outage.
+- An empty completion counts as a failure. Safety filters and token exhaustion both return one, and
+  a blank reply would look like the assistant had nothing to say.
+- Every path is testable with no credentials and no network, which is why the full suite runs in
+  about three seconds.
+
+A handover never reaches the model at all. That wording is fixed and has been reviewed, and a model
+handed an injury to discuss might discuss it.
+
+### Inherited context is a fallback, never a prefix
+
+"And what about merch?" and "and for Bedford?" are both follow-ups, and only the second lacks a
+subject of its own. Prepending the previous service to both meant the first was answered about the
+previous service — the user asked about merch and was told about translation. No word count
+separates those two messages, so the message is resolved on its own terms first and the previous
+subject is consulted only when that finds nothing.
+
+### Asking it something
 
 ```powershell
 .\.venv\Scripts\python.exe -m scripts.ask "can we do a billboard for the new branch"
-.\.venv\Scripts\python.exe -m scripts.ask "translate our web pages" --prompt
-.\.venv\Scripts\python.exe -m scripts.ask          # interactive, carries context between turns
+.\.venv\Scripts\python.exe -m scripts.ask "translate our web pages" --trace
+.\.venv\Scripts\python.exe -m scripts.ask --prompt "merch"   # what the model is sent
+.\.venv\Scripts\python.exe -m scripts.ask                    # interactive, carries context
 ```
 
-No model call, no API key, no network — everything up to the moment of generation is
-deterministic. This is the fastest way to answer "why did it say that?", and it works today, before
-Vertex AI is wired up:
+Same pipeline the deployed service runs. With no GCP project configured it answers from the catalog,
+which needs no API key and no network:
 
 ```
-ROUTE      scoping on 'can you'
-RESOLVER   ambiguous via keyword match: Web pages (Copywriting) [5.81],
-           Translation & localisation (Copywriting) [3.17]
-RETRIEVAL  Read from Web pages*, Translation & localisation*, ... (keyword).
+**Merch (Renders and other designs for venue exteriors)** — This is something we need to quote.
 
-MUST ASK
-A few different services could match that, and they are not handled the same way. Which do you mean?
-1. Web pages (Copywriting)
-2. Translation & localisation (Copywriting)
+This can be done, but it needs quoting before it goes ahead.
+Submit detailed request and await quote
+
+ROUTE      follow_up on 'and what about merch', carrying copywriting--translation-localisation
+RESOLVER   resolved via phrase match on 'Merch': Merch [1.00]
+ANSWERED   deterministic
+CITED      Merch (required by the resolver); Graphic design for emails & templates for emails
 ```
+
+`--trace` is the fastest way to answer "why did it say that?".
 
 ### Tests: invariants versus anchors
 
@@ -334,12 +376,19 @@ Do not delete the assertion.
 
 ## Current state
 
-Working: the whole pipeline up to the model call — catalog, chunking, index, keyword retrieval,
-intent router, scope resolver and context assembly. `scripts.ask` runs a real question through all
-of it and prints the exact prompt. All 81 documents parse into a typed registry with zero errors and 385 searchable
-phrases, chunk into 81 whole-document slices, and the right item is in the top 5 for every case in
-the eval. The resolver returns a verdict, a clarifying question, or a handover, and produces no
-wrong verdicts across the eval set.
+**The assistant answers end to end today, with no GCP project and no network.** Catalog, chunking,
+index, keyword retrieval, intent router, scope resolver, context assembly, the Gemini adapter and
+the deterministic composer are all in place, tied together by `Pipeline` and reachable through
+`scripts.ask`, including multi-turn conversation.
+
+All 81 documents parse into a typed registry with zero errors and 385 searchable phrases, chunk
+into 81 whole-document slices, and the right item is in the top 5 for every case in the eval. The
+resolver returns a verdict, a clarifying question, or a handover, and across the eval set produces
+**no wrong verdicts and no missed handovers** — the two failures that would actually reach a user
+as bad advice.
+
+Gemini on Vertex AI is wired but unexercised: it activates as soon as `GCP_PROJECT_ID` is set, and
+until then every answer comes from the composer.
 
 The corpus itself is unusually clean: `report_corpus` finds no encoding damage, no stray escapes
 and only two non-ASCII characters across 136,000.
@@ -372,8 +421,8 @@ The remaining warnings are cosmetic or expected:
   across two sections. These are real domain overlaps and the resolver disambiguates by asking,
   which is exactly why a similarity score is not allowed to choose the verdict.
 
-Not built yet: embeddings, the Gemini call itself, the budget tracker, the quoting engine, mail,
-and the chat widget.
+Not built yet: embeddings, the HTTP API, the budget tracker, the quoting engine, mail, and the chat
+widget. Gemini has not yet been run against a real project.
 
 ## Inputs still needed
 

@@ -1,115 +1,99 @@
-"""Run a question through the whole pipeline and print what the model would see.
+"""Ask the assistant a question from the terminal.
 
     python -m scripts.ask "can we do a billboard for the new branch"
-    python -m scripts.ask "translate our web pages" --prompt
-    python -m scripts.ask            # interactive
+    python -m scripts.ask "translate our web pages" --trace
+    python -m scripts.ask --prompt "merch"      # show what the model is sent
+    python -m scripts.ask                       # interactive, carries context
 
-No model call, no API key, no network. Everything up to the moment of
-generation is deterministic, so this shows the real route, the real verdict and
-the real prompt.
-
-This is the fastest way to answer "why did it say that?", and it works before
-Vertex AI is wired up at all.
+Runs the same pipeline the deployed service runs. With no GCP project
+configured it answers deterministically from the catalog, which needs no API
+key and no network, so the whole thing is usable today.
 """
 
 from __future__ import annotations
 
 import argparse
+import sys
 from pathlib import Path
 
+from app.core.config import get_settings
 from app.core.errors import CatalogError
-from app.knowledge.catalog import load_catalog
-from app.knowledge.index import KnowledgeIndex
-from app.knowledge.manifest import Manifest
-from app.knowledge.retriever import InMemoryRetriever, RetrievalResult
-from app.orchestrator.context import build_context
-from app.orchestrator.resolver import Outcome, Resolution, ScopeResolver
-from app.orchestrator.router import ConversationState, Intent, Route, Router
-
-DEFAULT_INDEX = Path("artifacts/index.json")
-DEFAULT_DOCUMENTS_DIR = Path("documents")
-EVIDENCE_LIMIT = 4
+from app.orchestrator.pipeline import Answer, Pipeline
+from app.orchestrator.router import ConversationState
 
 RULE = "-" * 74
 
 
-class Pipeline:
-    """Everything that happens before the model is called."""
+def _force_utf8_output() -> None:
+    """Print the corpus's own punctuation intact on a Windows console.
 
-    def __init__(self, documents: Path, index_path: Path) -> None:
-        self.catalog = load_catalog(Manifest.load(documents)).catalog
-        self.index = KnowledgeIndex.load_local(index_path)
-        self.retriever = InMemoryRetriever(self.index)
-        self.resolver = ScopeResolver(self.catalog, self.retriever)
-        self.router = Router()
-
-    def run(
-        self, question: str, state: ConversationState
-    ) -> tuple[Route, Resolution, RetrievalResult]:
-        route = self.router.route(question, state)
-
-        if route.intent is Intent.HANDOVER:
-            # Nothing is looked up. The point of a handover is that the
-            # assistant does not engage with the substance at all.
-            resolution = Resolution(Outcome.UNKNOWN, question)
-            return route, resolution, RetrievalResult(mode="skipped")
-
-        resolution = self.resolver.resolve(question)
-        retrieval = self.retriever.retrieve(
-            question, limit=EVIDENCE_LIMIT, force_item_ids=resolution.force_item_ids
-        )
-        return route, resolution, retrieval
+    The default there is cp1252, which cannot encode the em dashes and curly
+    quotes the documents contain. Fixing the stream rather than stripping the
+    characters keeps what is printed identical to what the model is sent.
+    """
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(encoding="utf-8", errors="replace")
 
 
-def show(
-    pipeline: Pipeline, question: str, state: ConversationState, full_prompt: bool
-) -> tuple[Route, Resolution]:
-    route, resolution, retrieval = pipeline.run(question, state)
-    pack = build_context(route, resolution, retrieval)
+def print_answer(answer: Answer, *, trace: bool) -> None:
+    print(f"\n{RULE}")
+    print(answer.text)
 
-    print(f"\n{RULE}\n  {question}\n{RULE}")
-    print(f"\nROUTE      {route.explain()}")
-    print(f"RESOLVER   {resolution.explain()}")
-    print(f"RETRIEVAL  {retrieval.citation_line()}")
+    if answer.degraded:
+        print("\n[the model was unreachable, so this is the deterministic answer]")
 
-    if resolution.decided:
-        print(f"\nVERDICT    {resolution.status_meaning}")
-    elif question_text := resolution.question():
-        print(f"\nMUST ASK\n{question_text}")
+    for note in answer.notes:
+        print(f"\n[{note}]")
 
-    print(f"\nCITED      {'; '.join(pack.citations)}")
-    if pack.notes:
-        for note in pack.notes:
-            print(f"NOTE       {note}")
-    print(f"TOKENS     ~{pack.estimated_tokens}")
-
-    if full_prompt:
-        print(f"\n{RULE}\nPROMPT SENT TO THE MODEL\n{RULE}")
-        print(pack.as_prompt())
-
-    return route, resolution
+    if trace:
+        print(f"\n{RULE}")
+        print(f"ROUTE      {answer.route.explain()}")
+        print(f"RESOLVER   {answer.resolution.explain()}")
+        print(f"ANSWERED   {answer.source}")
+        print(f"CITED      {'; '.join(answer.citations)}")
+        if answer.awaiting_answer:
+            print("WAITING    on the user to choose")
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("question", nargs="*", help="The question to ask.")
-    parser.add_argument("--documents", type=Path, default=DEFAULT_DOCUMENTS_DIR)
-    parser.add_argument("--index", type=Path, default=DEFAULT_INDEX)
+    parser.add_argument("--trace", action="store_true", help="Show how the answer was reached.")
     parser.add_argument("--prompt", action="store_true", help="Print the assembled prompt.")
+    parser.add_argument("--documents", type=Path, help="Override the documents directory.")
+    parser.add_argument("--index", type=Path, help="Override the index artifact.")
     args = parser.parse_args()
+    _force_utf8_output()
+
+    settings = get_settings()
+    if args.documents:
+        settings = settings.model_copy(update={"documents_dir": args.documents})
+    if args.index:
+        settings = settings.model_copy(update={"local_index_path": args.index})
 
     try:
-        pipeline = Pipeline(args.documents, args.index)
-    except CatalogError as exc:
-        print(f"Could not load the corpus: {exc}")
+        pipeline = Pipeline.load(settings)
+    except (CatalogError, OSError) as exc:
+        print(f"Could not start: {exc}")
         return 1
 
-    if pipeline.index.is_empty:
-        print(f"No index at {args.index}. Run `python -m scripts.build_index` first.")
-        return 1
+    if pipeline.model is None:
+        print("[no GCP project configured; answering from the catalog without a model]")
+
+    def handle(question: str, state: ConversationState) -> ConversationState:
+        if args.prompt:
+            *_, pack = pipeline.prepare(question, state)
+            print(f"\n{RULE}\nPROMPT SENT TO THE MODEL\n{RULE}")
+            print(pack.as_prompt())
+            print(f"{RULE}\n~{pack.estimated_tokens} tokens")
+
+        answer = pipeline.answer(question, state)
+        print_answer(answer, trace=args.trace or args.prompt)
+        return answer.next_state
 
     if args.question:
-        show(pipeline, " ".join(args.question), ConversationState(), args.prompt)
+        handle(" ".join(args.question), ConversationState())
         return 0
 
     print("Ask a question, or press Enter on an empty line to quit.")
@@ -121,19 +105,7 @@ def main() -> int:
             return 0
         if not question:
             return 0
-
-        route, resolution = show(pipeline, question, state, args.prompt)
-
-        # Carry the turn forward so follow-ups and clarifying replies behave
-        # here exactly as they will in the real conversation.
-        state = ConversationState(
-            pending_candidates=(
-                resolution.force_item_ids if resolution.outcome is Outcome.AMBIGUOUS else ()
-            ),
-            last_item_ids=resolution.force_item_ids,
-            last_branch=route.branch,
-            last_intent=route.intent,
-        )
+        state = handle(question, state)
 
 
 if __name__ == "__main__":
