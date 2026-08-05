@@ -53,6 +53,19 @@ credentials. Unit tests and corpus tooling run entirely offline.
 # Refresh documents/manifest.json after adding or removing a document.
 .\.venv\Scripts\python.exe -m scripts.generate_manifest
 
+# Raw file statistics: sizes, encoding damage, stray escapes.
+.\.venv\Scripts\python.exe -m scripts.report_corpus
+
+# Read the chunks before paying to embed them. No API calls, no writes.
+.\.venv\Scripts\python.exe -m scripts.preview_chunks --show 5 --full
+
+# Build artifacts/index.json from the corpus.
+.\.venv\Scripts\python.exe -m scripts.build_index
+
+# Score retrieval against evals/retrieval.json. Run before touching a prompt.
+.\.venv\Scripts\python.exe -m scripts.eval_retrieval
+.\.venv\Scripts\python.exe -m scripts.eval_retrieval --case seo-audit   # show the scoring
+
 .\.venv\Scripts\python.exe -m pytest
 .\.venv\Scripts\python.exe -m ruff check .
 .\.venv\Scripts\python.exe -m mypy app scripts
@@ -85,6 +98,61 @@ than stopping at the first, and it distinguishes:
 - **Errors** — a verdict cannot be trusted. Fails the build.
 - **Warnings** — worth a human reading. Does not block.
 
+## Chunking and retrieval
+
+**A service item is one chunk, never split from its verdict.** The largest document in the corpus
+is 2,030 characters, so every one fits whole. A chunk describing what billboards are with no
+status attached is not merely incomplete, it invites the model to supply a status of its own. If a
+document ever does grow large enough to split, the header naming its section, item and verdict is
+repeated on every piece.
+
+Each chunk opens with that header, so a retrieved slice carries its own provenance into the prompt:
+
+```
+[Photography — Billboards]
+Status: On demand — This is something we need to quote
+Use when: outdoor advertising, large format prints, roadside displays, poster ads
+```
+
+`Use when` comes from the document's `Also known as` line. It is a retrieval hint written by
+someone who knows the domain, and it participates in keyword scoring, which is the cheapest
+relevance boost available.
+
+Retrieval is **keyword-first and works with no embeddings at all**. That is deliberate: if it were
+useless without vectors, the corpus or the chunking would be wrong. Scoring combines term rarity,
+three weight tiers (item name and aliases, then section, then body), rarity-weighted word pairs,
+and how much of an item's own name the query accounts for. Two behaviours matter more than the
+formula:
+
+- **Force-include beats scoring.** Once the resolver knows which service is meant, that chunk goes
+  into the pack directly. A job cannot be done without the slice it is about, and a score is a
+  hope rather than a guarantee.
+- **Every result explains itself.** Results carry a mode string and the terms that matched, which
+  is usually what tells you an answer was wrong before you open a log.
+
+### Measuring retrieval
+
+[`evals/retrieval.json`](evals/retrieval.json) holds 25 requests phrased the way an Account Manager
+would write them, not the way the documents are worded, so a case passes only if paraphrase is
+handled. Cases are scored, not asserted, because retrieval quality is a number that moves:
+
+```
+decisive cases:  23
+  rank 1:        20/23 (87%)
+  equal-verdict alternate at rank 1: 3
+ambiguous cases: 2  candidate retained: 2/2
+in top 5:        25/25 (100%)
+```
+
+The eval distinguishes two kinds of near-miss, which is the point of it. Where two items read the
+question differently but carry the **same verdict**, either answer is correct. Where they carry
+**different verdicts**, ranking must not decide: the case is marked `requiresDisambiguation` and
+passes only if the right item is among the candidates for the resolver to offer as a choice.
+
+This started at 56% at rank 1. The gap was almost entirely plural mismatch, documents saying
+`leaflets` while users type `leaflet`, which is why `app/core/keys.py` now stems. Reading the eval
+output found each cause; none of them were visible in the code.
+
 ### Tests: invariants versus anchors
 
 [`tests/test_catalog_parsing.py`](tests/test_catalog_parsing.py) holds **invariants** that are
@@ -97,22 +165,43 @@ Do not delete the assertion.
 
 ## Current state
 
-Working: the service catalog. All 81 documents parse into a typed registry with zero errors,
-385 searchable phrases, and full test coverage of the parser.
+Working: the service catalog, chunking, the index artifact, and keyword retrieval. All 81
+documents parse into a typed registry with zero errors and 385 searchable phrases, chunk into 81
+whole-document slices, and the right item is in the top 5 for every case in the eval.
 
-The validator currently reports 12 warnings, all genuine and none blocking:
+The corpus itself is unusually clean: `report_corpus` finds no encoding damage, no stray escapes
+and only two non-ASCII characters across 136,000.
+
+### Corpus findings that need a human decision
+
+The validator reports 18 warnings. None block the build, but three would give an Account Manager
+the wrong answer and are worth Acme's attention:
+
+| Phrase | Declared alias of | Also the name of | Problem |
+|---|---|---|---|
+| `content strategy` | Content planning (`local`) | SEO content strategy (`in scope`) | verdicts differ |
+| `content planning` | SEO content strategy (`in scope`) | Content planning (`local`) | verdicts differ |
+| `ad editing` | Video editing for ads (`in scope`) | Video editing ad hoc (`quote required`) | verdicts differ |
+
+Each is a phrase one item claims as an alias while it is also the name of a *different* item with
+a *different* verdict. Retrieval obeys the corpus exactly; the corpus is what needs correcting.
+
+Three more are harmless because both items share a verdict, though still worth a look. The
+clearest is `SEO audit`, listed as an alias of **SEO/AIO monthly report** while a separate item
+called **Regular SEO/AIO audits (every 6 months)** exists. Anyone asking about an audit is
+currently pointed at the report.
+
+The remaining warnings are cosmetic or expected:
 
 - Four documents have trailing whitespace in the status field. Parsed correctly, worth tidying.
-- One filename is truncated
-  (`...on-site-pla.md` should be `...on-site-placements.md`). The item id comes from the
-  `Section` and `Item` fields inside the document, so nothing is broken by this.
-- Seven phrases legitimately match more than one item. `video post production` matches three
-  items across two sections, and `billboards` matches both Billboards and Hoarding. These are
-  real domain overlaps and the resolver disambiguates by asking, which is exactly why a
-  similarity score is not allowed to choose the verdict.
+- One filename is truncated (`...on-site-pla.md` should be `...on-site-placements.md`). The item
+  id comes from the `Section` and `Item` fields inside the document, so nothing is broken.
+- Seven phrases legitimately match more than one item. `video post production` matches three items
+  across two sections. These are real domain overlaps and the resolver disambiguates by asking,
+  which is exactly why a similarity score is not allowed to choose the verdict.
 
-Not built yet: chunking and the index, the router and scope resolver, the LLM orchestrator, the
-budget tracker, the quoting engine, mail, and the chat widget.
+Not built yet: embeddings, the router and scope resolver, the LLM orchestrator, the budget
+tracker, the quoting engine, mail, and the chat widget.
 
 ## Inputs still needed
 

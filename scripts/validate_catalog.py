@@ -15,9 +15,9 @@ from collections import Counter
 from pathlib import Path
 
 from app.core.errors import CatalogError
-from app.core.types import Status
+from app.core.types import DocType, Status
 from app.knowledge.catalog import CatalogLoadResult, load_catalog
-from app.knowledge.manifest import DocType, Manifest
+from app.knowledge.manifest import Manifest
 
 DEFAULT_DOCUMENTS_DIR = Path("documents")
 

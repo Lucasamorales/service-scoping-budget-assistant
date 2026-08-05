@@ -15,7 +15,8 @@ import argparse
 import json
 from pathlib import Path
 
-from app.knowledge.manifest import MANIFEST_FILENAME, DocType
+from app.core.types import DocType
+from app.knowledge.manifest import MANIFEST_FILENAME
 
 DEFAULT_DOCUMENTS_DIR = Path("documents")
 

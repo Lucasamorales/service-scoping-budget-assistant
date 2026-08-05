@@ -1,0 +1,174 @@
+{
+  "description": "Realistic requests an Account Manager or branch GM would send, each asserting which catalog item retrieval must surface and what verdict that item carries. Written from the workflow in the project brief, not from the wording of the documents, so a case passes only if paraphrase is handled. 'acceptable' lists items that read the question differently but carry the SAME verdict, so either answer is correct. 'requiresDisambiguation' marks questions that genuinely point at items with DIFFERENT verdicts: ranking must not decide those, so the bar is only that the right item is among the candidates for the resolver to offer as a choice.",
+  "cases": [
+    {
+      "id": "leaflet-new-class",
+      "prompt": "I need a leaflet to hand out for our new class",
+      "expect": "renders-and-other-designs-for-venue-exteriors--posters-leaflets-flyer-designs-in-and-out-of-venue",
+      "expectStatus": "quote_required"
+    },
+    {
+      "id": "billboard-motorway",
+      "prompt": "can we put an advert on a billboard by the motorway",
+      "expect": "photography--billboards",
+      "acceptable": ["photography--hoarding"],
+      "expectStatus": "quote_required",
+      "note": "Hoarding lists 'billboards' as its own alias, so both are defensible."
+    },
+    {
+      "id": "google-reviews",
+      "prompt": "who replies to our Google reviews and TripAdvisor comments",
+      "expect": "organic-social-media-and-community-management--review-management-google-my-business-trip-advisor-facebook-trust-pilot",
+      "acceptable": ["organic-social-media-and-community-management--comment-responses"],
+      "expectStatus": "local",
+      "note": "The question names both reviews and comments. Both items are local, so either answer is right."
+    },
+    {
+      "id": "paid-social",
+      "prompt": "we want to run paid ads on Meta and TikTok this summer",
+      "expect": "paid-ads--social-meta-reddit-linkedin-tiktok",
+      "expectStatus": "in_scope"
+    },
+    {
+      "id": "business-cards",
+      "prompt": "can I get business cards printed for the instructors",
+      "expect": "renders-and-other-designs-for-venue-exteriors--business-cards",
+      "expectStatus": "quote_required"
+    },
+    {
+      "id": "ga4-traffic",
+      "prompt": "I want a report showing our website traffic from GA4",
+      "expect": "analytics-tracking-dashboards--website-reports-ga4",
+      "expectStatus": "in_scope"
+    },
+    {
+      "id": "gm-one-to-one",
+      "prompt": "as a GM can I book a one to one call with marketing",
+      "expect": "strategic-support--marketing-gms-calls-121",
+      "acceptable": ["strategic-support--marketing-cms-calls-121"],
+      "expectStatus": "out_of_scope"
+    },
+    {
+      "id": "one-off-email",
+      "prompt": "we need a one off email blast for a promotion this weekend",
+      "expect": "email-marketing-sms--ad-hoc-email-requests-typically-4-5-per-month",
+      "expectStatus": "quote_required"
+    },
+    {
+      "id": "translate-spanish",
+      "prompt": "can you translate our web pages into Spanish",
+      "expect": "copywriting--translation-localisation",
+      "expectStatus": "local",
+      "requiresDisambiguation": true,
+      "note": "Names the action (translate, local) and the object (web pages, in scope). Different verdicts, so this must be asked about rather than ranked."
+    },
+    {
+      "id": "merch-tshirts",
+      "prompt": "we want branded merchandise, t-shirts and caps for staff",
+      "expect": "renders-and-other-designs-for-venue-exteriors--merch",
+      "expectStatus": "quote_required"
+    },
+    {
+      "id": "facebook-inbox",
+      "prompt": "who manages the messages coming into our Facebook inbox",
+      "expect": "organic-social-media-and-community-management--inbox-management",
+      "expectStatus": "local"
+    },
+    {
+      "id": "seo-audit",
+      "prompt": "when are we due another SEO audit",
+      "expect": "seo-aio--regular-seo-aio-audits-every-6-months",
+      "acceptable": ["seo-aio--seo-aio-monthly-report"],
+      "expectStatus": "in_scope",
+      "note": "The monthly report declares 'SEO audit' as one of its own aliases, so the corpus itself sends this phrase there. Both are in scope, so no harm, but the alias is worth reviewing."
+    },
+    {
+      "id": "qr-tracking",
+      "prompt": "can we track scans on the QR codes on our posters",
+      "expect": "analytics-tracking-dashboards--qr-code-reports",
+      "expectStatus": "out_of_scope"
+    },
+    {
+      "id": "venue-signage",
+      "prompt": "we need new signage designed for inside the venue",
+      "expect": "renders-and-other-designs-for-venue-exteriors--in-venue-signage",
+      "acceptable": ["photography--signage"],
+      "expectStatus": "quote_required"
+    },
+    {
+      "id": "abandoned-cart",
+      "prompt": "set up emails for people who abandon their booking",
+      "expect": "email-marketing-sms--abandoned-carts-flows",
+      "expectStatus": "in_scope"
+    },
+    {
+      "id": "schema-markup",
+      "prompt": "add schema markup to our site",
+      "expect": "seo-aio--schema-markup-creation-and-maintenance",
+      "expectStatus": "in_scope"
+    },
+    {
+      "id": "magazine-photos",
+      "prompt": "we need photography for a magazine advert",
+      "expect": "photography--magazines-and-newspapers",
+      "expectStatus": "quote_required"
+    },
+    {
+      "id": "site-visit",
+      "prompt": "could someone from the marketing team come and visit our branch",
+      "expect": "strategic-support--site-visits-if-required-travel-accommodation-to-be-paid-for-by-acme",
+      "expectStatus": "quote_required"
+    },
+    {
+      "id": "marketing-calendar",
+      "prompt": "can we get help planning the marketing calendar for next quarter",
+      "expect": "strategic-support--marketing-calendars",
+      "acceptable": ["strategic-support--campaign-planning-input"],
+      "expectStatus": "in_scope"
+    },
+    {
+      "id": "video-edit-existing-ad",
+      "prompt": "we already shot some footage, can you edit it into an advert",
+      "expect": "design-creative--video-editing-for-ads-pre-existing-or-created-by-others",
+      "acceptable": [
+        "photography--video-editing-for-organic-pre-existing-or-created-by-others",
+        "photography--video-editing-for-class-waiver-or-in-venue-screens"
+      ],
+      "expectStatus": "in_scope",
+      "requiresDisambiguation": true,
+      "note": "Three video editing items across two sections, and they do not share a verdict: the Design one is in scope while the Photography ones need a quote. The clearest case in the corpus for asking rather than guessing."
+    },
+    {
+      "id": "email-template",
+      "prompt": "we need a new template designing for our newsletters",
+      "expect": "email-marketing-sms--email-template-creation",
+      "acceptable": ["design-creative--graphic-design-for-emails-templates-for-emails"],
+      "expectStatus": "in_scope"
+    },
+    {
+      "id": "influencer",
+      "prompt": "can you find local influencers to come and fly with us",
+      "expect": "strategic-support--influencer-sourcing",
+      "expectStatus": "local"
+    },
+    {
+      "id": "occupancy-call",
+      "prompt": "can we set up a regular call about occupancy",
+      "expect": "strategic-support--occupancy-calls",
+      "expectStatus": "out_of_scope"
+    },
+    {
+      "id": "google-search-ads",
+      "prompt": "I want to advertise on Google search",
+      "expect": "paid-ads--search-google-ads-microsoft-ads",
+      "expectStatus": "in_scope"
+    },
+    {
+      "id": "screens-graphics",
+      "prompt": "graphics for the screens in reception",
+      "expect": "renders-and-other-designs-for-venue-exteriors--graphics-for-screens",
+      "acceptable": ["photography--video-editing-for-class-waiver-or-in-venue-screens"],
+      "expectStatus": "in_scope"
+    }
+  ]
+}

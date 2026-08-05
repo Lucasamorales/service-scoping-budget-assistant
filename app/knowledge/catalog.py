@@ -25,9 +25,9 @@ from pathlib import Path
 from types import MappingProxyType
 
 from app.core.errors import CatalogError, MalformedDocumentError, UnknownStatusCodeError
-from app.core.keys import normalize_term, service_key
-from app.core.types import AtAGlance, ServiceItem, Status
-from app.knowledge.manifest import DocType, Manifest
+from app.core.keys import content_tokens, normalize_term, service_key
+from app.core.types import AtAGlance, DocType, ServiceItem, Status
+from app.knowledge.manifest import Manifest
 
 __all__ = [
     "CatalogIssue",
@@ -421,5 +421,58 @@ def _cross_check(catalog: ServiceCatalog) -> list[CatalogIssue]:
                     f"({', '.join(item_ids)}); the resolver will have to disambiguate",
                 )
             )
+
+    issues.extend(_check_aliases_against_other_names(catalog))
+    return issues
+
+
+def _check_aliases_against_other_names(catalog: ServiceCatalog) -> list[CatalogIssue]:
+    """Find aliases that describe a different item better than their own.
+
+    A subtler collision than two items sharing an alias string. The monthly SEO
+    report lists "SEO audit" among its aliases while a separate item called
+    "Regular SEO/AIO audits" exists, so anyone asking about an audit is pointed
+    at the report. Retrieval is obeying the corpus exactly; the corpus is wrong.
+
+    Only aliases of two or more words are considered. Single words overlap
+    constantly and flagging them would bury the real cases.
+    """
+    names = {item.item_id: frozenset(content_tokens(item.item)) for item in catalog}
+    issues: list[CatalogIssue] = []
+
+    for item in catalog:
+        for alias in item.aliases:
+            alias_tokens = frozenset(content_tokens(alias))
+            if len(alias_tokens) < 2:
+                continue
+            for other_id, other_name in names.items():
+                if other_id == item.item_id or not alias_tokens <= other_name:
+                    continue
+
+                other = catalog.require(other_id)
+                # Whether the two items carry the same verdict is what decides
+                # how urgent this is. Same verdict misdirects the explanation;
+                # different verdict misdirects the answer.
+                if other.status is item.status:
+                    consequence = (
+                        f"both are {item.status.value}, so the verdict is unaffected"
+                    )
+                    severity = Severity.WARNING
+                else:
+                    consequence = (
+                        f"VERDICTS DIFFER: this item is {item.status.value} but "
+                        f"{other_id} is {other.status.value}, so that phrase returns "
+                        f"the wrong answer"
+                    )
+                    severity = Severity.WARNING
+
+                issues.append(
+                    CatalogIssue(
+                        severity,
+                        item.source,
+                        f"alias {alias!r} is contained in the name of {other_id}; "
+                        f"{consequence}",
+                    )
+                )
 
     return issues

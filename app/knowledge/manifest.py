@@ -16,36 +16,12 @@ from __future__ import annotations
 import json
 from collections.abc import Iterator
 from dataclasses import dataclass
-from enum import StrEnum
 from pathlib import Path
 
 from app.core.errors import CatalogError
+from app.core.types import DocType
 
 MANIFEST_FILENAME = "manifest.json"
-
-
-class DocType(StrEnum):
-    """What kind of document this is, and therefore how it is handled."""
-
-    SERVICE_ITEM = "service_item"
-    """One row of the service breakdown, carrying an authoritative status."""
-
-    GLOSSARY = "glossary"
-    """Branch and country reference data."""
-
-    DIRECTORY = "directory"
-    """Who is responsible for what, per branch and per country."""
-
-    BUSINESS_LOGIC = "business_logic"
-    """Verdict modifiers, thresholds and routing rules."""
-
-    META = "meta"
-    """Source for the always-on prompt. Excluded from retrieval so the
-    assistant never cites its own instructions back as evidence."""
-
-    @property
-    def excluded_from_retrieval(self) -> bool:
-        return self is DocType.META
 
 
 @dataclass(frozen=True, slots=True)

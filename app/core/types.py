@@ -13,7 +13,37 @@ from enum import StrEnum
 
 from app.core.errors import UnknownStatusCodeError
 
-__all__ = ["AtAGlance", "ServiceItem", "Status"]
+__all__ = ["AtAGlance", "Chunk", "DocType", "ServiceItem", "Status"]
+
+
+class DocType(StrEnum):
+    """What kind of document this is, and therefore how it is handled.
+
+    Author-declared in ``documents/manifest.json``. No heuristic reliably tells
+    a service definition from a glossary from a set of pricing rules, and this
+    choice drives both the chunking strategy and what retrieval is allowed to
+    return for a given job.
+    """
+
+    SERVICE_ITEM = "service_item"
+    """One row of the service breakdown, carrying an authoritative status."""
+
+    GLOSSARY = "glossary"
+    """Branch and country reference data."""
+
+    DIRECTORY = "directory"
+    """Who is responsible for what, per branch and per country."""
+
+    BUSINESS_LOGIC = "business_logic"
+    """Verdict modifiers, thresholds and routing rules."""
+
+    META = "meta"
+    """Source for the always-on prompt. Excluded from retrieval so the
+    assistant never cites its own instructions back as evidence."""
+
+    @property
+    def excluded_from_retrieval(self) -> bool:
+        return self is DocType.META
 
 
 class Status(StrEnum):
@@ -121,3 +151,39 @@ class ServiceItem:
         embeddings on the short, blunt phrasing real requests use.
         """
         return (self.item, *self.aliases)
+
+
+@dataclass(frozen=True, slots=True)
+class Chunk:
+    """A unit of retrievable text.
+
+    ``content`` is self-describing: it opens with a header naming the section,
+    the item and the verdict, so a retrieved chunk carries its own provenance
+    into the prompt and the model can cite it without a separate instruction
+    explaining what it is reading.
+    """
+
+    chunk_id: str
+    """``{source}:{chunk_index}``. Stable, and the deduplication key."""
+
+    content: str
+    source: str
+    doc_type: DocType
+    chunk_index: int
+    """Order within the source document. Load bearing for neighbour-window
+    expansion and for reconstructing a whole document from its parts."""
+
+    item_id: str | None = None
+    """Links a service item chunk back to its authoritative catalog entry."""
+
+    section_title: str | None = None
+    section: str | None = None
+    """The catalog section, scored as its own weaker tier so that asking about
+    "photography for a magazine" credits every Photography item without a
+    section match ever outranking a match on the item itself."""
+    use_when: tuple[str, ...] = ()
+    """Human-written retrieval hints, from the ``Also known as`` line. These
+    participate in keyword scoring, which is the cheapest relevance boost
+    available and needs no embedding."""
+
+    embedding: tuple[float, ...] | None = None
