@@ -277,6 +277,11 @@ class ServiceCatalog:
     def __iter__(self) -> Iterator[ServiceItem]:
         return iter(self.items.values())
 
+    @property
+    def item_ids(self) -> frozenset[str]:
+        """Every known id, for validating ids that arrive from outside."""
+        return frozenset(self.items)
+
     def get(self, item_id: str) -> ServiceItem | None:
         return self.items.get(item_id)
 

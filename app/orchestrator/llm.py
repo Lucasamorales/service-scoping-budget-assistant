@@ -5,10 +5,16 @@ verdict, choose a service, or judge whether something is in scope - those are
 settled before it is called, and the prompt hands it the conclusion. Its job is
 wording.
 
-That keeps this module small and its failure modes cheap. Every error path here
-returns rather than raises, and the caller falls back to
-:mod:`app.orchestrator.composer`, which answers correctly from the same facts
-without a model. A timeout costs polish, not correctness.
+Failure is raised, not returned. :class:`ModelUnavailableError` is the single
+signal for "this model produced nothing", and the caller answers from
+:mod:`app.orchestrator.composer` instead. Raising rather than returning a
+sentinel matters for streaming: a generator that fails halfway through has
+already emitted text, and the caller has to be able to tell that apart from a
+generator that ended normally.
+
+An empty completion is *not* an error here. It is a successful call with
+useless output, which the pipeline handles separately, because safety filters
+and token exhaustion both produce one and they deserve different logs.
 
 The SDK is imported inside the client rather than at module scope so the whole
 application stays importable without the ``cloud`` extra installed.
@@ -16,6 +22,7 @@ application stays importable without the ``cloud`` extra installed.
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from dataclasses import dataclass
 from typing import Any, Protocol
 
@@ -23,29 +30,28 @@ import structlog
 
 from app.core.config import Settings
 
-__all__ = ["LanguageModel", "ModelReply", "VertexGemini", "build_model"]
+__all__ = [
+    "DETERMINISTIC",
+    "LanguageModel",
+    "ModelReply",
+    "ModelUnavailableError",
+    "VertexGemini",
+    "build_model",
+]
 
 logger = structlog.get_logger(__name__)
 
 DETERMINISTIC = "deterministic"
 
-REQUEST_TIMEOUT_SECONDS = 20
-"""Past this, a person waiting on a scoping answer is better served by the
-terse deterministic reply than by a slow polished one."""
+
+class ModelUnavailableError(RuntimeError):
+    """The model could not be reached, or failed while answering."""
 
 
 @dataclass(frozen=True, slots=True)
 class ModelReply:
-    """What the model produced, and whether it really produced it."""
-
     text: str
     model: str
-    degraded: bool = False
-    """True when the model could not be reached and the text came from
-    elsewhere. Surfaced to the caller so a quiet outage is visible rather than
-    being mistaken for a terse day."""
-
-    error: str | None = None
 
 
 class LanguageModel(Protocol):
@@ -56,13 +62,20 @@ class LanguageModel(Protocol):
 
     def generate(self, prompt: str) -> ModelReply: ...
 
+    def stream(self, prompt: str) -> Iterator[str]: ...
+
 
 class VertexGemini:
     """Gemini on Vertex AI.
 
-    Constructed lazily: the client is not built until the first call, so an
-    unreachable or misconfigured Vertex does not prevent the service starting
-    and answering from the catalog.
+    Connected lazily, so an unreachable or misconfigured Vertex does not stop
+    the service starting and answering from the catalog.
+
+    Every SDK call is wrapped in a bare ``except Exception``, deliberately. The
+    client raises transport errors, quota errors, authentication errors and
+    safety refusals as unrelated types across several packages, and the caller
+    treats all of them identically: fall back to the composer. Enumerating them
+    would mean a new SDK version could crash a turn that should have degraded.
     """
 
     def __init__(self, settings: Settings) -> None:
@@ -74,18 +87,27 @@ class VertexGemini:
     def name(self) -> str:
         return self._settings.vertex_chat_model
 
-    def _connect(self) -> Any | None:
+    @property
+    def _config(self) -> dict[str, Any]:
+        return {
+            "temperature": self._settings.temperature,
+            "max_output_tokens": self._settings.max_output_tokens,
+        }
+
+    def _connect(self) -> Any:
         if self._client is not None:
             return self._client
         if self._unavailable is not None:
-            return None
+            # Remembered, so a broken configuration costs one attempt rather
+            # than one per turn for the life of the container.
+            raise ModelUnavailableError(self._unavailable)
 
         try:
             from google import genai
-        except ImportError:
+        except ImportError as exc:
             self._unavailable = "google-genai is not installed; install the 'cloud' extra"
             logger.warning("llm.sdk_missing", detail=self._unavailable)
-            return None
+            raise ModelUnavailableError(self._unavailable) from exc
 
         try:
             self._client = genai.Client(
@@ -93,12 +115,10 @@ class VertexGemini:
                 project=self._settings.gcp_project_id,
                 location=self._settings.gcp_region,
             )
-        except Exception as exc:  # noqa: BLE001 - the SDK raises many types
-            # Remembered, so a broken configuration costs one attempt rather
-            # than one per turn for the life of the container.
+        except Exception as exc:
             self._unavailable = str(exc)
             logger.error("llm.connect_failed", error=self._unavailable)
-            return None
+            raise ModelUnavailableError(self._unavailable) from exc
 
         logger.info(
             "llm.connected",
@@ -110,31 +130,27 @@ class VertexGemini:
 
     def generate(self, prompt: str) -> ModelReply:
         client = self._connect()
-        if client is None:
-            return ModelReply("", self.name, degraded=True, error=self._unavailable)
-
         try:
             response = client.models.generate_content(
-                model=self.name,
-                contents=prompt,
-                config={
-                    "temperature": self._settings.temperature,
-                    "max_output_tokens": self._settings.max_output_tokens,
-                },
+                model=self.name, contents=prompt, config=self._config
             )
-        except Exception as exc:  # noqa: BLE001 - transport, quota, safety, all opaque
+        except Exception as exc:
             logger.error("llm.generate_failed", model=self.name, error=str(exc))
-            return ModelReply("", self.name, degraded=True, error=str(exc))
+            raise ModelUnavailableError(str(exc)) from exc
 
-        text = (getattr(response, "text", "") or "").strip()
-        if not text:
-            # An empty completion is a real outcome: safety filters and token
-            # exhaustion both produce one. Treated as a failure so the caller
-            # falls back rather than showing a blank reply.
-            logger.warning("llm.empty_response", model=self.name)
-            return ModelReply("", self.name, degraded=True, error="empty response")
+        return ModelReply(getattr(response, "text", "") or "", self.name)
 
-        return ModelReply(text, self.name)
+    def stream(self, prompt: str) -> Iterator[str]:
+        client = self._connect()
+        try:
+            for chunk in client.models.generate_content_stream(
+                model=self.name, contents=prompt, config=self._config
+            ):
+                if text := getattr(chunk, "text", ""):
+                    yield text
+        except Exception as exc:
+            logger.error("llm.stream_failed", model=self.name, error=str(exc))
+            raise ModelUnavailableError(str(exc)) from exc
 
 
 def build_model(settings: Settings) -> LanguageModel | None:

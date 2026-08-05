@@ -43,7 +43,7 @@ import structlog
 from app.core.keys import content_tokens
 from app.core.types import ServiceItem, Status
 from app.knowledge.catalog import ServiceCatalog
-from app.knowledge.retriever import Retriever
+from app.knowledge.retriever import Retriever, ScoredChunk
 
 __all__ = ["Candidate", "Outcome", "Resolution", "ScopeResolver"]
 
@@ -61,6 +61,13 @@ Prefer UNKNOWN over a weak guess: a wrong verdict costs more than a handover."""
 RIVAL_FLOOR = 0.5
 """How close a runner-up must be, as a fraction of the leader's score, before
 it can be considered at all."""
+
+MIN_SINGLE_TERM_COVERAGE = 0.5
+"""How much of an item's name a *lone* matched term must account for.
+
+Applies only when the request matched exactly one term. "Merch" is one word and
+the item's entire identity, so it resolves; "one" is one word from somebody's
+body text, so it does not. See :func:`_is_evidence`."""
 
 MIN_RIVAL_COVERAGE = 0.25
 """How much of its own name a runner-up must account for to count as a real
@@ -289,7 +296,7 @@ class ScopeResolver:
         hits = [
             hit
             for hit in self._retriever.retrieve(query, limit=MAX_CANDIDATES + 1).hits
-            if hit.chunk.item_id and hit.score >= MIN_CONFIDENT_SCORE
+            if hit.chunk.item_id and hit.score >= MIN_CONFIDENT_SCORE and _is_evidence(hit)
         ]
         if not hits:
             return Resolution(Outcome.UNKNOWN, query, method="keyword")
@@ -366,6 +373,24 @@ class ScopeResolver:
             matched_phrase=matched_phrase,
             method=method,
         )
+
+
+def _is_evidence(hit: ScoredChunk) -> bool:
+    """Whether a hit identifies a service, or merely shares a word with one.
+
+    A score alone cannot tell these apart, because scores are normalised by
+    query length: a one-word message puts its entire weight on a single term,
+    so any rare word it happens to contain scores as highly as a fully
+    specified request. The bare word "one" scored 12 against an item whose
+    body mentions it once, comfortably clearing every threshold.
+
+    Raising the threshold would not fix that - it would only reject genuine
+    short requests like "merch" alongside it. The distinction is not how much
+    the query scored but *what it named*: one term is enough when that term is
+    most of the item's identity, and never enough when it is a word from the
+    body.
+    """
+    return len(hit.matched) > 1 or hit.coverage >= MIN_SINGLE_TERM_COVERAGE
 
 
 def _contains(haystack: tuple[str, ...], needle: tuple[str, ...]) -> bool:

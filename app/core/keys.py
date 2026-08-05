@@ -96,8 +96,24 @@ STOPWORDS: frozenset[str] = frozenset(
     is are was were be been being am do does did doing have has had having would could
     need needs needed want wants like get gets got make makes made please help
     who what when where why how which whose whom whether
+    yes yeah yep no nope ok okay okey sure thanks thank cheers maybe perhaps sorry
+    one two three four five first second third fourth fifth last next another
     """.split()  # noqa: SIM905  prose reads and edits better than a hundred quoted entries
 )
+"""Words that carry no signal about *which service* is meant.
+
+The last two lines are the ones that earn their place. Conversational filler
+and ordinals arrive constantly - people answer a clarifying question with "the
+first one" - and they are not evidence of anything. Left in, "one" was rare
+enough across 81 documents to score 12 on its own and won a confident verdict
+for an unrelated email item, because a one-word query concentrates all of the
+length-normalised score onto a single term.
+
+Digits are deliberately absent: "4-5 per month" and "every 6 months" appear in
+item names, so numerals do distinguish services even though number *words* do
+not. Ordinals are safe to drop because the router reads them from the raw text
+before tokenisation, so "the second one" still selects the second option.
+"""
 
 
 def stem(token: str) -> str:

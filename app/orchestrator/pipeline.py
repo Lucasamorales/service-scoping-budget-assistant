@@ -11,6 +11,7 @@ the answer says so. Nothing about the verdict changes.
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from dataclasses import dataclass, field
 
 import structlog
@@ -23,15 +24,61 @@ from app.knowledge.manifest import Manifest
 from app.knowledge.retriever import InMemoryRetriever, RetrievalResult
 from app.orchestrator.composer import compose
 from app.orchestrator.context import ContextPack, build_context, load_system_prompt
-from app.orchestrator.llm import DETERMINISTIC, LanguageModel, build_model
+from app.orchestrator.llm import (
+    DETERMINISTIC,
+    LanguageModel,
+    ModelUnavailableError,
+    build_model,
+)
 from app.orchestrator.resolver import Outcome, Resolution, ScopeResolver
 from app.orchestrator.router import ConversationState, Intent, Route, Router
 
-__all__ = ["Answer", "Pipeline"]
+__all__ = ["Answer", "Pipeline", "StreamEnd", "StreamStart", "TextPiece"]
 
 logger = structlog.get_logger(__name__)
 
 EVIDENCE_LIMIT = 4
+
+
+@dataclass(frozen=True, slots=True)
+class StreamStart:
+    """Everything known before generation begins - which is everything that
+    matters.
+
+    The verdict is a lookup, so it is settled the moment the request is
+    understood. Emitting it first lets a client render the decision while the
+    prose is still being written, and means a dropped connection mid-answer
+    still delivered the part that carries the consequences.
+    """
+
+    route: Route
+    resolution: Resolution
+    citations: tuple[str, ...]
+    notes: tuple[str, ...]
+    next_state: ConversationState
+
+    @property
+    def awaiting_answer(self) -> bool:
+        return self.resolution.outcome is Outcome.AMBIGUOUS
+
+
+@dataclass(frozen=True, slots=True)
+class TextPiece:
+    """A fragment of the answer, as it is produced."""
+
+    text: str
+
+
+@dataclass(frozen=True, slots=True)
+class StreamEnd:
+    """The last event of a stream: how it went, and what it added up to."""
+
+    text: str
+    source: str
+    degraded: bool = False
+    truncated: bool = False
+    """The model failed *after* emitting text. Nothing can be retracted at that
+    point, so the caller keeps what arrived and tells the user it is partial."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -162,27 +209,97 @@ class Pipeline:
         logger.info("pipeline.answered", question=question, detail=answer.explain())
         return answer
 
+    def stream(
+        self, question: str, state: ConversationState | None = None
+    ) -> Iterator[StreamStart | TextPiece | StreamEnd]:
+        """Answer incrementally: one :class:`StreamStart`, then text, then one
+        :class:`StreamEnd`.
+
+        The verdict rides in the first event, before any prose, because it is a
+        lookup rather than a completion. That is the main reason streaming is
+        worth having here at all.
+
+        Falling back is only possible until the first fragment is emitted;
+        after that the bytes are gone. So a failure before the first fragment
+        is invisible to the user, and a failure after it is reported as
+        truncation rather than by silently appending a second, different
+        answer.
+        """
+        route, resolution, retrieval, pack = self.prepare(question, state)
+        fallback = compose(route, resolution, retrieval)
+
+        yield StreamStart(
+            route=route,
+            resolution=resolution,
+            citations=pack.citations,
+            notes=pack.notes,
+            next_state=_carry_forward(route, resolution),
+        )
+
+        model = self._model_for(route)
+        if model is None:
+            yield TextPiece(fallback)
+            yield StreamEnd(fallback, DETERMINISTIC)
+            return
+
+        pieces: list[str] = []
+
+        try:
+            for piece in model.stream(pack.as_prompt()):
+                pieces.append(piece)
+                yield TextPiece(piece)
+        except ModelUnavailableError as exc:
+            if not pieces:
+                logger.warning("pipeline.stream_degraded", error=str(exc))
+                yield TextPiece(fallback)
+                yield StreamEnd(fallback, DETERMINISTIC, degraded=True)
+                return
+
+            logger.error("pipeline.stream_truncated", error=str(exc), emitted=len(pieces))
+            yield StreamEnd("".join(pieces), model.name, truncated=True)
+            return
+
+        text = "".join(pieces).strip()
+        if not text:
+            # An empty completion is a real outcome, not a transport failure.
+            # Nothing has reached the user yet, so the fallback still works.
+            logger.warning("pipeline.stream_empty", model=model.name)
+            yield TextPiece(fallback)
+            yield StreamEnd(fallback, DETERMINISTIC, degraded=True)
+            return
+
+        yield StreamEnd(text, model.name)
+
+    def _model_for(self, route: Route) -> LanguageModel | None:
+        """The model that should write this turn, if any.
+
+        A handover gets none. That wording is fixed and has been reviewed, and
+        a model handed an injury to discuss might discuss it.
+        """
+        if route.intent is Intent.HANDOVER:
+            return None
+        return self.model
+
     def _generate(
         self, pack: ContextPack, fallback: str, route: Route
     ) -> tuple[str, str, bool]:
         """Ask the model, and fall back without ceremony if it cannot answer."""
-        if self.model is None:
+        model = self._model_for(route)
+        if model is None:
             return fallback, DETERMINISTIC, False
 
-        if route.intent is Intent.HANDOVER:
-            # The handover wording is fixed and has been reviewed. Sending it
-            # through a model could only rephrase a statement that says what
-            # it needs to say already.
-            return fallback, DETERMINISTIC, False
-
-        reply = self.model.generate(pack.as_prompt())
+        try:
+            reply = model.generate(pack.as_prompt())
+        except ModelUnavailableError as exc:
+            logger.warning("pipeline.model_unavailable", error=str(exc))
+            return fallback, DETERMINISTIC, True
 
         # Checked here rather than trusting the client, because every model
         # implementation has to clear this bar. Blank output is a real outcome
         # - safety filters and token exhaustion both produce it - and showing
         # it would look like the assistant had nothing to say.
-        if reply.degraded or not reply.text.strip():
-            logger.warning("pipeline.model_degraded", error=reply.error)
+        if not reply.text.strip():
+            logger.warning("pipeline.model_empty", model=reply.model)
             return fallback, DETERMINISTIC, True
         return reply.text.strip(), reply.model, False
 

@@ -12,11 +12,11 @@ from __future__ import annotations
 
 import pytest
 
-from app.core.types import Status
+from app.core.types import Chunk, DocType, Status
 from app.knowledge.chunking import chunk_service_item
 from app.knowledge.index import KnowledgeIndex
-from app.knowledge.retriever import InMemoryRetriever
-from app.orchestrator.resolver import Outcome, ScopeResolver
+from app.knowledge.retriever import InMemoryRetriever, ScoredChunk
+from app.orchestrator.resolver import Outcome, ScopeResolver, _is_evidence
 
 
 @pytest.fixture(scope="module")
@@ -39,6 +39,28 @@ class TestDegradedInputs:
 
     def test_nonsense_is_unknown_rather_than_a_guess(self, resolver: ScopeResolver) -> None:
         assert resolver.resolve("xyzzy plugh frobnicate").outcome is Outcome.UNKNOWN
+
+    @pytest.mark.parametrize(
+        "filler",
+        ["one", "the first one", "the second one", "yes", "no thanks", "ok", "maybe later"],
+    )
+    def test_conversational_filler_never_earns_a_verdict(
+        self, resolver: ScopeResolver, filler: str
+    ) -> None:
+        """Regression, and the worst class of bug this system can have.
+
+        "one" was rare enough across 81 documents to score 12 on its own and
+        won a confident verdict for an unrelated email item, because a one-word
+        query concentrates the whole length-normalised score onto one term.
+        """
+        assert resolver.resolve(filler).status is None
+
+    def test_a_lone_word_that_is_the_whole_name_still_resolves(
+        self, resolver: ScopeResolver
+    ) -> None:
+        """The other side of the guard above. Rejecting every single-term match
+        would throw away legitimate one-word requests."""
+        assert resolver.resolve("merch").status is Status.QUOTE_REQUIRED
 
     def test_unknown_carries_no_verdict(self, resolver: ScopeResolver) -> None:
         """The failure this prevents is an Account Manager being told a
@@ -148,6 +170,41 @@ class TestProvenance:
 
     def test_unknown_forces_nothing(self, resolver: ScopeResolver) -> None:
         assert resolver.resolve("xyzzy plugh").force_item_ids == ()
+
+
+class TestSingleTermEvidence:
+    """``_is_evidence`` decides whether a hit identifies a service or merely
+    shares a word with one. Tested directly rather than through a corpus word,
+    so the invariant does not depend on which words happen to be in the
+    documents today."""
+
+    @staticmethod
+    def hit(matched: tuple[str, ...], coverage: float) -> ScoredChunk:
+        chunk = Chunk(
+            chunk_id="x:0",
+            content="irrelevant",
+            source="x.md",
+            doc_type=DocType.SERVICE_ITEM,
+            chunk_index=0,
+            item_id="x",
+        )
+        return ScoredChunk(chunk, score=99.0, matched=matched, coverage=coverage)
+
+    def test_one_term_covering_the_name_is_evidence(self) -> None:
+        assert _is_evidence(self.hit(("merch",), 1.0))
+
+    def test_one_term_covering_almost_none_of_the_name_is_not(self) -> None:
+        """However high it scored. A huge score on one incidental word is what
+        the bare word "one" produced."""
+        assert not _is_evidence(self.hit(("one",), 0.02))
+
+    def test_two_terms_are_evidence_regardless_of_coverage(self) -> None:
+        """Two independent words agreeing on the same item is a different kind
+        of claim from one word appearing in it."""
+        assert _is_evidence(self.hit(("photo", "booth"), 0.0))
+
+    def test_no_matched_terms_is_never_evidence(self) -> None:
+        assert not _is_evidence(self.hit((), 0.0))
 
 
 def test_no_corpus_item_is_unreachable_by_its_own_name(corpus) -> None:

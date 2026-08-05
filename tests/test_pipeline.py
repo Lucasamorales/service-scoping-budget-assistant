@@ -13,8 +13,8 @@ import pytest
 from app.core.types import Status
 from app.knowledge.chunking import chunk_service_item
 from app.knowledge.index import KnowledgeIndex
-from app.orchestrator.llm import DETERMINISTIC, ModelReply
-from app.orchestrator.pipeline import Pipeline
+from app.orchestrator.llm import DETERMINISTIC, ModelReply, ModelUnavailableError
+from app.orchestrator.pipeline import Pipeline, StreamEnd, StreamStart, TextPiece
 from app.orchestrator.resolver import Outcome
 from app.orchestrator.router import ConversationState, Intent
 
@@ -34,6 +34,11 @@ class RecordingModel:
         self.prompts.append(prompt)
         return ModelReply(self.text, self.name)
 
+    def stream(self, prompt: str):
+        self.prompts.append(prompt)
+        for word in self.text.split(" "):
+            yield f"{word} "
+
 
 class BrokenModel:
     """A model that is configured but cannot be reached."""
@@ -47,7 +52,12 @@ class BrokenModel:
 
     def generate(self, prompt: str) -> ModelReply:
         self.calls += 1
-        return ModelReply("", self.name, degraded=True, error="connection refused")
+        raise ModelUnavailableError("connection refused")
+
+    def stream(self, prompt: str):
+        self.calls += 1
+        raise ModelUnavailableError("connection refused")
+        yield  # pragma: no cover - makes this a generator
 
 
 class EmptyModel:
@@ -59,6 +69,24 @@ class EmptyModel:
 
     def generate(self, prompt: str) -> ModelReply:
         return ModelReply("   ", self.name)
+
+    def stream(self, prompt: str):
+        yield "   "
+
+
+class DyingModel:
+    """A model that fails partway through, after text is already on the wire."""
+
+    @property
+    def name(self) -> str:
+        return "dying-model"
+
+    def generate(self, prompt: str) -> ModelReply:
+        return ModelReply("Complete.", self.name)
+
+    def stream(self, prompt: str):
+        yield "The verdict is "
+        raise ModelUnavailableError("stream reset")
 
 
 @pytest.fixture(scope="module")
@@ -249,6 +277,95 @@ class TestDegradedStartup:
     def test_a_paraphrase_without_an_index_is_admitted_not_guessed(self, corpus) -> None:
         pipeline = Pipeline(corpus.catalog, KnowledgeIndex())
         assert pipeline.answer("something to hand out at reception").status is None
+
+
+def collect(pipeline: Pipeline, question: str, state: ConversationState | None = None):
+    events = list(pipeline.stream(question, state))
+    start = events[0]
+    end = events[-1]
+    assert isinstance(start, StreamStart)
+    assert isinstance(end, StreamEnd)
+    pieces = [event.text for event in events if isinstance(event, TextPiece)]
+    return start, pieces, end
+
+
+class TestStreaming:
+    def test_the_shape_is_start_then_text_then_end(self, pipeline: Pipeline) -> None:
+        start, pieces, end = collect(pipeline, "can we order some merch")
+        assert start.resolution.status is Status.QUOTE_REQUIRED
+        assert pieces
+        assert end.text
+
+    def test_the_verdict_arrives_before_any_prose(self, corpus, index) -> None:
+        """The point of streaming here. Scope is a lookup, so the decision is
+        known before a single token is generated."""
+        events = list(
+            with_model(corpus, index, RecordingModel()).stream("can we order some merch")
+        )
+        first = events[0]
+        assert isinstance(first, StreamStart)
+        assert first.resolution.status is Status.QUOTE_REQUIRED
+        assert not any(isinstance(event, TextPiece) for event in events[:1])
+
+    def test_the_streamed_text_matches_the_end_event(self, corpus, index) -> None:
+        _, pieces, end = collect(
+            with_model(corpus, index, RecordingModel("One two three.")), "merch"
+        )
+        assert "".join(pieces).strip() == end.text
+
+    def test_streaming_and_non_streaming_agree_on_the_verdict(self, pipeline: Pipeline) -> None:
+        for question in (
+            "can we order some merch",
+            "can you translate our web pages into Spanish",
+            "can we hire a hot air balloon",
+        ):
+            start, _, _ = collect(pipeline, question)
+            assert start.resolution.status == pipeline.answer(question).status
+
+    def test_a_model_that_fails_before_emitting_falls_back_invisibly(
+        self, corpus, index
+    ) -> None:
+        """Nothing has reached the user yet, so the deterministic answer can
+        still be substituted whole."""
+        _, pieces, end = collect(with_model(corpus, index, BrokenModel()), "merch")
+        assert end.degraded
+        assert not end.truncated
+        assert end.source == DETERMINISTIC
+        assert "we need to quote" in "".join(pieces)
+
+    def test_a_model_that_dies_midway_reports_truncation(self, corpus, index) -> None:
+        """Bytes already sent cannot be retracted. Appending a second, different
+        answer would be worse than admitting the first one stopped."""
+        _, pieces, end = collect(with_model(corpus, index, DyingModel()), "merch")
+        assert end.truncated
+        assert end.text == "".join(pieces)
+        assert "we need to quote" not in end.text
+
+    def test_an_empty_stream_falls_back(self, corpus, index) -> None:
+        _, pieces, end = collect(with_model(corpus, index, EmptyModel()), "merch")
+        assert end.degraded
+        assert end.text.strip()
+        assert "".join(pieces).strip()
+
+    def test_a_handover_streams_the_fixed_wording_and_skips_the_model(
+        self, corpus, index
+    ) -> None:
+        model = RecordingModel()
+        start, pieces, end = collect(
+            with_model(corpus, index, model), "someone was injured in the branch"
+        )
+        assert model.prompts == []
+        assert start.route.needs_a_human
+        assert end.source == DETERMINISTIC
+        assert "safety" in "".join(pieces).lower()
+
+    def test_the_stream_carries_state_forward(self, pipeline: Pipeline) -> None:
+        start, _, _ = collect(pipeline, "can you translate our web pages into Spanish")
+        assert start.awaiting_answer
+        assert start.next_state.pending_candidates
+
+        follow_up, _, _ = collect(pipeline, "the second one", start.next_state)
+        assert follow_up.resolution.status is not None
 
 
 def test_no_answer_ever_mentions_a_price(pipeline: Pipeline) -> None:

@@ -79,6 +79,9 @@ credentials. Unit tests and corpus tooling run entirely offline.
 .\.venv\Scripts\python.exe -m scripts.ask --prompt "merch"   # what the model is sent
 .\.venv\Scripts\python.exe -m scripts.ask                    # interactive, carries context
 
+# Serve the API. Interactive docs at /docs when ENVIRONMENT=local.
+.\.venv\Scripts\python.exe -m uvicorn app.main:app --reload
+
 .\.venv\Scripts\python.exe -m pytest
 .\.venv\Scripts\python.exe -m ruff check .
 .\.venv\Scripts\python.exe -m mypy app scripts
@@ -88,9 +91,11 @@ credentials. Unit tests and corpus tooling run entirely offline.
 
 ```
 app/
-  core/          keys, domain types, errors
+  main.py        the ASGI app: startup loading, CORS, request logging
+  api/           request and response schemas, endpoints
+  core/          keys, domain types, errors, settings, logging
   knowledge/     manifest, catalog parser, chunking, index, retrieval
-  orchestrator/  router, scope resolver, context pack, LLM
+  orchestrator/  router, scope resolver, context pack, LLM, composer, pipeline
   tools/         quoting, budget tracker, mail proposals
   store/         Firestore, Sheets, mailer clients
 scripts/         offline tooling; none of it runs inside the deployed service
@@ -242,7 +247,7 @@ Matching runs in descending order of confidence. **Phrase containment** first �
 alias appearing in the request — which is exact, needs no scoring and no embedding call. Keyword
 scoring is the fallback.
 
-Two rules were forced by real failures rather than designed up front:
+Three rules were forced by real failures rather than designed up front:
 
 - **A phrase only settles a request if it is anchored by a rare word.** The Copywriting section
   names its items after the thing being written, so the corpus contains items called simply
@@ -253,6 +258,13 @@ Two rules were forced by real failures rather than designed up front:
   by rarity-weighted coverage — not when it merely scores close. No score margin works here: one
   case needed the leader 27% ahead to be trusted while another was still a coin toss at 34%.
   Coverage separates them because it asks a different question.
+- **A single matched word only counts when it is most of the item's identity.** The bare word `one`
+  scored **12** and won a confident verdict for an unrelated email item, because scores are
+  normalised by query length and a one-word message puts all its weight on whatever rare word it
+  contains. Raising the threshold would have rejected legitimate requests like `merch` alongside it.
+  The distinction is not how much a query scored but *what it named* — so `merch` resolves and `one`
+  does not. Conversational filler and ordinals are stopwords too, but that alone would only have
+  postponed the problem until the next filler word.
 
 ### Measuring the resolver
 
@@ -261,13 +273,13 @@ the document. It grades on danger rather than accuracy:
 
 ```
   stated a WRONG verdict:   0/25
-  answered well:            21/25 (84%)
-  named the exact item:     13/25
-  asked or handed over when it could have answered: 4/25
+  answered well:            22/25 (88%)
+  named the exact item:     14/25
+  asked or handed over when it could have answered: 3/25
 ```
 
 **Only a wrong verdict fails the run.** Asking costs a turn; wrong advice about what something
-costs is the failure this whole design exists to prevent. The four over-cautious cases are
+costs is the failure this whole design exists to prevent. The three over-cautious cases are
 reported, not gated: tuning them away against 25 handwritten cases would fit the cases rather than
 the problem, and real usage is the honest input for that.
 
@@ -364,6 +376,69 @@ CITED      Merch (required by the resolver); Graphic design for emails & templat
 
 `--trace` is the fastest way to answer "why did it say that?".
 
+## The HTTP service
+
+```powershell
+.\.venv\Scripts\python.exe -m uvicorn app.main:app --reload
+# http://127.0.0.1:8000/docs
+```
+
+| Endpoint | Purpose |
+|---|---|
+| `GET /api/health` | Liveness plus what is actually working |
+| `POST /api/chat` | The finished answer |
+| `POST /api/chat/stream` | The same answer as server-sent events |
+
+The corpus and index load once at startup, so that cost lands during container
+start rather than on somebody's first question. Startup is intolerant of exactly one thing — a
+corpus that will not parse, since without it there are no verdicts — and tolerant of everything
+else.
+
+`/api/health` reports `ok` while running without a model or an index, because the assistant answers
+correctly in both cases. Reporting unhealthy would have Cloud Run restart a working service in a
+loop, turning a reduced capability into an outage.
+
+### The verdict arrives before the prose
+
+```
+event: verdict
+data: {"verdict": {"status": "quote_required", "meaning": "This is something we need to quote",
+                   "service": "Merch"}, "citations": [...], "awaitingAnswer": false}
+
+event: text
+data: {"text": "Merch needs quoting before it "}
+
+event: done
+data: {"text": "...", "source": "deterministic", "degraded": false, "truncated": false,
+       "state": {...}}
+```
+
+Scope is a dictionary lookup, so it is settled before a single token is generated. Sending it first
+means the widget renders the badge immediately, and a connection that drops mid-answer has still
+delivered the part carrying the consequences. `verdict` is a field rather than something to parse
+out of the prose.
+
+`done` always arrives, including after a failure, so a client can rely on it rather than on the
+connection closing.
+
+**A fallback is only possible until the first fragment is sent.** After that the bytes are gone, so
+a model failing before the first fragment is invisible to the user, while one failing after it is
+reported as `truncated` rather than by silently appending a second, different answer.
+
+### State lives on the client
+
+The server holds nothing between turns. `done` and `/api/chat` both return the state for the next
+turn, and the client sends it straight back, which is what lets Cloud Run scale horizontally with no
+session affinity and no shared store. Firestore-backed history can be added for audit without
+changing the contract.
+
+Returned state is **not trusted** on the way back in: item ids are checked against the catalog and
+unknown ones dropped. The blast radius is small — the worst a forged id achieves is a verdict the
+caller could have asked for directly — but a malformed client cannot produce a confusing answer.
+
+Messages are capped at 2,000 characters and unknown fields are rejected, which bounds prompt cost
+and removes the easiest way to bury instructions in padding.
+
 ### Tests: invariants versus anchors
 
 [`tests/test_catalog_parsing.py`](tests/test_catalog_parsing.py) holds **invariants** that are
@@ -376,10 +451,11 @@ Do not delete the assertion.
 
 ## Current state
 
-**The assistant answers end to end today, with no GCP project and no network.** Catalog, chunking,
-index, keyword retrieval, intent router, scope resolver, context assembly, the Gemini adapter and
-the deterministic composer are all in place, tied together by `Pipeline` and reachable through
-`scripts.ask`, including multi-turn conversation.
+**The assistant answers end to end today over HTTP, with no GCP project and no network.** Catalog,
+chunking, index, keyword retrieval, intent router, scope resolver, context assembly, the Gemini
+adapter, the deterministic composer and the FastAPI service with streaming are all in place, tied
+together by `Pipeline` and reachable through either `scripts.ask` or `/api/chat`, including
+multi-turn conversation.
 
 All 81 documents parse into a typed registry with zero errors and 385 searchable phrases, chunk
 into 81 whole-document slices, and the right item is in the top 5 for every case in the eval. The
@@ -421,8 +497,8 @@ The remaining warnings are cosmetic or expected:
   across two sections. These are real domain overlaps and the resolver disambiguates by asking,
   which is exactly why a similarity score is not allowed to choose the verdict.
 
-Not built yet: embeddings, the HTTP API, the budget tracker, the quoting engine, mail, and the chat
-widget. Gemini has not yet been run against a real project.
+Not built yet: embeddings, the budget tracker, the quoting engine, mail, session tokens, rate
+limiting, and the chat widget. Gemini has not yet been run against a real project.
 
 ## Inputs still needed
 
