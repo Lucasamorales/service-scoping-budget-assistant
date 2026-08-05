@@ -59,8 +59,9 @@ credentials. Unit tests and corpus tooling run entirely offline.
 # Read the chunks before paying to embed them. No API calls, no writes.
 .\.venv\Scripts\python.exe -m scripts.preview_chunks --show 5 --full
 
-# Build artifacts/index.json from the corpus.
+# Build artifacts/index.json from the corpus (keyword-only by default).
 .\.venv\Scripts\python.exe -m scripts.build_index
+.\.venv\Scripts\python.exe -m scripts.build_index --embed   # needs GCP_PROJECT_ID
 
 # Score retrieval against evals/retrieval.json. Run before touching a prompt.
 .\.venv\Scripts\python.exe -m scripts.eval_retrieval
@@ -149,6 +150,19 @@ formula:
   hope rather than a guarantee.
 - **Every result explains itself.** Results carry a mode string and the terms that matched, which
   is usually what tells you an answer was wrong before you open a log.
+
+### Embeddings
+
+[`app/knowledge/embeddings.py`](app/knowledge/embeddings.py) adds dense vectors under one contract
+recorded in the index artifact: model and dimensionality must match at build time and query time.
+A mismatch disables dense scoring rather than ranking across different spaces, which would look
+plausible and be quietly wrong.
+
+Documents use `RETRIEVAL_DOCUMENT`, queries use `RETRIEVAL_QUERY`, and truncated vectors are
+unit-normalised after every call. Build with `--embed` once `GCP_PROJECT_ID` is set; without it the
+assistant keeps answering keyword-only. A failed query embedding degrades within the same turn —
+keyword still runs — and a failed *build* embedding refuses to publish, so a half-embedded index
+never reaches production.
 
 ### Measuring retrieval
 
@@ -497,8 +511,9 @@ The remaining warnings are cosmetic or expected:
   across two sections. These are real domain overlaps and the resolver disambiguates by asking,
   which is exactly why a similarity score is not allowed to choose the verdict.
 
-Not built yet: embeddings, the budget tracker, the quoting engine, mail, session tokens, rate
-limiting, and the chat widget. Gemini has not yet been run against a real project.
+Not built yet: the budget tracker, the quoting engine, mail, session tokens, rate limiting, and the
+chat widget. Embeddings and Gemini are wired and activate once `GCP_PROJECT_ID` is set; neither has
+been run against a real project yet.
 
 ## Inputs still needed
 

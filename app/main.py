@@ -51,6 +51,7 @@ async def _lifespan(application: FastAPI) -> AsyncIterator[None]:
         chunks=len(pipeline.index),
         model=pipeline.model.name if pipeline.model else "deterministic",
         embeddings=pipeline.index.has_embeddings,
+        embedder=pipeline.embedder.contract.model if pipeline.embedder else None,
         origins=settings.origins or "all (local only)",
     )
     yield

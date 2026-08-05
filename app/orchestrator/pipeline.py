@@ -19,7 +19,8 @@ import structlog
 from app.core.config import Settings, get_settings
 from app.core.types import Status
 from app.knowledge.catalog import ServiceCatalog, load_catalog
-from app.knowledge.index import KnowledgeIndex
+from app.knowledge.embeddings import Embedder, build_embedder
+from app.knowledge.index import IndexContractError, KnowledgeIndex
 from app.knowledge.manifest import Manifest
 from app.knowledge.retriever import InMemoryRetriever, RetrievalResult
 from app.orchestrator.composer import compose
@@ -128,6 +129,7 @@ class Pipeline:
         index: KnowledgeIndex,
         *,
         model: LanguageModel | None = None,
+        embedder: Embedder | None = None,
         system_prompt: str | None = None,
         branches: tuple[str, ...] = (),
     ) -> None:
@@ -137,6 +139,7 @@ class Pipeline:
         self.resolver = ScopeResolver(catalog, self.retriever)
         self.router = Router(branches)
         self.model = model
+        self.embedder = embedder
         self._system_prompt = system_prompt
 
     @classmethod
@@ -147,21 +150,38 @@ class Pipeline:
         than a crash, and an unconfigured model yields deterministic answers.
         A missing *corpus* is fatal, because without it there are no verdicts
         and the assistant has nothing truthful to say.
+
+        An embedding-contract mismatch disables dense retrieval rather than
+        refusing to start. Cosine distance across models is meaningless, so
+        the alternative to degrading would be quietly wrong ranks.
         """
         settings = settings or get_settings()
         catalog = load_catalog(Manifest.load(settings.documents_dir)).catalog
         index = KnowledgeIndex.load_local(settings.local_index_path)
+        embedder = build_embedder(settings)
 
         if index.is_empty:
             logger.warning(
                 "pipeline.no_index",
                 detail="retrieval disabled; verdicts still resolve by name and alias",
             )
+        elif index.has_embeddings and embedder is not None:
+            try:
+                index.verify_contract(embedder.contract)
+            except IndexContractError as exc:
+                logger.error("pipeline.embed_contract_mismatch", error=str(exc))
+                embedder = None
+        elif index.has_embeddings and embedder is None:
+            logger.info(
+                "pipeline.embeddings_idle",
+                detail="index carries vectors but no embedder is configured; keyword-only",
+            )
 
         return cls(
             catalog,
             index,
             model=build_model(settings),
+            embedder=embedder,
             system_prompt=load_system_prompt(settings.system_prompt_path),
             **overrides,  # type: ignore[arg-type]
         )
@@ -169,7 +189,7 @@ class Pipeline:
     def prepare(
         self, question: str, state: ConversationState | None = None
     ) -> tuple[Route, Resolution, RetrievalResult, ContextPack]:
-        """Everything up to the model call. Deterministic, and cheap to inspect."""
+        """Everything up to the model call. Deterministic once embeddings settle."""
         state = state or ConversationState()
         route = self.router.route(question, state)
 
@@ -182,7 +202,10 @@ class Pipeline:
         else:
             resolution = self._resolve(question, route)
             retrieval = self.retriever.retrieve(
-                question, limit=EVIDENCE_LIMIT, force_item_ids=resolution.force_item_ids
+                question,
+                limit=EVIDENCE_LIMIT,
+                query_vector=self._query_vector(question),
+                force_item_ids=resolution.force_item_ids,
             )
 
         pack = build_context(
@@ -269,6 +292,16 @@ class Pipeline:
             return
 
         yield StreamEnd(text, model.name)
+
+    def _query_vector(self, question: str) -> tuple[float, ...] | None:
+        """Embed the question when both sides of the contract are present.
+
+        Failure returns ``None`` and retrieval continues keyword-only within
+        the same turn. A missed paraphrase is cheaper than a failed answer.
+        """
+        if self.embedder is None or not self.index.has_embeddings:
+            return None
+        return self.embedder.embed_query(question)
 
     def _model_for(self, route: Route) -> LanguageModel | None:
         """The model that should write this turn, if any.
