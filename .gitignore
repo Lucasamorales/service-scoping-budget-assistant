@@ -11,10 +11,14 @@ widget/node_modules/
 !.env.example
 *-service-account.json
 credentials.json
+secrets/
 
 # Built at deploy time from documents/, never committed.
 artifacts/
 index.json
+
+# Local knowledge graph, rebuilt on demand from the working tree.
+graphify-out/
 
 .pytest_cache/
 .mypy_cache/

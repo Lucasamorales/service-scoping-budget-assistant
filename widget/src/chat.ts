@@ -1,16 +1,27 @@
-import { createSession, streamChat, type ConversationState, type SessionInfo } from "./api.js";
+import {
+  createSession,
+  streamChat,
+  type CandidateOption,
+  type ChatAction,
+  type ConversationState,
+  type HistoryMessage,
+  type SessionInfo,
+  type Verdict,
+} from "./api.js";
 import { renderMarkdown, escapeHtml } from "./markdown.js";
-import { readJson, removeKey, writeJson } from "./storage.js";
+import { readJson, removeKey, resolveInitialTheme, writeJson, writeTheme, type Theme } from "./storage.js";
 import { STYLES } from "./styles.js";
 
 const SESSION_KEY = "acme.session";
 const STATE_KEY = "acme.state";
+const HISTORY_KEY = "acme.history";
+const THEME_KEY = "acme.theme";
+const MAX_HISTORY = 12;
 
 const STARTERS = [
   { label: "Merch for a launch", message: "Can we order merch for a branch opening?" },
   { label: "Billboard advert", message: "Can we put an advert on a billboard?" },
   { label: "Translate web pages", message: "Can you translate our web pages into Spanish?" },
-  { label: "SEO audit", message: "Do we cover an SEO audit?" },
 ];
 
 const STATUS_LABEL: Record<string, string> = {
@@ -26,6 +37,8 @@ class AcmeChat extends HTMLElement {
   #authRequired = false;
   #session: SessionInfo | null = null;
   #state: ConversationState | null = null;
+  #history: HistoryMessage[] = [];
+  #theme: Theme = "navy";
   #busy = false;
   #abort: AbortController | null = null;
 
@@ -36,8 +49,10 @@ class AcmeChat extends HTMLElement {
   }
 
   connectedCallback(): void {
+    this.#theme = resolveInitialTheme(THEME_KEY);
     this.#session = readJson<SessionInfo>(SESSION_KEY);
     this.#state = readJson<ConversationState>(STATE_KEY);
+    this.#history = this.#loadHistory();
     void this.#boot();
   }
 
@@ -64,14 +79,50 @@ class AcmeChat extends HTMLElement {
     return Boolean(this.#session?.token && this.#session.expiresAt * 1000 > Date.now());
   }
 
+  #applyTheme(shell: Element | null): void {
+    shell?.setAttribute("data-theme", this.#theme);
+    this.setAttribute("data-theme", this.#theme);
+    const navy = this.#root.querySelector<HTMLButtonElement>("[data-theme-navy]");
+    const light = this.#root.querySelector<HTMLButtonElement>("[data-theme-light]");
+    if (navy) navy.setAttribute("aria-pressed", this.#theme === "navy" ? "true" : "false");
+    if (light) light.setAttribute("aria-pressed", this.#theme === "light" ? "true" : "false");
+  }
+
+  #bindThemeToggle(shell: Element | null): void {
+    this.#root.querySelector("[data-theme-navy]")?.addEventListener("click", () => {
+      this.#theme = "navy";
+      writeTheme(THEME_KEY, this.#theme);
+      this.#applyTheme(shell);
+    });
+    this.#root.querySelector("[data-theme-light]")?.addEventListener("click", () => {
+      this.#theme = "light";
+      writeTheme(THEME_KEY, this.#theme);
+      this.#applyTheme(shell);
+    });
+  }
+
+  #themeToggleHtml(): string {
+    return `
+      <div class="theme-toggle" role="group" aria-label="Colour theme">
+        <button type="button" data-theme-navy aria-pressed="${this.#theme === "navy"}">Navy</button>
+        <button type="button" data-theme-light aria-pressed="${this.#theme === "light"}">Light</button>
+      </div>
+    `;
+  }
+
   #renderLogin(): void {
     this.#root.innerHTML = `
       <style>${STYLES}</style>
-      <div class="shell">
+      <div class="shell login-wrap" data-theme="${this.#theme}">
+        <header>
+          <div class="brand">Acme <span>Scoping Assistant</span></div>
+          <div class="header-actions">${this.#themeToggleHtml()}</div>
+        </header>
+        <div class="torn" aria-hidden="true"></div>
         <form class="login" part="login">
-          <div class="brand">Acme <span>Scoping</span></div>
           <h1>Sign in to ask</h1>
-          <p>Internal tool for Account Managers. Enter the shared access password.</p>
+          <p>Internal tool for Account Managers. Enter your name and the shared access password.</p>
+          <input name="subject" type="text" autocomplete="name" placeholder="Your name" required minlength="2" />
           <input name="password" type="password" autocomplete="current-password" placeholder="Access password" required />
           <input name="branch" type="text" placeholder="Branch (optional)" />
           <div class="error" data-error></div>
@@ -79,6 +130,9 @@ class AcmeChat extends HTMLElement {
         </form>
       </div>
     `;
+    const shell = this.#root.querySelector(".shell");
+    this.#applyTheme(shell);
+    this.#bindThemeToggle(shell);
     const form = this.#root.querySelector("form");
     form?.addEventListener("submit", (event) => {
       event.preventDefault();
@@ -89,8 +143,14 @@ class AcmeChat extends HTMLElement {
   async #signIn(data: FormData): Promise<void> {
     const error = this.#root.querySelector("[data-error]");
     if (error) error.textContent = "";
+    const subject = String(data.get("subject") || "").trim();
+    if (subject.length < 2) {
+      if (error) error.textContent = "Enter your name so we can log who asked.";
+      return;
+    }
     try {
       this.#session = await createSession(this.#apiBase, String(data.get("password") || ""), {
+        subject,
         branch: String(data.get("branch") || "") || undefined,
       });
       writeJson(SESSION_KEY, this.#session);
@@ -101,45 +161,65 @@ class AcmeChat extends HTMLElement {
   }
 
   #renderChat(): void {
+    const branch = this.#session?.branch ? escapeHtml(this.#session.branch) : "";
     this.#root.innerHTML = `
       <style>${STYLES}</style>
-      <div class="shell">
+      <div class="shell" data-theme="${this.#theme}">
         <header>
           <div class="brand">Acme <span>Scoping Assistant</span></div>
-          <div class="meta">
-            ${this.#session?.branch ? escapeHtml(this.#session.branch) + " · " : ""}
-            <button type="button" class="secondary" data-reset>New chat</button>
+          <div class="header-actions">
+            ${branch ? `<div class="branch">${branch}</div>` : ""}
+            ${this.#themeToggleHtml()}
+            <button type="button" class="new-chat" data-reset>New chat</button>
           </div>
         </header>
-        <div class="messages" data-messages>
-          <div class="empty">
-            Ask whether a marketing request is covered by central marketing, handled locally,
-            refused, or needs quoting. Verdicts come from the service breakdown — not from the model guessing.
+        <div class="messages" data-messages role="log">
+          <div class="empty" data-empty>
+            <p class="empty-intro">
+              Central marketing covers a lot of the list, and not all of it. Ask before you brief,
+              and you will know in one turn whether a job is covered, handled locally, out of scope,
+              or needs a quote.
+            </p>
+            <h2 class="empty-headline">
+              So — what are you trying <span class="accent">to get made?</span>
+            </h2>
+            <div class="cards" data-cards></div>
           </div>
         </div>
-        <div class="starters" data-starters></div>
         <form class="composer">
-          <textarea name="message" rows="1" placeholder="e.g. Can we do a billboard for the new branch?" required></textarea>
-          <button type="submit" data-send>Ask</button>
+          <div class="composer-pill">
+            <textarea name="message" rows="1" placeholder="e.g. Can we do a billboard for the new branch?" required></textarea>
+            <button type="submit" class="send" data-send aria-label="Send">↑</button>
+          </div>
         </form>
       </div>
     `;
 
-    const starters = this.#root.querySelector("[data-starters]");
-    for (const starter of STARTERS) {
+    const shell = this.#root.querySelector(".shell");
+    this.#applyTheme(shell);
+    this.#bindThemeToggle(shell);
+
+    const cards = this.#root.querySelector("[data-cards]");
+    STARTERS.forEach((starter, index) => {
       const button = document.createElement("button");
       button.type = "button";
-      button.textContent = starter.label;
-      button.dataset.message = starter.message;
+      button.className = "card";
+      button.innerHTML = `
+        <span class="num">${String(index + 1).padStart(2, "0")}</span>
+        <span class="label">${escapeHtml(starter.label)}</span>
+        <span class="hint">${escapeHtml(starter.message)}</span>
+      `;
       button.addEventListener("click", () => {
         void this.#ask(starter.message);
       });
-      starters?.append(button);
-    }
+      cards?.append(button);
+    });
 
     this.#root.querySelector("[data-reset]")?.addEventListener("click", () => {
       this.#state = null;
+      this.#history = [];
       removeKey(STATE_KEY);
+      removeKey(HISTORY_KEY);
       this.#renderChat();
     });
 
@@ -149,7 +229,10 @@ class AcmeChat extends HTMLElement {
       event.preventDefault();
       const value = textarea instanceof HTMLTextAreaElement ? textarea.value.trim() : "";
       if (!value) return;
-      if (textarea instanceof HTMLTextAreaElement) textarea.value = "";
+      if (textarea instanceof HTMLTextAreaElement) {
+        textarea.value = "";
+        this.#autogrow(textarea);
+      }
       void this.#ask(value);
     });
     textarea?.addEventListener("keydown", (event) => {
@@ -158,61 +241,87 @@ class AcmeChat extends HTMLElement {
         (form as HTMLFormElement | null)?.requestSubmit();
       }
     });
+    textarea?.addEventListener("input", () => {
+      if (textarea instanceof HTMLTextAreaElement) this.#autogrow(textarea);
+    });
+  }
+
+  #autogrow(textarea: HTMLTextAreaElement): void {
+    textarea.style.height = "auto";
+    textarea.style.height = `${Math.min(textarea.scrollHeight, 96)}px`;
+  }
+
+  #clearEmpty(): void {
+    this.#root.querySelector("[data-empty]")?.remove();
   }
 
   async #ask(message: string): Promise<void> {
     if (this.#busy) return;
     this.#busy = true;
     this.#setSending(true);
-
-    const messages = this.#root.querySelector("[data-messages]");
-    const starters = this.#root.querySelector("[data-starters]");
-    if (starters) starters.replaceChildren();
-    messages?.querySelector(".empty")?.remove();
-
-    this.#appendRow("user", escapeHtml(message));
+    this.#clearEmpty();
+    this.#appendUser(message);
     const assistant = this.#appendAssistantPlaceholder();
 
     this.#abort = new AbortController();
     let assembled = "";
+    let caret: HTMLElement | null = null;
+    type VerdictPayload = {
+      verdict: Verdict | null;
+      citations: string[];
+      notes: string[];
+      needsAHuman: boolean;
+      awaitingAnswer: boolean;
+      candidates: CandidateOption[];
+      actions: ChatAction[];
+    };
+    let verdictPayload: VerdictPayload | null = null;
+    let chromeApplied = false;
+
+    const reveal = () => {
+      if (!chromeApplied && verdictPayload) {
+        this.#applyVerdictChrome(assistant, verdictPayload);
+        chromeApplied = true;
+      }
+      assistant.row.classList.remove("pending");
+    };
+
+    const priorHistory = this.#history.slice();
 
     try {
       await streamChat(
         this.#apiBase,
         message,
         this.#state,
+        priorHistory,
         this.#authRequired ? this.#session?.token ?? null : null,
         {
           onVerdict: (payload) => {
-            assistant.badge.replaceChildren();
-            if (payload.needsAHuman) {
-              assistant.badge.append(this.#badge("handover", "Handover"));
-            } else if (payload.verdict) {
-              assistant.badge.append(
-                this.#badge(payload.verdict.status, STATUS_LABEL[payload.verdict.status] ?? payload.verdict.status),
-              );
-            } else if (payload.awaitingAnswer) {
-              assistant.badge.append(this.#badge("ask", "Needs clarification"));
-            }
-            assistant.citations.textContent = payload.citations.length
-              ? `Read from ${payload.citations.join("; ")}`
-              : "";
-            if (payload.notes.length) {
-              assistant.notes.textContent = payload.notes.join(" ");
-            }
+            verdictPayload = payload;
           },
           onText: (text) => {
             assembled += text;
-            assistant.body.classList.remove("typing");
+            reveal();
+            if (!caret) {
+              caret = document.createElement("span");
+              caret.className = "caret";
+              caret.setAttribute("aria-hidden", "true");
+            }
             assistant.body.innerHTML = renderMarkdown(assembled);
+            assistant.body.append(caret);
             this.#scrollToEnd();
           },
           onDone: (payload) => {
-            assembled = payload.text || assembled;
-            assistant.body.classList.remove("typing");
+            if (typeof payload.text === "string" && payload.text.length > 0) {
+              assembled = payload.text;
+            }
+            reveal();
+            caret?.remove();
+            caret = null;
             assistant.body.innerHTML = renderMarkdown(assembled);
             this.#state = payload.state;
             writeJson(STATE_KEY, this.#state);
+            this.#appendHistory(message, assembled);
             if (payload.degraded) {
               assistant.notes.textContent =
                 (assistant.notes.textContent ? assistant.notes.textContent + " " : "") +
@@ -228,7 +337,8 @@ class AcmeChat extends HTMLElement {
         this.#abort.signal,
       );
     } catch (err) {
-      assistant.body.classList.remove("typing");
+      caret?.remove();
+      reveal();
       const text = err instanceof Error ? err.message : "Something went wrong.";
       if (text.toLowerCase().includes("unauthorised")) {
         removeKey(SESSION_KEY);
@@ -244,39 +354,188 @@ class AcmeChat extends HTMLElement {
     }
   }
 
-  #appendRow(role: "user" | "assistant", html: string): HTMLElement {
+  #applyVerdictChrome(
+    assistant: {
+      bubble: HTMLElement;
+      banner: HTMLElement;
+      status: HTMLElement;
+      candidates: HTMLElement;
+      citations: HTMLElement;
+      notes: HTMLElement;
+    },
+    payload: {
+      verdict: Verdict | null;
+      citations: string[];
+      notes: string[];
+      needsAHuman: boolean;
+      awaitingAnswer: boolean;
+      candidates: CandidateOption[];
+      actions: ChatAction[];
+    },
+  ): void {
+    assistant.status.replaceChildren();
+    assistant.banner.replaceChildren();
+    assistant.bubble.classList.toggle("handover", payload.needsAHuman);
+
+    if (payload.needsAHuman) {
+      const banner = document.createElement("div");
+      banner.className = "handover-banner";
+      banner.textContent = "Handover to a person";
+      assistant.banner.append(banner);
+    } else if (payload.verdict?.status && payload.verdict.service) {
+      const statusKey = String(payload.verdict.status);
+      assistant.status.append(
+        this.#pill(statusKey, STATUS_LABEL[statusKey] ?? statusKey),
+      );
+      const title = document.createElement("div");
+      title.className = "service-title";
+      title.textContent = String(payload.verdict.service);
+      assistant.status.append(title);
+    } else if (payload.awaitingAnswer) {
+      assistant.status.append(this.#pill("ask", "Needs clarification"));
+    }
+
+    const citations = Array.isArray(payload.citations)
+      ? payload.citations.filter((item): item is string => typeof item === "string")
+      : [];
+    if (citations.length) {
+      assistant.citations.textContent = `Read from ${citations.join("; ")}`;
+    }
+    const notes = Array.isArray(payload.notes)
+      ? payload.notes.filter((item): item is string => typeof item === "string")
+      : [];
+    if (notes.length) {
+      assistant.notes.textContent = notes.join(" ");
+    }
+
+    if (payload.awaitingAnswer && payload.candidates?.length) {
+      this.#renderCandidates(assistant.candidates, payload.candidates);
+    } else if (payload.actions?.length) {
+      this.#renderActions(assistant.candidates, payload.actions);
+    }
+  }
+
+  #renderCandidates(
+    host: HTMLElement,
+    candidates: { id: string; label: string }[],
+  ): void {
+    host.replaceChildren();
+    host.className = "candidates";
+    candidates.forEach((candidate, index) => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "candidate";
+      button.innerHTML = `
+        <span class="num">${index + 1}</span>
+        <span class="label">${escapeHtml(candidate.label)}</span>
+      `;
+      button.addEventListener("click", () => {
+        host.querySelectorAll("button").forEach((el) => {
+          (el as HTMLButtonElement).disabled = true;
+        });
+        void this.#ask(candidate.label);
+      });
+      host.append(button);
+    });
+  }
+
+  #renderActions(host: HTMLElement, actions: ChatAction[]): void {
+    host.replaceChildren();
+    host.className = "candidates actions";
+    actions.forEach((action) => {
+      if (action.kind === "link" && action.url) {
+        const link = document.createElement("a");
+        link.className = "candidate action";
+        link.href = action.url;
+        link.target = "_blank";
+        link.rel = "noopener noreferrer";
+        link.textContent = action.label;
+        host.append(link);
+        return;
+      }
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "candidate action";
+      const label = typeof action.label === "string" ? action.label : "Continue";
+      const message =
+        typeof action.message === "string" && action.message
+          ? action.message
+          : label;
+      button.textContent = label;
+      button.addEventListener("click", () => {
+        host.querySelectorAll("button").forEach((el) => {
+          (el as HTMLButtonElement).disabled = true;
+        });
+        void this.#ask(message);
+      });
+      host.append(button);
+    });
+  }
+
+  #appendUser(message: string): void {
     const messages = this.#root.querySelector("[data-messages]");
     const row = document.createElement("div");
-    row.className = `row ${role}`;
+    row.className = "row user";
     const bubble = document.createElement("div");
     bubble.className = "bubble";
-    bubble.innerHTML = html;
+    bubble.textContent = message;
     row.append(bubble);
     messages?.append(row);
     this.#scrollToEnd();
-    return bubble;
   }
 
   #appendAssistantPlaceholder(): {
-    badge: HTMLElement;
+    row: HTMLElement;
+    bubble: HTMLElement;
+    banner: HTMLElement;
+    status: HTMLElement;
     body: HTMLElement;
+    candidates: HTMLElement;
     citations: HTMLElement;
     notes: HTMLElement;
   } {
-    const bubble = this.#appendRow("assistant", "");
-    const badge = document.createElement("div");
+    const messages = this.#root.querySelector("[data-messages]");
+    const row = document.createElement("div");
+    row.className = "row assistant pending";
+
+    const bubble = document.createElement("div");
+    bubble.className = "bubble";
+
+    const banner = document.createElement("div");
+    banner.className = "live-banner";
+    banner.setAttribute("aria-live", "polite");
+
+    const inner = document.createElement("div");
+    inner.className = "bubble-inner";
+
+    const status = document.createElement("div");
+    status.className = "live";
+    status.setAttribute("aria-live", "polite");
+
     const body = document.createElement("div");
-    body.className = "typing";
-    body.textContent = "Looking that up";
+    body.className = "prose";
+
+    const candidates = document.createElement("div");
     const citations = document.createElement("div");
     citations.className = "citations";
     const notes = document.createElement("div");
     notes.className = "note";
-    bubble.replaceChildren(badge, body, citations, notes);
-    return { badge, body, citations, notes };
+
+    const waiting = document.createElement("div");
+    waiting.className = "waiting";
+    waiting.textContent = "Looking that up…";
+    waiting.setAttribute("aria-hidden", "true");
+
+    inner.append(status, body, candidates, citations, notes);
+    bubble.append(banner, inner, waiting);
+    row.append(bubble);
+    messages?.append(row);
+    this.#scrollToEnd();
+
+    return { row, bubble, banner, status, body, candidates, citations, notes };
   }
 
-  #badge(kind: string, label: string): HTMLElement {
+  #pill(kind: string, label: string): HTMLElement {
     const el = document.createElement("div");
     el.className = `verdict ${kind}`;
     el.textContent = label;
@@ -294,9 +553,36 @@ class AcmeChat extends HTMLElement {
     const messages = this.#root.querySelector("[data-messages]");
     if (messages) messages.scrollTop = messages.scrollHeight;
   }
+
+  #loadHistory(): HistoryMessage[] {
+    const raw = readJson<HistoryMessage[]>(HISTORY_KEY);
+    if (!Array.isArray(raw)) return [];
+    return raw
+      .filter(
+        (entry): entry is HistoryMessage =>
+          Boolean(entry) &&
+          (entry.role === "user" || entry.role === "assistant") &&
+          typeof entry.content === "string" &&
+          entry.content.trim().length > 0,
+      )
+      .slice(-MAX_HISTORY);
+  }
+
+  #appendHistory(userMessage: string, assistantText: string): void {
+    // Keep under the API history cap so a long catalogue reply does not 422
+    // the next turn (that used to surface as "[object Object]" in the UI).
+    const clip = (text: string, max = 11_000) =>
+      text.length <= max ? text : `${text.slice(0, max - 1)}…`;
+    const next: HistoryMessage[] = [
+      ...this.#history,
+      { role: "user", content: clip(userMessage, 2000) },
+      { role: "assistant", content: clip(assistantText) },
+    ];
+    this.#history = next.slice(-MAX_HISTORY);
+    writeJson(HISTORY_KEY, this.#history);
+  }
 }
 
-// Exported for tests / host pages that import the module.
 export { AcmeChat, renderMarkdown, escapeHtml };
 
 if (!customElements.get("acme-chat")) {

@@ -141,13 +141,15 @@ def _apply_security_headers(response: Response, *, path: str) -> None:
 
     # API responses carry no executable content, so the strictest policy is safe.
     # The internal page needs its own script, fonts, and same-origin fetches.
+    # style-src allows 'unsafe-inline' because <acme-chat> injects its stylesheet
+    # into the shadow root as a <style> element (there is no separate CSS file).
     if path.startswith("/api/"):
         policy = "frame-ancestors 'none'; default-src 'none'"
     else:
         policy = (
             "default-src 'self'; "
             "script-src 'self'; "
-            "style-src 'self' https://fonts.googleapis.com; "
+            "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
             "font-src 'self' https://fonts.gstatic.com; "
             "connect-src 'self'; "
             "img-src 'self' data:; "

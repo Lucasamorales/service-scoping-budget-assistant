@@ -19,13 +19,14 @@ also mentions photography.
 from __future__ import annotations
 
 import re
-from collections.abc import Collection
+from collections.abc import Callable, Collection
 from dataclasses import dataclass, field
 from enum import StrEnum
 
 import structlog
 
-from app.core.keys import content_tokens, normalize_term
+from app.core.keys import content_tokens, normalize_term, branch_key
+from app.tools.catalog import wants_service_list
 
 __all__ = [
     "ConversationState",
@@ -143,17 +144,6 @@ HANDOVER_TOPICS: tuple[tuple[re.Pattern[str], HandoverTopic], ...] = (
     ),
     (
         re.compile(
-            r"\b(fired|firing|dismissal|grievance|harassment|disciplinary|"
-            r"redundan\w*|hr issue|staff complaint)\b",
-            re.IGNORECASE,
-        ),
-        HandoverTopic(
-            "people",
-            "Anything about staff or employment goes to HR.",
-        ),
-    ),
-    (
-        re.compile(
             r"\b(discount|renegotiat\w*|commercial terms|rate reduction|"
             r"waive the fee|reduce the fee)\b",
             re.IGNORECASE,
@@ -167,8 +157,25 @@ HANDOVER_TOPICS: tuple[tuple[re.Pattern[str], HandoverTopic], ...] = (
 )
 
 _BUDGET_RE = re.compile(
-    r"\b(budget|spend|spent|remaining|left to spend|allocation|"
-    r"how much (have|has|do|did) (we|they|i)|underspend|overspend)\b",
+    r"\b("
+    r"budget|spend|spent|remaining|left to spend|allocation|funds|"
+    # "how much money do we have in the london branch" — money/funds before
+    # have/do, so the older "how much (have|do) we" pattern never fired.
+    r"how much (money|budget|spend|funds)|"
+    r"how much (have|has|do|did) (we|they|i)|"
+    r"(money|funds|budget).{0,48}\b(left|remaining|have|got)|"
+    r"\bleft\b.{0,32}\b(branch|month|budget)|"
+    r"underspend|overspend"
+    r")\b",
+    re.IGNORECASE,
+)
+
+# "what's left for london", "anything left at basingstoke" — a money question
+# that never says the word money. Only trusted when a site or country is named,
+# because "what's left" about a service is a scoping question.
+_LEFT_RE = re.compile(
+    r"\b(what'?s? left|anything left|much left|left to spend|how are we doing|"
+    r"where are we (on|with)|how'?s the (budget|spend))\b",
     re.IGNORECASE,
 )
 
@@ -184,15 +191,38 @@ _ACTION_RE = re.compile(
     re.IGNORECASE,
 )
 
+_CONFIRM_YES_RE = re.compile(
+    r"^\s*(yes|yep|yeah|y|sure|please|ok|okay|do it|send it)\s*[.!?]?\s*$",
+    re.IGNORECASE,
+)
+_CONFIRM_NO_RE = re.compile(
+    r"^\s*(no|nope|nah|n|no thanks|cancel)\s*[.!?]?\s*$",
+    re.IGNORECASE,
+)
+
 _CAPABILITIES_RE = re.compile(
-    r"\b(what can you (do|help)|what do you do|how do you work|"
-    r"who are you|what are you|help me understand what)\b",
+    r"\b("
+    r"what can you (do|help)|what do you do|how do you work|"
+    r"who are you|what are you|help me understand what|"
+    # Catalog overview — must not fall through to scoping/retrieval.
+    r"what (are|is) (our|the|your)?\s*services|"
+    r"which services|"
+    r"(list|show|tell me|give me) (me )?(all |our |the |your |a )?(list of )?(services|offerings)|"
+    r"(a |the )?(full )?list of (all |the |our |your )?services|"
+    r"services (do you|can you|we) (offer|cover|do|have)|"
+    r"what (do|can) (you|we) (offer|cover)|"
+    r"full (service )?list|"
+    r"service (list|catalogue|catalog|breakdown)"
+    r")\b",
     re.IGNORECASE,
 )
 
 _GREETING_RE = re.compile(
-    r"^\s*(hi|hey|hello|morning|good morning|good afternoon|thanks|thank you|"
-    r"cheers|ta|ok|okay|great|perfect)\b[\s!.,]*$",
+    r"^\s*(hi|hey|hello|morning|good morning|good afternoon|ok|okay|great|perfect)"
+    r"\b[\s!.,]*$"
+    # "thanks, that's great" is still a thank-you. Bounded so that "thanks, can
+    # we do billboards" stays a scoping question.
+    r"|^\s*(thanks|thank you|cheers|ta|nice one|brilliant|perfect)\b[\s\w',.!]{0,24}$",
     re.IGNORECASE,
 )
 
@@ -238,10 +268,39 @@ class ConversationState:
     last_item_ids: tuple[str, ...] = ()
     last_branch: str | None = None
     last_intent: Intent | None = None
+    conversation_id: str | None = None
+    """Stable id for audit logging across client-carried turns."""
+
+    pending_action_kind: str | None = None
+    """``email_am`` / ``email_cm_po`` / ``email_am_variable`` while awaiting Yes/No."""
+
+    pending_service_id: str | None = None
+    pending_quote_amount: float | None = None
+    pending_currency: str = "GBP"
+    pending_recipient_country: str | None = None
+    pending_recipient_name: str | None = None
+    pending_needs_country: bool = False
+    """True when the next turn should name a country before mail send."""
+
+    active_tool: str | None = None
+    """Sticky tool session, e.g. ``budget``, until a clear topic change."""
+
+    budget_country: str | None = None
+    budget_branch: str | None = None
+    budget_month: str | None = None
+    """Last resolved budget slots — reused on sticky follow-ups."""
 
     @property
     def awaiting_answer(self) -> bool:
         return bool(self.pending_candidates)
+
+    @property
+    def awaiting_action_confirm(self) -> bool:
+        return bool(self.pending_action_kind)
+
+    @property
+    def budget_sticky(self) -> bool:
+        return self.active_tool == "budget"
 
 
 @dataclass(frozen=True, slots=True)
@@ -279,13 +338,24 @@ class Route:
 
 
 class Router:
-    """Classifies a message into an intent, deterministically."""
+    """Classifies a message into an intent.
 
-    def __init__(self, branches: Collection[str] = ()) -> None:
+    Safety gates (handover, confirmations) stay rule-based. Catalog inventory
+    can also be recognised semantically so paraphrases do not need new regex.
+    """
+
+    def __init__(
+        self,
+        branches: Collection[str] = (),
+        *,
+        inventory_detector: Callable[[str], bool] | None = None,
+    ) -> None:
         # Branch names arrive with the glossary document. Until then this is
         # empty and every route reports no branch, which is honest: the
         # assistant should ask rather than assume which site is meant.
-        self._branches = {normalize_term(name): name for name in branches if name}
+        # Index by branch_key so "London" and "Acme London" resolve the same.
+        self._branches = {branch_key(name): name for name in branches if name}
+        self._inventory_detector = inventory_detector
 
     def route(self, message: str, state: ConversationState | None = None) -> Route:
         state = state or ConversationState()
@@ -315,6 +385,47 @@ class Router:
                 branch=branch,
             )
 
+        # Yes/No / country after a flow CTA. Checked before generic ACTION
+        # keywords so a bare "Yes" or "United Kingdom" confirms rather than stubs.
+        if state.awaiting_action_confirm:
+            if state.pending_needs_country:
+                return Route(Intent.ACTION, message, matched="country", branch=branch)
+            if _CONFIRM_YES_RE.match(message):
+                return Route(Intent.ACTION, message, matched="yes", branch=branch)
+            if _CONFIRM_NO_RE.match(message):
+                return Route(Intent.ACTION, message, matched="no", branch=branch)
+
+        # Inventory → full catalog tool (not top-k retrieval). Cheap patterns
+        # first; semantic detector catches paraphrases when embeddings exist.
+        if wants_service_list(message) or (
+            self._inventory_detector is not None and self._inventory_detector(message)
+        ):
+            matched = (
+                "service list"
+                if wants_service_list(message)
+                else "service list (semantic)"
+            )
+            return Route(Intent.CAPABILITIES, message, matched=matched, branch=branch)
+
+        # Sticky budget session: keep chaining on the ledger until the user
+        # clearly changes topic. Phrase lists do not scale; the session does.
+        if state.budget_sticky and not _leaves_budget_sticky(message):
+            route = Route(
+                Intent.BUDGET,
+                message,
+                matched="sticky:budget",
+                branch=branch or state.budget_branch or state.last_branch,
+            )
+            logger.info(
+                "router.sticky",
+                tool="budget",
+                matched=route.matched,
+                branch=route.branch,
+                country=state.budget_country,
+                month=state.budget_month,
+            )
+            return route
+
         for pattern, intent in (
             (_CAPABILITIES_RE, Intent.CAPABILITIES),
             (_BUDGET_RE, Intent.BUDGET),
@@ -322,29 +433,72 @@ class Router:
             (_ACTION_RE, Intent.ACTION),
         ):
             if keyword := pattern.search(message):
-                return Route(intent, message, matched=keyword.group(0), branch=branch)
+                route = Route(intent, message, matched=keyword.group(0), branch=branch)
+                logger.info(
+                    "router.classified",
+                    intent=route.intent.value,
+                    matched=route.matched,
+                    branch=route.branch,
+                )
+                return route
+
+        # A money question that never says "budget", saved by the site name.
+        if branch is not None and (left := _LEFT_RE.search(message)):
+            route = Route(Intent.BUDGET, message, matched=left.group(0), branch=branch)
+            logger.info(
+                "router.classified",
+                intent=route.intent.value,
+                matched=route.matched,
+                branch=route.branch,
+            )
+            return route
 
         if _GREETING_RE.match(message):
-            return Route(Intent.GREETING, message, matched=message.strip(), branch=branch)
+            route = Route(Intent.GREETING, message, matched=message.strip(), branch=branch)
+            logger.info("router.classified", intent=route.intent.value, matched=route.matched)
+            return route
 
         if self._is_bare_follow_up(message, state):
-            return Route(
+            route = Route(
                 Intent.FOLLOW_UP,
                 message,
                 matched=message.strip(),
                 carried_item_ids=state.last_item_ids,
                 branch=branch or state.last_branch,
             )
+            logger.info(
+                "router.classified",
+                intent=route.intent.value,
+                matched=route.matched,
+                branch=route.branch,
+            )
+            return route
 
         if framing := _SCOPING_RE.search(message):
-            return Route(Intent.SCOPING, message, matched=framing.group(0), branch=branch)
+            route = Route(Intent.SCOPING, message, matched=framing.group(0), branch=branch)
+            logger.info(
+                "router.classified",
+                intent=route.intent.value,
+                matched=route.matched,
+                branch=route.branch,
+            )
+            return route
 
         # A message naming a service without any framing is still a scoping
         # question. People type "billboards?" and mean "can you do billboards?"
         if content_tokens(message):
-            return Route(Intent.SCOPING, message, branch=branch)
+            route = Route(Intent.SCOPING, message, branch=branch)
+            logger.info(
+                "router.classified",
+                intent=route.intent.value,
+                matched=route.matched,
+                branch=route.branch,
+            )
+            return route
 
-        return Route(Intent.UNKNOWN, message, branch=branch)
+        route = Route(Intent.UNKNOWN, message, branch=branch)
+        logger.info("router.classified", intent=route.intent.value, matched=route.matched)
+        return route
 
     @staticmethod
     def _find_handover_topic(message: str) -> tuple[str, HandoverTopic] | None:
@@ -354,9 +508,16 @@ class Router:
         return None
 
     def _find_branch(self, message: str) -> str | None:
+        # Match longest key first so "milton keynes" wins over a hypothetical
+        # shorter site that is a substring of another normalised form.
         normalized = normalize_term(message)
-        for key, name in self._branches.items():
-            if re.search(rf"\b{re.escape(key)}\b", normalized):
+        for key, name in sorted(self._branches.items(), key=lambda item: -len(item[0])):
+            # Keys are slugified (hyphens); message tokens are spaces.
+            needle = key.replace("-", " ")
+            if re.search(rf"\b{re.escape(needle)}\b", normalized):
+                return name
+            if branch_key(message) == key and len(normalized.split()) <= 4:
+                # Bare "London" / "Milton Keynes" after "which branch?"
                 return name
         return None
 
@@ -402,3 +563,24 @@ class Router:
         if len(content_tokens(message)) > MAX_TOKENS_FOR_A_BARE_FOLLOW_UP:
             return False
         return bool(_FOLLOW_UP_RE.match(message))
+
+
+def _leaves_budget_sticky(message: str) -> bool:
+    """True when the user has clearly left the budget tool session.
+
+    Budget-keyword turns stay sticky even if they also match loose scoping
+    framing ("can we check how much budget…").
+    """
+    if wants_service_list(message):
+        return True
+    if _CAPABILITIES_RE.search(message):
+        return True
+    if _QUOTE_RE.search(message):
+        return True
+    if _ACTION_RE.search(message):
+        return True
+    if _BUDGET_RE.search(message) or _LEFT_RE.search(message):
+        return False
+    if _SCOPING_RE.search(message):
+        return True
+    return False

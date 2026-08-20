@@ -9,7 +9,7 @@ vectors are produced, so the two sides cannot drift apart by accident.
 
 Two further rules:
 
-**Documents and queries use different task types.** Vertex's embedding models
+**Documents and queries use different task types.** Gemini embedding models
 are trained that way: ``RETRIEVAL_DOCUMENT`` for the corpus,
 ``RETRIEVAL_QUERY`` for the question. Using the same type for both throws away
 the optimisation the model was built for.
@@ -40,7 +40,7 @@ from app.knowledge.index import EmbeddingContract
 __all__ = [
     "Embedder",
     "EmbeddingError",
-    "VertexEmbedder",
+    "GeminiEmbedder",
     "build_embedder",
     "normalize",
     "with_embeddings",
@@ -51,7 +51,7 @@ logger = structlog.get_logger(__name__)
 TaskType = Literal["RETRIEVAL_DOCUMENT", "RETRIEVAL_QUERY"]
 
 MAX_BATCH_SIZE = 100
-"""Vertex's per-request ceiling for ``embed_content``."""
+"""Gemini ``embed_content`` per-request ceiling."""
 
 MAX_BATCH_CHARS = 40_000
 """Rough stand-in for a token budget. Characters / 4 ≈ tokens; kept well under
@@ -89,8 +89,8 @@ class Embedder(Protocol):
         ...
 
 
-class VertexEmbedder:
-    """Gemini embeddings on Vertex AI.
+class GeminiEmbedder:
+    """Gemini embeddings via the Developer API (API key).
 
     Connected lazily, same pattern as the chat client: a broken configuration
     costs one attempt, not one per call for the life of the process.
@@ -99,8 +99,8 @@ class VertexEmbedder:
     def __init__(self, settings: Settings) -> None:
         self._settings = settings
         self._contract = EmbeddingContract(
-            model=settings.vertex_embed_model,
-            dimensions=settings.vertex_embed_dimensions,
+            model=settings.gemini_embed_model,
+            dimensions=settings.gemini_embed_dimensions,
         )
         self._client: Any | None = None
         self._unavailable: str | None = None
@@ -116,7 +116,7 @@ class VertexEmbedder:
             return self._embed([text], task="RETRIEVAL_QUERY")[0]
         except EmbeddingError as exc:
             # Query-time failure is recoverable: keyword retrieval still works.
-            # Remembered so a broken Vertex costs one log line, not one per turn.
+            # Remembered so a broken backend costs one log line, not one per turn.
             self._unavailable = str(exc)
             logger.warning("embed.query_failed", error=str(exc))
             return None
@@ -139,12 +139,12 @@ class VertexEmbedder:
             logger.warning("embed.sdk_missing", detail=self._unavailable)
             raise EmbeddingError(self._unavailable) from exc
 
+        if not self._settings.gemini_api_key_configured:
+            self._unavailable = "no GEMINI_API_KEY"
+            raise EmbeddingError(self._unavailable)
+
         try:
-            self._client = genai.Client(
-                vertexai=True,
-                project=self._settings.gcp_project_id,
-                location=self._settings.gcp_region,
-            )
+            self._client = genai.Client(api_key=self._settings.gemini_api_key)
         except Exception as exc:
             self._unavailable = str(exc)
             logger.error("embed.connect_failed", error=self._unavailable)
@@ -154,8 +154,6 @@ class VertexEmbedder:
             "embed.connected",
             model=self._contract.model,
             dimensions=self._contract.dimensions,
-            project=self._settings.gcp_project_id,
-            region=self._settings.gcp_region,
         )
         return self._client
 
@@ -217,7 +215,7 @@ class VertexEmbedder:
                 if len(values) != self._contract.dimensions:
                     raise EmbeddingError(
                         f"Expected {self._contract.dimensions} dimensions, "
-                        f"got {len(values)}. Check VERTEX_EMBED_DIMENSIONS."
+                        f"got {len(values)}. Check GEMINI_EMBED_DIMENSIONS."
                     )
                 vectors.append(normalize(values))
             return vectors
@@ -226,15 +224,17 @@ class VertexEmbedder:
 
 
 def build_embedder(settings: Settings) -> Embedder | None:
-    """Return an embedder if Vertex is configured, otherwise ``None``.
+    """Return an embedder if ``GEMINI_API_KEY`` is set, otherwise ``None``.
 
-    ``None`` is supported: retrieval runs keyword-only, which is how the
-    assistant works today and how it keeps working when credentials lapse.
+    ``None`` is supported — retrieval runs keyword-only.
     """
-    if not settings.vertex_configured:
-        logger.info("embed.not_configured", detail="no GCP project set; keyword-only retrieval")
+    if not settings.gemini_configured:
+        logger.info(
+            "embed.not_configured",
+            detail="no GEMINI_API_KEY; keyword-only retrieval",
+        )
         return None
-    return VertexEmbedder(settings)
+    return GeminiEmbedder(settings)
 
 
 def with_embeddings(

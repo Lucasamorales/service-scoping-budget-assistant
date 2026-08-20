@@ -13,7 +13,7 @@ export function escapeHtml(text: string): string {
 }
 
 export function renderMarkdown(text: string): string {
-  const escaped = escapeHtml(text);
+  const escaped = escapeHtml(typeof text === "string" ? text : "");
   return escaped
     .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
     .replace(/(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)/g, "<em>$1</em>")

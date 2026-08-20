@@ -1,0 +1,328 @@
+{
+  "description": "Whole-turn evaluation: did a message in the language Account Managers actually use reach the right capability, and did the reply carry the right facts? Unlike evals/routing.json this does not assert an internal intent name — it asserts which lookups ran and what the user ends up reading, so the rules can be replaced by a planner without rewriting the cases. 'expect' capabilities must all be planned; 'forbid' must not be. Cases marked 'critical' are ones where a wrong answer misleads someone about safety or about money: any failure there fails the run.",
+  "capabilities": ["scope", "budget", "quote", "list", "capabilities", "roster", "mail", "handover", "greeting", "clarify"],
+  "cases": [
+    {
+      "id": "scope-merch",
+      "message": "can we do merch for the london branch",
+      "expect": ["scope"],
+      "mustInclude": ["Merch"]
+    },
+    {
+      "id": "scope-bare-service",
+      "message": "billboards?",
+      "expect": ["scope"]
+    },
+    {
+      "id": "scope-in-scope-foc",
+      "message": "is audience segmentation included",
+      "expect": ["scope"],
+      "mustNotInclude": ["don't have that capability"]
+    },
+    {
+      "id": "scope-local-owner",
+      "message": "who looks after our instagram posts",
+      "expect": ["scope"]
+    },
+    {
+      "id": "scope-out-of-scope",
+      "message": "can central marketing run our local radio ads",
+      "expect": ["scope"]
+    },
+    {
+      "id": "scope-translation-disagreement",
+      "message": "do you handle translating our web pages",
+      "expect": ["scope"],
+      "critical": true,
+      "mustNotInclude": ["free of charge"],
+      "note": "F1. Translation & localisation is Local; Web pages is Y. Two named candidates that disagree must produce a question, never a free-of-charge promise."
+    },
+    {
+      "id": "scope-photoshoot-quote",
+      "message": "we want a photoshoot at the new site",
+      "expect": ["scope"],
+      "mustInclude": ["Photoshoots"]
+    },
+    {
+      "id": "scope-valentines-video",
+      "message": "I want to run a valentines campaign with video",
+      "expect": ["scope"]
+    },
+    {
+      "id": "scope-signage-landlord",
+      "message": "our landlord wants signage at the entrance, who pays",
+      "expect": ["scope"]
+    },
+    {
+      "id": "budget-left-for-london",
+      "message": "what's left for london",
+      "expect": ["budget"],
+      "forbid": ["scope"],
+      "mustInclude": ["London"],
+      "mustNotInclude": ["don't have that capability"],
+      "note": "F2. The canonical budget phrase from the README, previously answered with a capability denial."
+    },
+    {
+      "id": "budget-explicit",
+      "message": "how much budget does manchester have",
+      "expect": ["budget"],
+      "mustInclude": ["Manchester"]
+    },
+    {
+      "id": "budget-spend-country",
+      "message": "how are we doing on spend in the uk",
+      "expect": ["budget"],
+      "mustInclude": ["United Kingdom"]
+    },
+    {
+      "id": "budget-anything-left",
+      "message": "have we got anything left at basingstoke this month",
+      "expect": ["budget"],
+      "mustInclude": ["Basingstoke"]
+    },
+    {
+      "id": "budget-burned-through",
+      "message": "how much have we burned through at milton keynes",
+      "expect": ["budget"]
+    },
+    {
+      "id": "budget-all-branches",
+      "message": "give me the remaining budget for all the branches",
+      "expect": ["budget"],
+      "forbid": ["list"]
+    },
+    {
+      "id": "budget-month-named",
+      "message": "what was the london budget in august",
+      "expect": ["budget"],
+      "mustInclude": ["Aug"]
+    },
+    {
+      "id": "budget-sticky-followup",
+      "message": "and manchester?",
+      "state": { "activeTool": "budget", "budgetBranch": "Acme London", "budgetCountry": "United Kingdom" },
+      "expect": ["budget"],
+      "mustInclude": ["Manchester"]
+    },
+    {
+      "id": "budget-sticky-month-only",
+      "message": "what about july",
+      "state": { "activeTool": "budget", "budgetBranch": "Acme London" },
+      "expect": ["budget"],
+      "mustInclude": ["Jul"]
+    },
+    {
+      "id": "compound-price-and-budget",
+      "message": "do we have money for a photoshoot in basingstoke",
+      "expect": ["quote", "budget"],
+      "mustInclude": ["Basingstoke"],
+      "note": "F6. Needs a price and a ledger. The old design could only answer one."
+    },
+    {
+      "id": "quote-cost-of-billboard",
+      "message": "how much would a billboard cost",
+      "expect": ["quote"],
+      "mustInclude": ["350"]
+    },
+    {
+      "id": "quote-price-for-merch",
+      "message": "what's the price for merch",
+      "expect": ["quote"],
+      "mustInclude": ["100"]
+    },
+    {
+      "id": "quote-ballpark",
+      "message": "ballpark for a set of venue photos",
+      "expect": ["quote"]
+    },
+    {
+      "id": "quote-variable-travel",
+      "message": "how much to send someone to the event with travel and hotel",
+      "expect": ["quote"],
+      "critical": true,
+      "mustNotInclude": ["350.00 GBP"],
+      "note": "Variable tier must abort the automatic price, not print one."
+    },
+    {
+      "id": "list-full",
+      "message": "give me a list of services",
+      "expect": ["list"],
+      "mustInclude": ["Events"]
+    },
+    {
+      "id": "list-what-services",
+      "message": "what services do you offer",
+      "expect": ["list"]
+    },
+    {
+      "id": "list-on-demand-only",
+      "message": "which services are on demand",
+      "expect": ["list"],
+      "mustNotInclude": ["in scope"]
+    },
+    {
+      "id": "list-free-things",
+      "message": "what do I get for free",
+      "expect": ["list"],
+      "mustNotInclude": ["don't have that capability"],
+      "note": "F4. Status-filtered list already implemented and previously unreachable."
+    },
+    {
+      "id": "list-free-vs-paid",
+      "message": "which things are free and which cost money",
+      "expect": ["list"],
+      "mustNotInclude": ["don't have that capability"]
+    },
+    {
+      "id": "list-section-events",
+      "message": "show me everything under events",
+      "expect": ["list"],
+      "mustInclude": ["Events"],
+      "mustNotInclude": ["don't have that capability"],
+      "note": "F5. Section listing was unreachable without the word 'services'."
+    },
+    {
+      "id": "list-section-photography",
+      "message": "what's in the photography section",
+      "expect": ["list"],
+      "mustInclude": ["Photography"]
+    },
+    {
+      "id": "capabilities-what-can-you-do",
+      "message": "what can you help me with",
+      "expect": ["capabilities"],
+      "mustNotInclude": ["don't have that capability"]
+    },
+    {
+      "id": "capabilities-what-else",
+      "message": "what else can you do for me",
+      "expect": ["capabilities"],
+      "mustNotInclude": ["don't have that capability"],
+      "note": "F4. Previously matched scoping framing on 'can you' and denied itself."
+    },
+    {
+      "id": "capabilities-how-do-you-work",
+      "message": "how do you work",
+      "expect": ["capabilities"]
+    },
+    {
+      "id": "roster-who-is-my-am",
+      "message": "who is my account manager",
+      "expect": ["roster"],
+      "forbid": ["scope"],
+      "critical": true,
+      "mustNotInclude": ["Attendance", "on demand"],
+      "note": "F3. Previously answered with a priced on-demand service and a pending email."
+    },
+    {
+      "id": "roster-who-do-i-email",
+      "message": "who do i email about a new campaign",
+      "expect": ["roster"],
+      "forbid": ["quote"]
+    },
+    {
+      "id": "roster-country-manager",
+      "message": "who is our country manager",
+      "expect": ["roster"]
+    },
+    {
+      "id": "mail-yes-after-cta",
+      "message": "yes",
+      "state": { "pendingActionKind": "email_am", "pendingServiceId": "copywriting--emails", "pendingRecipientCountry": "United Kingdom" },
+      "expect": ["mail"],
+      "forbid": ["scope"]
+    },
+    {
+      "id": "mail-no-after-cta",
+      "message": "no thanks",
+      "state": { "pendingActionKind": "email_am", "pendingServiceId": "copywriting--emails" },
+      "expect": ["mail"],
+      "mustInclude": ["won't send"],
+      "mustNotInclude": ["Sent to", "translating", "Spanish", "No supporting documents"],
+      "note": "Declining a ping must not re-open the previous scoping question."
+    },
+    {
+      "id": "mail-country-after-yes",
+      "message": "United Kingdom",
+      "state": { "pendingActionKind": "email_am", "pendingServiceId": "copywriting--emails", "pendingNeedsCountry": true },
+      "expect": ["mail"]
+    },
+    {
+      "id": "mail-bare-yes-no-pending",
+      "message": "yes",
+      "expect": ["clarify"],
+      "mustNotInclude": ["don't have that capability"],
+      "note": "F8. A stray confirmation should be benign, not a capability denial."
+    },
+    {
+      "id": "mail-request-names-service",
+      "message": "email my AM about the merch request",
+      "expect": ["scope"],
+      "mustInclude": ["Merch"],
+      "note": "F7. Previously stubbed with 'tell me which service this is about' about a message naming the service."
+    },
+    {
+      "id": "handover-injury",
+      "message": "a customer got injured during a photoshoot, can we post about it",
+      "expect": ["handover"],
+      "forbid": ["scope", "quote"],
+      "critical": true,
+      "mustInclude": ["safety"]
+    },
+    {
+      "id": "handover-press",
+      "message": "a journalist is asking about our new branch",
+      "expect": ["handover"],
+      "critical": true
+    },
+    {
+      "id": "handover-legal",
+      "message": "a customer is threatening to sue us over a photo we posted",
+      "expect": ["handover"],
+      "critical": true
+    },
+    {
+      "id": "handover-gdpr",
+      "message": "someone wants their personal data deleted from our mailing list",
+      "expect": ["handover"],
+      "critical": true
+    },
+    {
+      "id": "handover-discount",
+      "message": "can we waive the fee for the billboard this once",
+      "expect": ["handover"],
+      "forbid": ["quote"],
+      "critical": true
+    },
+    {
+      "id": "greeting-hi",
+      "message": "hi",
+      "expect": ["greeting"]
+    },
+    {
+      "id": "greeting-thanks",
+      "message": "thanks, that's great",
+      "expect": ["greeting"],
+      "mustNotInclude": ["don't have that capability"]
+    },
+    {
+      "id": "clarify-off-topic",
+      "message": "what's the weather like",
+      "expect": ["clarify"],
+      "forbid": ["quote", "budget"]
+    },
+    {
+      "id": "clarify-vague",
+      "message": "we need some help with the thing we discussed",
+      "expect": ["clarify"],
+      "mustNotInclude": ["free of charge"]
+    },
+    {
+      "id": "clarify-no-invented-price",
+      "message": "roughly what does a big campaign cost these days",
+      "critical": true,
+      "mustNotInclude": ["£", "GBP 1", "approximately"],
+      "note": "No figure may appear that did not come from the rate card."
+    }
+  ]
+}

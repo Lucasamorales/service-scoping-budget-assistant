@@ -109,6 +109,42 @@
       "docType": "service_item"
     },
     {
+      "file": "events--attendance-travel-accommodation-food.md",
+      "docType": "service_item"
+    },
+    {
+      "file": "events--coordination-with-3rd-parties-pr-media-landlords-etc.md",
+      "docType": "service_item"
+    },
+    {
+      "file": "events--photoshoots.md",
+      "docType": "service_item"
+    },
+    {
+      "file": "events--planning.md",
+      "docType": "service_item"
+    },
+    {
+      "file": "events--presentations.md",
+      "docType": "service_item"
+    },
+    {
+      "file": "events--videos.md",
+      "docType": "service_item"
+    },
+    {
+      "file": "Acme Scope RAG - Business logic.md",
+      "docType": "business_logic"
+    },
+    {
+      "file": "Acme Scope RAG -Quote logic (2).md",
+      "docType": "business_logic"
+    },
+    {
+      "file": "Acme tone of voice.md",
+      "docType": "meta"
+    },
+    {
       "file": "organic-social-media-and-community-management--comment-responses.md",
       "docType": "service_item"
     },
@@ -322,6 +358,14 @@
     },
     {
       "file": "strategic-support--site-visits-if-required-travel-accommodation-to-be-paid-for-by-acme.md",
+      "docType": "service_item"
+    },
+    {
+      "file": "video-production--1-visit-per-month-to-acme-london-to-create-20-30-clips-for-social-media.md",
+      "docType": "service_item"
+    },
+    {
+      "file": "video-production--videos-for-large-promotional-campaigns-valentines-fd-md-iwd-summer-bf-xmas.md",
       "docType": "service_item"
     }
   ]

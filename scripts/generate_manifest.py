@@ -20,6 +20,35 @@ from app.knowledge.manifest import MANIFEST_FILENAME
 
 DEFAULT_DOCUMENTS_DIR = Path("documents")
 
+# New files default to service_item unless we already know they are prompt fuel.
+_DEFAULT_META = frozenset(
+    {
+        "Acme tone of voice.md",
+    }
+)
+
+# Process specs and meeting notes — not service catalog rows.
+_DEFAULT_BUSINESS_LOGIC = frozenset(
+    {
+        "Acme Scope RAG - Business logic.md",
+        "Acme Scope RAG -Quote logic (2).md",
+    }
+)
+
+_SKIP_FILES = frozenset(
+    {
+        "Meeting started 2026_08_11 12_08 GMT-03_00 – Notes by Gemini (Spanish).md",
+    }
+)
+
+
+def _default_doc_type(filename: str) -> str:
+    if filename in _DEFAULT_META:
+        return DocType.META.value
+    if filename in _DEFAULT_BUSINESS_LOGIC:
+        return DocType.BUSINESS_LOGIC.value
+    return DocType.SERVICE_ITEM.value
+
 
 def build_manifest(directory: Path) -> tuple[dict[str, object], list[str]]:
     manifest_path = directory / MANIFEST_FILENAME
@@ -29,9 +58,11 @@ def build_manifest(directory: Path) -> tuple[dict[str, object], list[str]]:
         raw = json.loads(manifest_path.read_text(encoding="utf-8"))
         existing = {record["file"]: record["docType"] for record in raw.get("documents", [])}
 
-    on_disk = sorted(path.name for path in directory.glob("*.md"))
+    on_disk = sorted(
+        path.name for path in directory.glob("*.md") if path.name not in _SKIP_FILES
+    )
     documents = [
-        {"file": name, "docType": existing.get(name, DocType.SERVICE_ITEM.value)}
+        {"file": name, "docType": existing.get(name, _default_doc_type(name))}
         for name in on_disk
     ]
     missing = sorted(set(existing) - set(on_disk))

@@ -11,6 +11,8 @@ from app.main import create_app
 def _client(**overrides: object) -> TestClient:
     base = {
         "environment": "local",
+        "gemini_api_key": "",
+        "gcp_project_id": "",
         "session_token_secret": "",
         "internal_access_password": "",
         "allowed_origins": "",
@@ -66,13 +68,34 @@ class TestSessionAuth:
             internal_access_password="pass",
         ) as client:
             assert (
-                client.post("/api/session", json={"password": "nope"}).status_code == 401
+                client.post(
+                    "/api/session", json={"password": "nope", "subject": "robin"}
+                ).status_code
+                == 401
+            )
+
+    def test_session_requires_a_display_name(self) -> None:
+        with _client(
+            session_token_secret="secret",
+            internal_access_password="pass",
+        ) as client:
+            assert (
+                client.post("/api/session", json={"password": "pass"}).status_code == 422
+            )
+            assert (
+                client.post(
+                    "/api/session", json={"password": "pass", "subject": "A"}
+                ).status_code
+                == 422
             )
 
     def test_session_issuance_is_disabled_without_a_password(self) -> None:
         with _client(session_token_secret="secret") as client:
             assert (
-                client.post("/api/session", json={"password": "x"}).status_code == 503
+                client.post(
+                    "/api/session", json={"password": "x", "subject": "robin"}
+                ).status_code
+                == 503
             )
 
     def test_health_still_works_without_a_token(self) -> None:
@@ -138,6 +161,7 @@ class TestSecurityHeaders:
             assert "acme-chat" in page.text
             csp = page.headers.get("Content-Security-Policy", "")
             assert "script-src 'self'" in csp
+            assert "style-src" in csp and "'unsafe-inline'" in csp
             assert "default-src 'none'" not in csp
 
     def test_the_widget_bundle_is_served(self) -> None:

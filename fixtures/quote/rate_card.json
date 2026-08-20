@@ -1,0 +1,22 @@
+{
+  "tiers": {
+    "1": 100,
+    "2": 200,
+    "3": 350,
+    "Variable": "Variable"
+  },
+  "services": {
+    "renders-and-other-designs-for-venue-exteriors--merch": "1",
+    "photography--billboards": "3",
+    "email-marketing-sms--ad-hoc-email-requests-typically-4-5-per-month": "2",
+    "strategic-support--site-visits-if-required-travel-accommodation-to-be-paid-for-by-acme": "Variable",
+    "events--presentations": "2",
+    "events--event-videos": "3",
+    "events--photoshoots": "3",
+    "events--attendance-travel-accommodation-food": "Variable",
+    "photography--video-editing-ad-hoc-for-events-like-site-visits-press-conferences": "2",
+    "renders-and-other-designs-for-venue-exteriors--posters-leaflets-flyer-designs-in-and-out-of-venue": "2"
+  },
+  "currency": "GBP",
+  "notes": "Prices from online acme_scope_db Pricing tier tab (1=100, 2=200, 3=350). Merch remapped from removed Tier 4 → Tier 1 pending sheet confirmation of service→tier."
+}

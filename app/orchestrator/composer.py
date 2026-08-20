@@ -2,19 +2,12 @@
 
 The verdict is read from the catalog, not generated, so a correct reply can be
 assembled from it directly. That makes the language model a genuine
-enhancement - better wording, handling of odd phrasing, follow-up conversation
-- rather than a dependency the answer rests on.
+enhancement - better wording, conversation, brand voice - rather than a
+dependency the answer rests on.
 
-Two things follow, and both matter more than the prose quality here:
-
-The assistant keeps working when Vertex AI is unreachable, rate limited, or
-simply not configured yet. It gets terser, not wrong.
-
-Every path through the system can be tested end to end with no credentials and
-no network, which is why the whole eval suite runs in about a second.
-
-The wording is deliberately plain. It is a fallback, and sounding polished
-would only make it harder to tell which one produced a given reply.
+When Gemini is available it should carry the Acme tone. This composer is the
+fallback: warmer than a form, still plain enough that you can tell which path
+answered. It gets terser when the model is down, not wrong.
 """
 
 from __future__ import annotations
@@ -26,28 +19,29 @@ from app.orchestrator.router import Intent, Route
 
 __all__ = ["compose"]
 
-# What each verdict means for the person asking, in the second person. The
-# corpus supplies its own wording for the verdict itself; this is the practical
-# consequence, which the documents state per item but not in a reusable form.
 _NEXT_STEP: dict[Status, str] = {
-    Status.IN_SCOPE: "Central marketing covers this, so raise it with your account manager.",
-    Status.OUT_OF_SCOPE: "Central marketing cannot take this on.",
-    Status.LOCAL: "This one sits with your own site and operations team rather than central "
-    "marketing.",
-    Status.QUOTE_REQUIRED: "This can be done, but it needs quoting before it goes ahead.",
+    Status.IN_SCOPE: "Central marketing covers this — I can ping your Account Manager when you're ready.",
+    Status.OUT_OF_SCOPE: "Central marketing can't take this one on.",
+    Status.LOCAL: "That one's on your local site / ops team, not central marketing.",
+    Status.QUOTE_REQUIRED: "We can do it on demand — it'll need a quote before it goes ahead.",
 }
 
 _CAPABILITIES = (
-    "I can tell you whether a marketing request is covered by central marketing, refused, "
-    "handled by your local team, or something that needs quoting first. Ask me about a "
-    "service and I will give you the verdict from Acme's service breakdown."
+    "I can tell you whether a marketing request is covered by central marketing, sits with "
+    "your local team, is out of scope, or needs quoting first — and I can check a branch's "
+    "remaining budget for the current fiscal month. Ask me to **list the services** for the "
+    "full breakdown from the catalog, or name a request (e.g. merch, billboards)."
 )
 
-_GREETING = "Ask me whether a marketing request is in scope and I will look it up."
+_GREETING = (
+    "Hey — ask me about a marketing request and I'll tell you if it's in scope, local, "
+    "out of scope, or needs a quote."
+)
 
 _NO_SERVICE = (
-    "I could not tell which service you mean, so I would rather not guess. Try describing it "
-    "differently, or I can pass this to a person."
+    "I don't have that capability — this assistant only covers central marketing "
+    "scope, budget checks, and quotes. Try describing a marketing request, or ask "
+    "what services we cover."
 )
 
 
@@ -63,22 +57,23 @@ def compose(route: Route, resolution: Resolution, retrieval: RetrievalResult) ->
         return _GREETING
 
     if route.intent is Intent.BUDGET:
+        # Prefer app.tools.budget via the pipeline. This branch is only reached
+        # if something called compose directly without the tool.
         return (
-            "I cannot check budgets yet - the spreadsheet is not connected. Ask your account "
-            "manager for the current position."
+            "Budget checks aren't available right now — the tracker isn't loaded. "
+            "Your account manager will have the current position."
         )
 
     if route.intent is Intent.QUOTE:
         return (
-            "I cannot produce a quote. If the service needs one, your account manager will "
-            "arrange it. Tell me which service you mean and I will confirm whether it is in "
-            "scope."
+            "I can't produce a quote from here. Tell me which service you mean and I'll "
+            "confirm whether it's in scope or needs quoting — your AM can take it from there."
         )
 
     if route.intent is Intent.ACTION:
         return (
-            "I cannot send anything yet. Tell me which service this is about and I will "
-            "confirm whether it is in scope, then you can pass that on."
+            "I can't send anything yet. Tell me which service this is about, I'll confirm "
+            "the scope, and you can pass that on."
         )
 
     return _scope_answer(resolution, retrieval)
@@ -89,9 +84,6 @@ def _scope_answer(resolution: Resolution, retrieval: RetrievalResult) -> str:
         return _NO_SERVICE
 
     if resolution.outcome is Outcome.AMBIGUOUS:
-        # Deliberately states no verdict, not even a hint of one. These
-        # candidates disagree about scope, so any hint would be a coin toss
-        # dressed up as an answer.
         return resolution.question() or _NO_SERVICE
 
     status = resolution.status
@@ -99,31 +91,21 @@ def _scope_answer(resolution: Resolution, retrieval: RetrievalResult) -> str:
     if status is None or meaning is None:
         return _NO_SERVICE
 
-    lines: list[str] = []
-
     if resolution.outcome is Outcome.RESOLVED:
         item = resolution.candidates[0].item
-        lines.append(f"**{item.display_name}** — {meaning}.")
+        head = f"For **{item.display_name}**: {meaning}"
     else:
         names = " or ".join(item.display_name for item in resolution.items)
-        lines.append(f"Whether you mean {names}, the answer is the same: {meaning}.")
+        head = f"Whether you mean {names}, same answer: {meaning}"
 
-    lines.append(_NEXT_STEP[status])
-
+    parts = [head, _NEXT_STEP[status]]
     if detail := _detail_for(resolution):
-        lines.append(detail)
-
-    lines.append(f"_{retrieval.citation_line()}_")
-    return "\n\n".join(lines)
+        parts.append(detail)
+    parts.append(f"_(From {retrieval.citation_line().removeprefix('Read from ').rstrip('.')})_")
+    return "\n\n".join(parts)
 
 
 def _detail_for(resolution: Resolution) -> str | None:
-    """Pull the corpus's own explanation, if the document carries one.
-
-    Quoted rather than paraphrased. The whole point of the catalog is that it
-    is the single source of truth for how a verdict is described, and a
-    fallback path is the last place that should start rewording it.
-    """
     if resolution.outcome is not Outcome.RESOLVED:
         return None
 

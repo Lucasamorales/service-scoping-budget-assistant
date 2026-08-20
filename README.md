@@ -38,8 +38,14 @@ python -m venv .venv
 Copy-Item .env.example .env
 ```
 
-The `cloud` extra is separate so the catalog and retrieval layers stay importable without GCP
-credentials. Unit tests and corpus tooling run entirely offline.
+The `cloud` extra pulls in `google-genai` plus Sheets/Firestore clients. For Gemini
+wording and embeddings, set `GEMINI_API_KEY` in `.env`
+([AI Studio](https://aistudio.google.com/apikey)). **Vertex AI is not used.**
+Unit tests and corpus tooling still run offline without the key.
+
+For the architecture decision (why Gemini plans and words but never picks a
+verdict), see [`docs/ASSESSMENT-AND-PLAN.md`](docs/ASSESSMENT-AND-PLAN.md).
+For integrations and incidents, see [`docs/ASSESSMENT-HANDOFF.md`](docs/ASSESSMENT-HANDOFF.md).
 
 ## Commands
 
@@ -61,7 +67,7 @@ credentials. Unit tests and corpus tooling run entirely offline.
 
 # Build artifacts/index.json from the corpus (keyword-only by default).
 .\.venv\Scripts\python.exe -m scripts.build_index
-.\.venv\Scripts\python.exe -m scripts.build_index --embed   # needs GCP_PROJECT_ID
+.\.venv\Scripts\python.exe -m scripts.build_index --embed   # needs GEMINI_API_KEY
 
 # Score retrieval against evals/retrieval.json. Run before touching a prompt.
 .\.venv\Scripts\python.exe -m scripts.eval_retrieval
@@ -74,7 +80,14 @@ credentials. Unit tests and corpus tooling run entirely offline.
 # Score intent routing. Fails outright on any missed handover.
 .\.venv\Scripts\python.exe -m scripts.eval_router
 
-# Ask the assistant something. Works with no GCP project and no network.
+# Score whole turns: did the right lookup run, and did the reply carry the right facts?
+# This is the eval that catches "what's left for london" landing on a capability denial.
+.\.venv\Scripts\python.exe -m scripts.eval_turns
+.\.venv\Scripts\python.exe -m scripts.eval_turns --case budget-left-for-london --verbose
+.\.venv\Scripts\python.exe -m scripts.eval_turns --planner   # live Gemini plans; wording still off
+.\.venv\Scripts\python.exe -m scripts.eval_turns --model     # planner and wording both live
+
+# Ask the assistant something. Works with no API key and no network.
 .\.venv\Scripts\python.exe -m scripts.ask "can we do a billboard for the new branch"
 .\.venv\Scripts\python.exe -m scripts.ask "translate our web pages" --trace
 .\.venv\Scripts\python.exe -m scripts.ask --prompt "merch"   # what the model is sent
@@ -96,15 +109,16 @@ app/
   api/           request and response schemas, endpoints
   core/          keys, domain types, errors, settings, logging
   knowledge/     manifest, catalog parser, chunking, index, retrieval
-  orchestrator/  router, scope resolver, context pack, LLM, composer, pipeline
-  tools/         quoting, budget tracker, mail proposals
-  store/         Firestore, Sheets, mailer clients
+  orchestrator/  plan, execute, compose: planner, executor, facts, guard, wording, resolver, router
+  tools/         quoting, budget tracker, mail proposals, catalog list
+  store/         Firestore, Sheets, mailer, contacts, roster, quote, audit
 scripts/         offline tooling; none of it runs inside the deployed service
 widget/          Shadow DOM chat page (TypeScript → dist/acme-chat.js)
 documents/       the corpus, plus manifest.json declaring each file's type
 prompts/         the always-on instructions, editable without a deployment
-evals/           scored test cases for retrieval, scoping and routing
+evals/           scored cases for retrieval, scoping, routing, and whole turns
 tests/           invariants and corpus anchors, kept apart on purpose
+docs/            ASSESSMENT-AND-PLAN.md (current architecture) + handoff for review
 ```
 
 ## Working with the corpus
@@ -160,10 +174,10 @@ A mismatch disables dense scoring rather than ranking across different spaces, w
 plausible and be quietly wrong.
 
 Documents use `RETRIEVAL_DOCUMENT`, queries use `RETRIEVAL_QUERY`, and truncated vectors are
-unit-normalised after every call. Build with `--embed` once `GCP_PROJECT_ID` is set; without it the
-assistant keeps answering keyword-only. A failed query embedding degrades within the same turn —
-keyword still runs — and a failed *build* embedding refuses to publish, so a half-embedded index
-never reaches production.
+unit-normalised after every call. Build with `--embed` once `GEMINI_API_KEY` is set; without it
+the assistant keeps answering keyword-only. A failed query embedding
+degrades within the same turn — keyword still runs — and a failed *build* embedding refuses to
+publish, so a half-embedded index never reaches production.
 
 ### Measuring retrieval
 
@@ -188,17 +202,48 @@ This started at 56% at rank 1. The gap was almost entirely plural mismatch, docu
 `leaflets` while users type `leaflet`, which is why `app/core/keys.py` now stems. Reading the eval
 output found each cause; none of them were visible in the code.
 
-## The intent router
+## How a turn is answered
 
-Retrieval is a workflow decision before it is a similarity problem. "How much budget is left at
-Basingstoke?" and "can you do us a billboard?" need different sources and different answers, and no
-amount of semantic search turns one into the other. So
-[`app/orchestrator/router.py`](app/orchestrator/router.py) settles the intent first, by pattern, and
-the rest of the pipeline is chosen from it. Patterns rather than a model call, because this
-decision gates what the assistant is allowed to do, so user text must not be able to argue with it.
+"How much budget is left at Basingstoke?" and "can you do us a billboard?" need different
+sources. The old design let one regex pick **both** the tool and the sentence, before anything
+had been looked up. A near-miss did not degrade — it answered the wrong thing fluently.
 
-Intents: `handover`, `clarification_reply`, `scoping`, `budget`, `quote`, `action`, `follow_up`,
-`capabilities`, `greeting`, `unknown`.
+The path is now **plan → execute → compose**. Gemini may choose which lookups to run and how to
+say the result. It never chooses a verdict, a price, or a remaining balance.
+
+```
+message
+  → safety gates (handover, Yes/No mail)     rules only
+  → plan   which lookups this turn needs     Gemini, rules if it fails
+  → execute  catalog / Sheet / roster / mail  deterministic
+  → compose  word the facts                   Gemini, templates if it fails
+  → guard    no invented figures, no flipped  free vs chargeable
+```
+
+| Job | Who |
+|---|---|
+| Injury / legal / press — hand to a person | Rules, before any model call |
+| Did they confirm the email? | Rules matching Yes/No against pending state |
+| Which lookups? (scope, budget, quote, list, roster, …) | Gemini planner, rule fallback |
+| Verdict, price, remaining budget | Catalog + Sheet. Not the model |
+| How to say it | Gemini composer, from the fact pack |
+| Catch a bad sentence | Guard, then the deterministic wording |
+
+A question can request several lookups. "Do we have budget for a photoshoot in Basingstoke"
+wants a price **and** a ledger; the executor runs both.
+
+Flags in `.env`: `USE_LLM_PLANNER` and `USE_LLM_COMPOSER` (both default on). Either can be
+turned off without taking the assistant down. [`evals/turns.json`](evals/turns.json) scores the
+whole path — the eval that catches a budget question answered as "I don't have that capability."
+
+The always-on instructions live in [`prompts/system.md`](prompts/system.md). If that file is
+unreadable the service refuses to start.
+
+### Safety gates the model does not own
+
+[`app/orchestrator/router.py`](app/orchestrator/router.py) still runs first, and two decisions
+never leave it: **handover** and **mail confirmation**. The pattern planner is also the fallback
+when Gemini is down or returns junk JSON.
 
 **Order is the load-bearing part.** Handover is checked before everything else, so *"we were
 shooting photos when someone got hurt, can we use them"* goes to a person rather than being
@@ -225,6 +270,9 @@ The patterns lean specific deliberately. "Complaint" on its own would swallow le
 about **Review management**, which is a real catalog item handled locally — a bad review is
 business as usual, not an escalation.
 
+`scripts.eval_router` scores 31 messages and **fails outright on any missed handover**, which is a
+different class of failure from an ordinary misroute.
+
 ### Carrying context without inventing it
 
 A bare follow-up like *"and for Basingstoke?"* inherits the previous subject. Two guards keep that
@@ -237,8 +285,9 @@ by number ("1", "the second one") or by name ("the hoarding one"). Two cases del
 nothing: naming something that fits several options, and changing the subject entirely. People walk
 away from questions, and answering the abandoned one is worse than dropping it.
 
-`scripts.eval_router` scores 31 messages and **fails outright on any missed handover**, which is a
-different class of failure from an ordinary misroute.
+"And what about merch?" and "and for Bedford?" are both follow-ups, and only the second lacks a
+subject of its own. The message is resolved on its own terms first; the previous subject is
+consulted only when that finds nothing.
 
 ## The scope resolver
 
@@ -280,6 +329,11 @@ Three rules were forced by real failures rather than designed up front:
   The distinction is not how much a query scored but *what it named* — so `merch` resolves and `one`
   does not. Conversational filler and ordinals are stopwords too, but that alone would only have
   postponed the problem until the next filler word.
+- **A decided verdict is withdrawn if the request also named a service that disagrees.**
+  "Do you handle translating our web pages" used to resolve to **Web pages** (free of charge)
+  because those words sit in the sentence, while **Translation & localisation** (local) is what
+  they asked. The resolver now asks which one they mean. Place words like a branch name do not
+  count as naming a rival service.
 
 ### Measuring the resolver
 
@@ -302,94 +356,74 @@ Note that for a case whose candidates disagree, stating *any* verdict counts as 
 the expected one — it would mean ranking decided something only the user can decide, and happened
 to be right.
 
-## The context pack
+## The fact pack, the wording, and the guard
 
-[`app/orchestrator/context.py`](app/orchestrator/context.py) turns those decisions into the prompt.
-Everything upstream produces facts; this is where they become text without becoming negotiable.
+[`app/orchestrator/facts.py`](app/orchestrator/facts.py) is what both answer paths read.
+Every lookup writes into a `FactPack` — verdict, quote, budget snapshots, listing, roster,
+pending email. The deterministic sentences are assembled there as `fallback_text`. The model
+is shown the same object as a briefing and asked to word it, not to judge it.
 
-The important piece is the **verdict block**. Rather than dropping the documents in and hoping the
-model reads the status correctly, the verdict arrives as a separate statement of what the model is
-permitted to say — and when the resolver could not decide, it says so explicitly:
-
-| Outcome | What the block says |
+| Outcome | What the briefing says |
 |---|---|
 | Resolved | The verdict, in the corpus's wording, and not to be reinterpreted |
 | Agreed | All candidates, one shared verdict, and *do not ask the user to choose* |
-| Ambiguous | **No verdict.** Ask, listing the options. Do not state or hint at one |
-| Unknown | **No verdict.** Say so and offer a handover. Do not guess |
-| Handover | Give the reason and stop. Do not comment on the substance |
+| Ambiguous | **No verdict.** Ask, listing the options. The composer is skipped so a truncated model list cannot replace the question |
+| Unknown | **No verdict.** Say so. Do not guess |
+| Handover | Give the reason and stop. The model is not asked to paraphrase it |
 
-Leaving the verdict out for the ambiguous case would not be enough — a model shown two documents
-will happily infer a status from them. The block has to forbid it.
+[`app/orchestrator/wording.py`](app/orchestrator/wording.py) is the only place a model writes
+something a user reads, and it runs **after** every decision. Three outcomes, all answers:
 
-Two smaller rules: **trimming is never silent** (the pack records what was dropped and the prompt
-tells the model to say the answer may be incomplete), and **citations always exist**, including
-"no supporting documents were retrieved".
+- the model wrote something the facts support, and that is used
+- the model failed, returned nothing, or broke a guard → deterministic wording, `Answer.degraded`
+- there was no model → deterministic wording, nothing marked, because that is not a fault
 
-The always-on instructions live in [`prompts/system.md`](prompts/system.md) rather than in code, so
-whoever owns how Acme talks to its own staff can edit them without a deployment. If that file is
-unreadable the service refuses to start: a model with no instructions is far more dangerous than
-one that will not boot.
+[`app/orchestrator/guard.py`](app/orchestrator/guard.py) reads the reply back before anyone sees
+it. It looks for the two failures that cost money: a **figure nobody looked up**, and a **verdict
+turned upside down** (saying "free of charge" about something that needs a PO). Turns that carry
+a figure or a verdict are generated whole and checked before streaming, because a guarded answer
+cannot be un-sent halfway through.
 
 ## Answering a turn
 
-[`app/orchestrator/pipeline.py`](app/orchestrator/pipeline.py) runs the whole sequence — route,
-resolve, retrieve, assemble, generate — and returns an `Answer` carrying the text, the verdict, the
-citations, which path produced it, and the `ConversationState` for the next turn. Callers pass that
-state straight back; nothing has to reassemble it.
+[`app/orchestrator/pipeline.py`](app/orchestrator/pipeline.py) runs plan → execute → compose and
+returns an `Answer` carrying the text, the verdict, the plan, which lookups actually ran, the
+citations, and the `ConversationState` for the next turn. Callers pass that state straight back.
 
-### The model is optional, on purpose
+The model is optional on purpose. Correctness never rests on Gemini being up:
 
-The verdict is read from the catalog, so a correct answer can be assembled without a model at all.
-[`app/orchestrator/composer.py`](app/orchestrator/composer.py) does exactly that, which makes Gemini
-a genuine enhancement — better wording, odd phrasing, conversation — rather than something
-correctness rests on.
+- unconfigured, unreachable, rate limited or slow → terser, never wrong
+- an empty completion counts as a failure (safety filters and token exhaustion both return one)
+- every path is testable with no credentials, which is why the unit suite still runs in a few seconds
 
-Three things follow:
-
-- The assistant keeps working when Vertex AI is unconfigured, unreachable, rate limited or slow. It
-  gets terser, never wrong. `Answer.degraded` says so, so a quiet outage looks like an outage.
-- An empty completion counts as a failure. Safety filters and token exhaustion both return one, and
-  a blank reply would look like the assistant had nothing to say.
-- Every path is testable with no credentials and no network, which is why the full suite runs in
-  about three seconds.
-
-A handover never reaches the model at all. That wording is fixed and has been reviewed, and a model
-handed an injury to discuss might discuss it.
-
-### Inherited context is a fallback, never a prefix
-
-"And what about merch?" and "and for Bedford?" are both follow-ups, and only the second lacks a
-subject of its own. Prepending the previous service to both meant the first was answered about the
-previous service — the user asked about merch and was told about translation. No word count
-separates those two messages, so the message is resolved on its own terms first and the previous
-subject is consulted only when that finds nothing.
+A handover never reaches the model at all. That wording is fixed and has been reviewed, and a
+model handed an injury to discuss might discuss it.
 
 ### Asking it something
 
 ```powershell
 .\.venv\Scripts\python.exe -m scripts.ask "can we do a billboard for the new branch"
-.\.venv\Scripts\python.exe -m scripts.ask "translate our web pages" --trace
-.\.venv\Scripts\python.exe -m scripts.ask --prompt "merch"   # what the model is sent
+.\.venv\Scripts\python.exe -m scripts.ask "what's left for london" --trace
+.\.venv\Scripts\python.exe -m scripts.ask --prompt "merch"   # briefing the composer would see
 .\.venv\Scripts\python.exe -m scripts.ask                    # interactive, carries context
 ```
 
-Same pipeline the deployed service runs. With no GCP project configured it answers from the catalog,
-which needs no API key and no network:
+Same pipeline the deployed service runs. With no Gemini credentials it answers from the catalog:
 
 ```
 **Merch (Renders and other designs for venue exteriors)** — This is something we need to quote.
 
-This can be done, but it needs quoting before it goes ahead.
-Submit detailed request and await quote
-
-ROUTE      follow_up on 'and what about merch', carrying copywriting--translation-localisation
+PLAN       scope {service_phrase='merch'} via rules
+RAN        scope, quote
+ROUTE      scoping
 RESOLVER   resolved via phrase match on 'Merch': Merch [1.00]
 ANSWERED   deterministic
-CITED      Merch (required by the resolver); Graphic design for emails & templates for emails
+CITED      Merch (required by the resolver)
 ```
 
-`--trace` is the fastest way to answer "why did it say that?".
+`--trace` is the fastest way to answer "why did it say that?". `PLAN` is who decided the lookups;
+`RAN` is what actually produced facts. If those disagree, the turn asked for something it could
+not find and should have asked you a question instead of answering.
 
 ## The HTTP service
 
@@ -486,20 +520,23 @@ Do not delete the assertion.
 
 ## Current state
 
-**The assistant answers end to end today over HTTP, with no GCP project and no network.** Catalog,
-chunking, index, keyword retrieval, intent router, scope resolver, context assembly, the Gemini
-adapter, the deterministic composer and the FastAPI service with streaming are all in place, tied
-together by `Pipeline` and reachable through either `scripts.ask` or `/api/chat`, including
-multi-turn conversation.
+**The assistant answers end to end today over HTTP, with or without Gemini.** The turn path is
+plan → execute → compose. Catalog, Sheet, roster and mail are deterministic; Gemini may choose
+lookups and word the facts; a guard discards a reply that invents a figure or flips a verdict.
 
-All 81 documents parse into a typed registry with zero errors and 385 searchable phrases, chunk
-into 81 whole-document slices, and the right item is in the top 5 for every case in the eval. The
-resolver returns a verdict, a clarifying question, or a handover, and across the eval set produces
-**no wrong verdicts and no missed handovers** — the two failures that would actually reach a user
-as bad advice.
+[`evals/turns.json`](evals/turns.json) is the product eval (51 cases). On the rules planner with
+the live catalog and Sheet it last scored **51/51, 0 of 9 critical failures**. That set includes
+the phrases that used to fail in production: "what's left for london", "who is my account
+manager", "do you handle translating our web pages", "what do I get for free".
 
-Gemini on Vertex AI is wired but unexercised: it activates as soon as `GCP_PROJECT_ID` is set, and
-until then every answer comes from the composer.
+All 81 documents parse into a typed registry with zero errors and 385 searchable phrases. The
+resolver returns a verdict, a clarifying question, or a handover. Gemini is wired via
+`GEMINI_API_KEY` ([Google AI Studio](https://aistudio.google.com/apikey)). A GCP project is for
+Firestore / Sheets / GCS — **not** for the model (no Vertex AI).
+
+**Also live locally:** read-only Google Sheet (budget, pricing tiers, roster), Resend mail
+(short résumé body plus a PDF of the audit-log conversation; test from-address), Firestore
+audit dual-write, dense index when built with `--embed`.
 
 The corpus itself is unusually clean: `report_corpus` finds no encoding damage, no stray escapes
 and only two non-ASCII characters across 136,000.
@@ -541,28 +578,46 @@ conversation state in `sessionStorage`, and signs in via `POST /api/session` whe
 Styles and markup live inside the shadow root so a host page cannot break the layout. Model text is
 HTML-escaped before a tiny markdown subset is applied — never injected raw.
 
-Not built yet: the budget tracker, the quoting engine, and mail. Embeddings and Gemini are wired
-and activate once `GCP_PROJECT_ID` is set; neither has been run against a real project yet.
+### Trying Gemini locally
+
+1. Create an API key at [Google AI Studio](https://aistudio.google.com/apikey)
+2. Copy `.env.example` → `.env` and set `GEMINI_API_KEY=...`
+3. `.\.venv\Scripts\python.exe -m pip install -e ".[dev,cloud]"`
+4. Run the server or `python -m scripts.ask "can we order some merch" --trace` — `ANSWERED`
+   should show the model name, not `deterministic`. `PLAN` may show `via gemini-2.5-flash`.
+
+To force the old rule-only path while testing: `USE_LLM_PLANNER=false` and/or
+`USE_LLM_COMPOSER=false` in `.env`.
+
+`GCP_PROJECT_ID` is for Firestore / Sheets (and later GCS). Gemini does not use Vertex.
+
+**Built and wired locally:** budget tracker (live Sheet when configured), quoting
+(tier prices from Sheet + service→tier JSON), roster, Resend mail, Firestore audit.
+**Not built yet:** Dockerfile / Cloud Run, GCS index download at boot, IAP, production
+Resend DNS, moving service→tier onto the Sheet.
+
+Architecture write-up: [`docs/ASSESSMENT-AND-PLAN.md`](docs/ASSESSMENT-AND-PLAN.md).
+Status board: [`docs/ARCHITECTURE-AUDIT.md`](docs/ARCHITECTURE-AUDIT.md).
 
 ## Inputs still needed
 
-Four documents referenced by the architecture are not yet in the corpus, and three of them are on
-the critical path:
+Four documents were originally listed as missing. Two of them now live on the Sheet:
 
-| Input | Needed for |
+| Input | Status |
 |---|---|
-| Branch glossary (13 branches, 4 countries) | canonical branch keys |
-| Business logic: FOC modifiers, thresholds, routing rules | the orchestrator |
-| Budget spreadsheet layout and access | the budget tracker |
-| Directory of responsible people (AM and Country Manager per branch) | mail routing |
-| Quoting rate card | the quoting engine, post-MVP |
+| Branch list (13 branches, 4 countries) | **Live** — Sheet tab `Branches/countries` |
+| Budget caps, spend, fiscal calendar | **Live** — Sheet tabs `Budget caps`, `DB`, `Fiscal_calendar` |
+| Directory of AM / CM per country | **Live** — Sheet tab `Roster` (plus `fixtures/contacts/country_ams.json`) |
+| Pricing tiers | **Live** — Sheet tab `Pricing_tiers`. Service→tier map is still JSON |
+| Business logic: FOC modifiers, thresholds, routing rules | **Not in corpus** — see below |
+| Quoting: confirm merch tier with the business | Open |
 
-The business logic document is the one that shapes the conversation. The 81 documents give one
-flat verdict per item, but a leaflet that already exists and needs resizing is free while the same
-leaflet built from scratch is quoted. Those branches, the question that decides between them, and
-the thresholds around them all live in that file. It is parsed at build time rather than
-transcribed into Python so that marketing owns pricing behaviour, and so there is only ever one
-source of truth for it.
+The business logic document is the one that still shapes the conversation. The 81 documents give
+one flat verdict per item, but a leaflet that already exists and needs resizing is free while the
+same leaflet built from scratch is quoted. Those branches, the question that decides between them,
+and the thresholds around them all live in that file. It should be parsed at build time rather
+than transcribed into Python so that marketing owns pricing behaviour, and so there is only ever
+one source of truth for it.
 
 ## Reference
 

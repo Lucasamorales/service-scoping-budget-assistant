@@ -15,12 +15,12 @@ from collections import Counter
 from app.core.types import Status
 from app.knowledge.catalog import CatalogLoadResult
 
-EXPECTED_ITEM_COUNT = 81
-EXPECTED_SECTION_COUNT = 10
+EXPECTED_ITEM_COUNT = 89
+EXPECTED_SECTION_COUNT = 12
 EXPECTED_STATUS_COUNTS = {
-    Status.IN_SCOPE: 40,
-    Status.QUOTE_REQUIRED: 21,
-    Status.LOCAL: 16,
+    Status.IN_SCOPE: 42,
+    Status.QUOTE_REQUIRED: 25,
+    Status.LOCAL: 18,
     Status.OUT_OF_SCOPE: 4,
 }
 

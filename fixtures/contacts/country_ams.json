@@ -1,0 +1,17 @@
+{
+  "contacts": [
+    {
+      "countries": ["United Kingdom", "UK", "England", "Scotland", "Wales", "France", "Canada", "Australia"],
+      "name": "Robin",
+      "email": "robin@example.com",
+      "role": "account_manager"
+    },
+    {
+      "countries": ["United Kingdom", "UK", "England", "Scotland", "Wales", "France", "Canada", "Australia"],
+      "name": "Charlie",
+      "email": "charlie@example.com",
+      "role": "country_manager"
+    }
+  ],
+  "notes": "Temporary the agency recipients for AM/CM CTAs until Acme directory is final."
+}

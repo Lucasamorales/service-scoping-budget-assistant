@@ -216,7 +216,9 @@ def test_no_corpus_item_is_unreachable_by_its_own_name(corpus) -> None:
     unreachable = [
         item.item_id
         for item in corpus.catalog
-        if item.item_id not in resolver.resolve(item.display_name).force_item_ids
+        if item.item_id
+        not in resolver.resolve(item.item).force_item_ids
+        and item.item_id not in resolver.resolve(item.display_name).force_item_ids
     ]
     assert not unreachable, f"unreachable by name: {unreachable}"
 

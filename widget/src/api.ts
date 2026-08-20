@@ -2,6 +2,26 @@ export type ConversationState = {
   pendingCandidates: string[];
   lastItemIds: string[];
   lastBranch: string | null;
+  conversationId?: string | null;
+  pendingActionKind?: string | null;
+  pendingServiceId?: string | null;
+  pendingQuoteAmount?: number | null;
+  pendingCurrency?: string;
+  pendingRecipientCountry?: string | null;
+  pendingRecipientName?: string | null;
+  pendingNeedsCountry?: boolean;
+  activeTool?: string | null;
+  budgetCountry?: string | null;
+  budgetBranch?: string | null;
+  budgetMonth?: string | null;
+};
+
+export type ChatAction = {
+  id: string;
+  label: string;
+  kind: "message" | "link";
+  message?: string | null;
+  url?: string | null;
 };
 
 export type Verdict = {
@@ -10,10 +30,21 @@ export type Verdict = {
   service: string;
 };
 
+export type CandidateOption = {
+  id: string;
+  label: string;
+};
+
+export type HistoryMessage = {
+  role: "user" | "assistant";
+  content: string;
+};
+
 export type SessionInfo = {
   token: string;
   expiresAt: number;
   role: string;
+  subject: string | null;
   country: string | null;
   branch: string | null;
 };
@@ -25,6 +56,8 @@ export type StreamHandlers = {
     notes: string[];
     needsAHuman: boolean;
     awaitingAnswer: boolean;
+    candidates: CandidateOption[];
+    actions: ChatAction[];
   }) => void;
   onText: (text: string) => void;
   onDone: (payload: {
@@ -39,14 +72,18 @@ export type StreamHandlers = {
 export async function createSession(
   apiBase: string,
   password: string,
-  extras: { subject?: string; branch?: string; country?: string } = {},
+  extras: {
+    subject: string;
+    branch?: string;
+    country?: string;
+  },
 ): Promise<SessionInfo> {
   const response = await fetch(`${apiBase}/api/session`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       password,
-      subject: extras.subject ?? "internal",
+      subject: extras.subject,
       branch: extras.branch ?? null,
       country: extras.country ?? null,
     }),
@@ -60,6 +97,7 @@ export async function createSession(
     token: body.token,
     expiresAt: body.expiresAt,
     role: body.role,
+    subject: body.subject ?? extras.subject,
     country: body.country,
     branch: body.branch,
   };
@@ -69,6 +107,7 @@ export async function streamChat(
   apiBase: string,
   message: string,
   state: ConversationState | null,
+  history: HistoryMessage[],
   token: string | null,
   handlers: StreamHandlers,
   signal?: AbortSignal,
@@ -79,7 +118,7 @@ export async function streamChat(
   const response = await fetch(`${apiBase}/api/chat/stream`, {
     method: "POST",
     headers,
-    body: JSON.stringify({ message, state }),
+    body: JSON.stringify({ message, state, history }),
     signal,
   });
 
@@ -107,23 +146,94 @@ export async function streamChat(
 
 function dispatchSse(block: string, handlers: StreamHandlers): void {
   let event = "message";
-  let data = "";
+  const dataLines: string[] = [];
   for (const line of block.split("\n")) {
     if (line.startsWith("event:")) event = line.slice(6).trim();
-    else if (line.startsWith("data:")) data += line.slice(5).trim();
+    else if (line.startsWith("data:")) dataLines.push(line.slice(5).replace(/^ /, ""));
   }
+  const data = dataLines.join("\n");
   if (!data) return;
-  const payload = JSON.parse(data) as Record<string, unknown>;
-  if (event === "verdict") handlers.onVerdict(payload as Parameters<StreamHandlers["onVerdict"]>[0]);
-  else if (event === "text") handlers.onText(String(payload.text ?? ""));
-  else if (event === "done") handlers.onDone(payload as Parameters<StreamHandlers["onDone"]>[0]);
+
+  let payload: Record<string, unknown>;
+  try {
+    payload = JSON.parse(data) as Record<string, unknown>;
+  } catch {
+    return;
+  }
+
+  if (event === "verdict") {
+    const raw = payload as Parameters<StreamHandlers["onVerdict"]>[0];
+    const verdictObj = raw.verdict;
+    handlers.onVerdict({
+      verdict:
+        verdictObj && typeof verdictObj === "object"
+          ? {
+              status: asText((verdictObj as Verdict).status),
+              meaning: asText((verdictObj as Verdict).meaning),
+              service: asText((verdictObj as Verdict).service),
+            }
+          : null,
+      citations: asStringArray(raw.citations),
+      notes: asStringArray(raw.notes),
+      needsAHuman: Boolean(raw.needsAHuman),
+      awaitingAnswer: Boolean(raw.awaitingAnswer),
+      candidates: Array.isArray(raw.candidates) ? raw.candidates : [],
+      actions: Array.isArray(raw.actions) ? raw.actions : [],
+    });
+  } else if (event === "text") {
+    const chunk = asText(payload.text);
+    if (chunk) handlers.onText(chunk);
+  } else if (event === "done") {
+    const done = payload as Parameters<StreamHandlers["onDone"]>[0];
+    handlers.onDone({
+      ...done,
+      text: asText(done.text),
+      source: asText(done.source) || "deterministic",
+      degraded: Boolean(done.degraded),
+      truncated: Boolean(done.truncated),
+    });
+  }
+}
+
+/** SSE / DOM must get real strings — objects render as "[object Object]". */
+function asText(value: unknown): string {
+  if (typeof value !== "string") return "";
+  if (value === "[object Object]") return "";
+  return value;
+}
+
+function asStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.map((item) => asText(item)).filter(Boolean);
 }
 
 async function safeDetail(response: Response): Promise<string> {
   try {
-    const body = (await response.json()) as { detail?: string };
-    return body.detail ?? "";
+    const body = (await response.json()) as { detail?: unknown };
+    return formatDetail(body.detail);
   } catch {
     return "";
   }
+}
+
+/** FastAPI 422 ``detail`` is often an array of objects — never pass that to Error(). */
+function formatDetail(detail: unknown): string {
+  if (typeof detail === "string") return detail;
+  if (Array.isArray(detail)) {
+    const parts = detail
+      .map((item) => {
+        if (typeof item === "string") return item;
+        if (item && typeof item === "object" && "msg" in item) {
+          const msg = (item as { msg?: unknown }).msg;
+          const loc = (item as { loc?: unknown }).loc;
+          const where = Array.isArray(loc) ? loc.join(".") : "";
+          return typeof msg === "string" ? (where ? `${where}: ${msg}` : msg) : "";
+        }
+        return "";
+      })
+      .filter(Boolean);
+    return parts.join("; ") || "Request failed validation.";
+  }
+  if (detail && typeof detail === "object") return "Request failed.";
+  return "";
 }

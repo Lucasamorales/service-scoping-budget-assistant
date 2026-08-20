@@ -1,16 +1,16 @@
 """Build the knowledge index artifact from the corpus.
 
     python -m scripts.build_index                 # keyword-only index
-    python -m scripts.build_index --embed         # with Vertex embeddings
+    python -m scripts.build_index --embed         # with Gemini embeddings
     python -m scripts.build_index --out artifacts/index.json
 
 An index without embeddings is a supported mode, not a broken one. Retrieval
 works keyword-only on purpose: if it were useless without vectors, the corpus
 or the chunking would be wrong. Embeddings blend in when present.
 
-``--embed`` needs ``GCP_PROJECT_ID`` and application-default credentials. A
-failed embedding call refuses to publish, because a half-embedded index would
-mix vectors with empty slots and silently degrade every dense score.
+``--embed`` needs ``GEMINI_API_KEY``. A failed embedding call refuses to
+publish, because a half-embedded index would mix vectors with empty slots and
+silently degrade every dense score.
 
 The build also refuses to overwrite a healthy artifact with a suspiciously
 small one. An empty documents folder should not be able to gut production.
@@ -40,7 +40,7 @@ def main() -> int:
     parser.add_argument(
         "--embed",
         action="store_true",
-        help="Embed every chunk via Vertex AI. Requires GCP_PROJECT_ID.",
+        help="Embed every chunk via Gemini. Requires GEMINI_API_KEY.",
     )
     parser.add_argument(
         "--allow-small",
@@ -79,7 +79,7 @@ def main() -> int:
         embedder = build_embedder(settings)
         if embedder is None:
             print(
-                "Cannot embed: GCP_PROJECT_ID is not set. "
+                "Cannot embed: set GEMINI_API_KEY. "
                 "Copy .env.example to .env and fill it in, or omit --embed."
             )
             return 1

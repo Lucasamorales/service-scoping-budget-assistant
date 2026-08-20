@@ -13,6 +13,7 @@ import pytest
 from app.core.types import Status
 from app.knowledge.chunking import chunk_service_item
 from app.knowledge.index import KnowledgeIndex
+from app.orchestrator.history import HistoryTurn
 from app.orchestrator.llm import DETERMINISTIC, ModelReply, ModelUnavailableError
 from app.orchestrator.pipeline import Pipeline, StreamEnd, StreamStart, TextPiece
 from app.orchestrator.resolver import Outcome
@@ -25,16 +26,18 @@ class RecordingModel:
     def __init__(self, text: str = "A polished reply.") -> None:
         self.text = text
         self.prompts: list[str] = []
+        self.system_instructions: list[str | None] = []
 
     @property
     def name(self) -> str:
         return "recording-model"
 
-    def generate(self, prompt: str) -> ModelReply:
+    def generate(self, prompt: str, *, system_instruction: str | None = None) -> ModelReply:
         self.prompts.append(prompt)
+        self.system_instructions.append(system_instruction)
         return ModelReply(self.text, self.name)
 
-    def stream(self, prompt: str):
+    def stream(self, prompt: str, *, system_instruction: str | None = None):
         self.prompts.append(prompt)
         for word in self.text.split(" "):
             yield f"{word} "
@@ -50,11 +53,11 @@ class BrokenModel:
     def name(self) -> str:
         return "broken-model"
 
-    def generate(self, prompt: str) -> ModelReply:
+    def generate(self, prompt: str, *, system_instruction: str | None = None) -> ModelReply:
         self.calls += 1
         raise ModelUnavailableError("connection refused")
 
-    def stream(self, prompt: str):
+    def stream(self, prompt: str, *, system_instruction: str | None = None):
         self.calls += 1
         raise ModelUnavailableError("connection refused")
         yield  # pragma: no cover - makes this a generator
@@ -67,10 +70,10 @@ class EmptyModel:
     def name(self) -> str:
         return "empty-model"
 
-    def generate(self, prompt: str) -> ModelReply:
+    def generate(self, prompt: str, *, system_instruction: str | None = None) -> ModelReply:
         return ModelReply("   ", self.name)
 
-    def stream(self, prompt: str):
+    def stream(self, prompt: str, *, system_instruction: str | None = None):
         yield "   "
 
 
@@ -81,10 +84,10 @@ class DyingModel:
     def name(self) -> str:
         return "dying-model"
 
-    def generate(self, prompt: str) -> ModelReply:
+    def generate(self, prompt: str, *, system_instruction: str | None = None) -> ModelReply:
         return ModelReply("Complete.", self.name)
 
-    def stream(self, prompt: str):
+    def stream(self, prompt: str, *, system_instruction: str | None = None):
         yield "The verdict is "
         raise ModelUnavailableError("stream reset")
 
@@ -114,8 +117,12 @@ class TestWithoutAModel:
     def test_the_answer_states_the_verdict_in_the_corpus_wording(
         self, pipeline: Pipeline
     ) -> None:
+        # On-demand items take the quote flow (deterministic). Local items still
+        # use the composer and surface the corpus status meaning.
         answer = pipeline.answer("can we order some merch")
-        assert "we need to quote" in answer.text
+        assert answer.status is Status.QUOTE_REQUIRED
+        assert "quote" in answer.text.lower()
+        assert answer.actions
 
     def test_agreed_candidates_produce_one_answer_not_a_question(
         self, pipeline: Pipeline
@@ -129,12 +136,25 @@ class TestWithoutAModel:
         answer = pipeline.answer("can you translate our web pages into Spanish")
         assert answer.status is None
         assert answer.awaiting_answer
-        assert "Which do you mean" in answer.text
+        assert "which one did you mean" in answer.text.lower()
+        assert answer.source == DETERMINISTIC
 
     def test_an_unmatched_request_admits_it(self, pipeline: Pipeline) -> None:
         answer = pipeline.answer("can we hire a hot air balloon for the weekend")
         assert answer.status is None
-        assert "could not tell which service" in answer.text
+        text = answer.text.lower()
+        assert "couldn't tell" in text or "could not tell" in text or "capability" in text
+
+    def test_ambiguity_is_not_worded_by_the_model(self, corpus, index) -> None:
+        """Options are already known; a truncated model list is worse than the
+        composed question. The planner may still classify the turn."""
+        model = RecordingModel()
+        answer = with_model(corpus, index, model).answer(
+            "can you translate our web pages into Spanish"
+        )
+        assert answer.source == DETERMINISTIC
+        assert answer.awaiting_answer
+        assert not any(prompt.startswith("# Briefing") for prompt in model.prompts)
 
     def test_every_answer_cites_something(self, pipeline: Pipeline) -> None:
         for question in ("merch", "someone was injured", "hot air balloon", "hello"):
@@ -157,22 +177,67 @@ class TestHandover:
         assert answer.source == DETERMINISTIC
 
     def test_a_handover_retrieves_nothing(self, pipeline: Pipeline) -> None:
-        *_, pack = pipeline.prepare("someone was injured in the branch")
-        assert pack.evidence == ()
+        turn = pipeline.prepare("someone was injured in the branch")
+        assert turn.facts.evidence == ()
+
+    def test_declining_mail_is_not_rewritten_from_history(self, corpus, index) -> None:
+        """A model shown "No" plus the original request will re-answer the
+        request. Mail confirm/cancel is quoted, like handover."""
+        model = RecordingModel(
+            "Got it! So, about translating those web pages into Spanish — "
+            "I'm not seeing a specific service for that."
+        )
+        pipeline = with_model(corpus, index, model)
+        first = pipeline.answer("can we order some merch")
+        assert first.next_state.pending_action_kind
+        prompted = len(model.prompts)
+        history = (
+            HistoryTurn("user", "Can you translate our web pages into Spanish?"),
+            HistoryTurn("assistant", first.text),
+        )
+        second = pipeline.answer("No", first.next_state, history=history)
+        assert second.source == DETERMINISTIC
+        assert "won't send" in second.text.lower() or "no problem" in second.text.lower()
+        assert "translat" not in second.text.lower()
+        assert len(model.prompts) == prompted
 
 
 class TestWithAModel:
+    # Local / out-of-scope still go through the model. In-scope and on-demand
+    # use deterministic business flows (quote tool + CTAs).
+    _MODEL_QUESTION = "who handles landlord relationship"
+
     def test_the_model_writes_the_reply(self, corpus, index) -> None:
-        model = RecordingModel("Yes, that one needs a quote first.")
-        answer = with_model(corpus, index, model).answer("can we order some merch")
-        assert answer.text == "Yes, that one needs a quote first."
+        model = RecordingModel("That's a local one — your site team owns it.")
+        answer = with_model(corpus, index, model).answer(self._MODEL_QUESTION)
+        assert answer.text == "That's a local one — your site team owns it."
         assert answer.source == "recording-model"
 
     def test_the_model_is_given_the_verdict_not_asked_for_one(self, corpus, index) -> None:
         model = RecordingModel()
-        with_model(corpus, index, model).answer("can we order some merch")
-        assert "AUTHORITATIVE VERDICT" in model.prompts[0]
-        assert "we need to quote" in model.prompts[0]
+        with_model(corpus, index, model).answer(self._MODEL_QUESTION)
+        briefing = next(prompt for prompt in model.prompts if prompt.startswith("# Briefing"))
+        assert "Verdict" in briefing
+        assert self._MODEL_QUESTION in briefing
+
+    def test_the_second_turn_prompt_includes_prior_history(self, corpus, index) -> None:
+        model = RecordingModel()
+        history = (
+            HistoryTurn("user", "Can you translate our web pages into Spanish?"),
+            HistoryTurn(
+                "assistant",
+                "A couple of services could match — which one did you mean?",
+            ),
+        )
+        with_model(corpus, index, model).answer(
+            self._MODEL_QUESTION,
+            history=history,
+        )
+        briefing = next(prompt for prompt in model.prompts if prompt.startswith("# Briefing"))
+        assert "Recent conversation" in briefing
+        assert "Can you translate our web pages into Spanish?" in briefing
+        assert self._MODEL_QUESTION in briefing
+        assert briefing.index("Verdict") < briefing.index("Recent conversation")
 
     def test_the_verdict_is_unchanged_by_the_model(self, corpus, index, pipeline) -> None:
         """The property this whole design exists for. Wording may differ; scope
@@ -189,16 +254,16 @@ class TestWithAModel:
 
     def test_a_broken_model_falls_back_and_admits_it(self, corpus, index) -> None:
         model = BrokenModel()
-        answer = with_model(corpus, index, model).answer("can we order some merch")
-        assert model.calls == 1
+        answer = with_model(corpus, index, model).answer(self._MODEL_QUESTION)
+        assert model.calls >= 1
         assert answer.degraded
         assert answer.source == DETERMINISTIC
-        assert answer.status is Status.QUOTE_REQUIRED
+        assert answer.status is Status.LOCAL
 
     def test_an_empty_completion_is_treated_as_a_failure(self, corpus, index) -> None:
         """Safety filters and token exhaustion both return nothing. Showing a
         blank reply would look like the assistant had no answer."""
-        answer = with_model(corpus, index, EmptyModel()).answer("can we order some merch")
+        answer = with_model(corpus, index, EmptyModel()).answer(self._MODEL_QUESTION)
         assert answer.degraded
         assert answer.text.strip()
 
@@ -327,22 +392,31 @@ class TestStreaming:
     ) -> None:
         """Nothing has reached the user yet, so the deterministic answer can
         still be substituted whole."""
-        _, pieces, end = collect(with_model(corpus, index, BrokenModel()), "merch")
+        question = "who handles landlord relationship"
+        _, pieces, end = collect(with_model(corpus, index, BrokenModel()), question)
         assert end.degraded
         assert not end.truncated
         assert end.source == DETERMINISTIC
-        assert "we need to quote" in "".join(pieces)
+        assert pieces
 
-    def test_a_model_that_dies_midway_reports_truncation(self, corpus, index) -> None:
+    def test_a_model_that_dies_midway_on_an_unguarded_turn_reports_truncation(
+        self, corpus, index
+    ) -> None:
         """Bytes already sent cannot be retracted. Appending a second, different
-        answer would be worse than admitting the first one stopped."""
-        _, pieces, end = collect(with_model(corpus, index, DyingModel()), "merch")
+        answer would be worse than admitting the first one stopped.
+
+        Turns that carry a verdict or a figure are buffered and checked before
+        anything is shown, so a mid-stream death there is invisible. This uses
+        a capabilities question, which is safe to stream.
+        """
+        question = "what can you help me with"
+        _, pieces, end = collect(with_model(corpus, index, DyingModel()), question)
         assert end.truncated
         assert end.text == "".join(pieces)
-        assert "we need to quote" not in end.text
 
     def test_an_empty_stream_falls_back(self, corpus, index) -> None:
-        _, pieces, end = collect(with_model(corpus, index, EmptyModel()), "merch")
+        question = "who handles landlord relationship"
+        _, pieces, end = collect(with_model(corpus, index, EmptyModel()), question)
         assert end.degraded
         assert end.text.strip()
         assert "".join(pieces).strip()

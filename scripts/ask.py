@@ -5,9 +5,9 @@
     python -m scripts.ask --prompt "merch"      # show what the model is sent
     python -m scripts.ask                       # interactive, carries context
 
-Runs the same pipeline the deployed service runs. With no GCP project
-configured it answers deterministically from the catalog, which needs no API
-key and no network, so the whole thing is usable today.
+Runs the same pipeline the deployed service runs. With no ``GEMINI_API_KEY``
+it answers deterministically from the catalog, which needs no network, so the
+whole thing is usable today.
 """
 
 from __future__ import annotations
@@ -48,6 +48,10 @@ def print_answer(answer: Answer, *, trace: bool) -> None:
 
     if trace:
         print(f"\n{RULE}")
+        if answer.plan is not None:
+            print(f"PLAN       {answer.plan.explain()}")
+        if answer.satisfied:
+            print(f"RAN        {', '.join(c.value for c in answer.satisfied)}")
         print(f"ROUTE      {answer.route.explain()}")
         print(f"RESOLVER   {answer.resolution.explain()}")
         print(f"ANSWERED   {answer.source}")
@@ -79,14 +83,15 @@ def main() -> int:
         return 1
 
     if pipeline.model is None:
-        print("[no GCP project configured; answering from the catalog without a model]")
+        print("[no GEMINI_API_KEY configured; answering from the catalog without a model]")
 
     def handle(question: str, state: ConversationState) -> ConversationState:
         if args.prompt:
-            *_, pack = pipeline.prepare(question, state)
-            print(f"\n{RULE}\nPROMPT SENT TO THE MODEL\n{RULE}")
-            print(pack.as_prompt())
-            print(f"{RULE}\n~{pack.estimated_tokens} tokens")
+            turn = pipeline.prepare(question, state)
+            briefing = turn.briefing()
+            print(f"\n{RULE}\nBRIEFING SENT TO THE MODEL\n{RULE}")
+            print(briefing)
+            print(f"{RULE}\n~{len(briefing.split())} words")
 
         answer = pipeline.answer(question, state)
         print_answer(answer, trace=args.trace or args.prompt)

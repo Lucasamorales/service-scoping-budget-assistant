@@ -129,7 +129,7 @@ class TestHybridRetrieval:
 class TestPipelineEmbedding:
     def test_a_working_embedder_is_consulted(self, corpus) -> None:
         embedder = FakeEmbedder()
-        # Tiny synthetic index so the call path is exercised without Vertex.
+        # Tiny synthetic index so the call path is exercised without a live API.
         chunks = with_embeddings(
             [_chunk("renders-and-other-designs-for-venue-exteriors--merch", "merch")],
             embedder.embed_documents(["merch"]),

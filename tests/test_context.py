@@ -22,10 +22,22 @@ from app.orchestrator.context import (
     estimate_tokens,
     load_system_prompt,
 )
+from app.orchestrator.history import HistoryTurn
 from app.orchestrator.resolver import Outcome, Resolution, ScopeResolver
 from app.orchestrator.router import ConversationState, Intent, Router
 
 EVIDENCE_LIMIT = 4
+
+load_system_prompt.cache_clear()
+
+
+def test_system_prompt_includes_acme_tone_of_voice() -> None:
+    """Brand voice is meta: always on, never cited as evidence."""
+    load_system_prompt.cache_clear()
+    prompt = load_system_prompt()
+    assert "approachable" in prompt.lower()
+    assert "Tone & Voice" in prompt or "tone of voice" in prompt.lower()
+    assert "conversation" in prompt.lower()
 
 
 @pytest.fixture(scope="module")
@@ -69,7 +81,7 @@ class TestSystemPrompt:
 class TestVerdictBlock:
     def test_a_resolved_verdict_is_stated_as_fact(self, pipeline) -> None:
         pack = ask(pipeline, "can we order some merch")
-        assert "AUTHORITATIVE VERDICT" in pack.verdict_block
+        assert "Scope fact" in pack.verdict_block
         assert "Do not reinterpret it" in pack.verdict_block
 
     def test_a_resolved_verdict_uses_the_corpus_wording(self, pipeline) -> None:
@@ -116,8 +128,42 @@ class TestEvidenceAndBudget:
 
     def test_the_verdict_precedes_the_evidence(self, pipeline) -> None:
         """It is the conclusion; the documents only explain it."""
-        prompt = ask(pipeline, "can we order some merch").as_prompt()
-        assert prompt.index("AUTHORITATIVE VERDICT") < prompt.index("Supporting documents")
+        pack = ask(pipeline, "can we order some merch")
+        prompt = pack.as_prompt()
+        assert prompt.index("Scope fact") < prompt.index("Supporting documents")
+        assert "can we order some merch" in pack.user_turn()
+        assert pack.question == "can we order some merch"
+
+    def test_history_is_continuity_only_and_follows_the_scope_fact(self, pipeline) -> None:
+        router, resolver, retriever = pipeline
+        route = router.route("can we order some merch")
+        resolution = resolver.resolve("can we order some merch")
+        retrieval = retriever.retrieve(
+            "can we order some merch",
+            limit=EVIDENCE_LIMIT,
+            force_item_ids=resolution.force_item_ids,
+        )
+        history = (
+            HistoryTurn("user", "Can you translate our web pages into Spanish?"),
+            HistoryTurn("assistant", "Which one did you mean?"),
+            HistoryTurn("user", "Web pages (Copywriting)"),
+            HistoryTurn("assistant", "Central marketing covers web page copywriting."),
+        )
+        pack = build_context(
+            route,
+            resolution,
+            retrieval,
+            question="can we order some merch",
+            history=history,
+        )
+        turn = pack.user_turn()
+        assert "Recent conversation" in turn
+        assert "Can you translate our web pages into Spanish?" in turn
+        assert turn.index("Scope fact") < turn.index("Recent conversation")
+        assert turn.index("Recent conversation") < turn.index("User question")
+        assert "authoritative" in turn.lower()
+        # Current turn is merch / quote — history must not erase that.
+        assert "we need to quote" in pack.verdict_block.lower() or "quote" in pack.verdict_block.lower()
 
     def test_trimming_is_reported_rather_than_silent(self, pipeline) -> None:
         router, resolver, retriever = pipeline

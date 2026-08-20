@@ -22,6 +22,7 @@ from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 
 from app.api.schemas import (
+    ActionModel,
     ChatRequest,
     ChatResponse,
     HealthResponse,
@@ -30,11 +31,13 @@ from app.api.schemas import (
     StateModel,
     Verdict,
 )
-from app.api.session import SessionError, issue_token
+from app.api.session import SessionClaims, SessionError, issue_token
 from app.core.config import Settings
+from app.orchestrator.history import HistoryTurn
 from app.orchestrator.pipeline import Pipeline, StreamEnd, StreamStart, TextPiece
-from app.orchestrator.resolver import Resolution
+from app.orchestrator.resolver import Outcome, Resolution
 from app.orchestrator.router import ConversationState
+from app.tools.flows import SessionIdentity
 
 __all__ = ["router"]
 
@@ -44,11 +47,7 @@ router = APIRouter()
 
 
 def _pipeline(request: Request) -> Pipeline:
-    """The pipeline built once at startup.
-
-    Loading the corpus and index per request would add tens of milliseconds
-    and pointless allocation; both are immutable once built.
-    """
+    """The pipeline built once at startup."""
     pipeline: Pipeline = request.app.state.pipeline
     return pipeline
 
@@ -69,14 +68,25 @@ def _verdict_of(resolution: Resolution) -> Verdict | None:
     )
 
 
+def _candidates_of(resolution: Resolution) -> list[dict[str, str]]:
+    """Services to choose between when the resolver withheld a verdict."""
+    if resolution.outcome is not Outcome.AMBIGUOUS:
+        return []
+    return [
+        {"id": item.item_id, "label": item.display_name} for item in resolution.items
+    ]
+
+
+def _actions_of(actions: tuple) -> list[dict[str, str | None]]:
+    return [
+        ActionModel.from_action(action).model_dump(by_alias=True, mode="json")
+        for action in actions
+    ]
+
+
 @router.get("/health", response_model=HealthResponse)
 def health(request: Request) -> HealthResponse:
-    """Liveness and capability in one response.
-
-    Reports ``ok`` without a model or an index, because the assistant answers
-    correctly in both cases. Restarting a degraded-but-working service would
-    turn a reduced capability into an outage.
-    """
+    """Liveness and capability in one response."""
     pipeline = _pipeline(request)
     settings: Settings = request.app.state.settings
     return HealthResponse(
@@ -87,17 +97,15 @@ def health(request: Request) -> HealthResponse:
         model=pipeline.model.name if pipeline.model else "deterministic",
         embeddings=pipeline.index.has_embeddings,
         auth_required=settings.session_auth_enabled,
+        mail=settings.mail_configured,
+        budget=pipeline.budget_store is not None,
+        quote=pipeline.quote_store is not None,
     )
 
 
 @router.post("/session", response_model=SessionResponse)
 def create_session(payload: SessionRequest, request: Request) -> SessionResponse | JSONResponse:
-    """Mint a bearer token for the internal MVP page.
-
-    Gated by a shared password, not by individual accounts. That is enough for
-    a password-protected internal tool and deliberately not enough for a
-    customer-facing launch — put Identity-Aware Proxy in front before then.
-    """
+    """Mint a bearer token for the internal MVP page."""
     settings: Settings = request.app.state.settings
     if not settings.session_issuance_enabled:
         return JSONResponse(
@@ -126,6 +134,7 @@ def create_session(payload: SessionRequest, request: Request) -> SessionResponse
         token=token,
         expires_at=claims.expires_at,
         role=claims.role,
+        subject=claims.subject,
         country=claims.country,
         branch=claims.branch,
     )
@@ -134,7 +143,12 @@ def create_session(payload: SessionRequest, request: Request) -> SessionResponse
 @router.post("/chat", response_model=ChatResponse)
 def chat(payload: ChatRequest, request: Request) -> ChatResponse:
     pipeline = _pipeline(request)
-    answer = pipeline.answer(payload.message, _state_from(payload, pipeline))
+    answer = pipeline.answer(
+        payload.message,
+        _state_from(payload, pipeline),
+        history=payload.history_turns(),
+        identity=_session_identity(request),
+    )
     return ChatResponse.from_answer(answer)
 
 
@@ -144,16 +158,33 @@ def chat_stream(payload: ChatRequest, request: Request) -> StreamingResponse:
     state = _state_from(payload, pipeline)
 
     return StreamingResponse(
-        _events(pipeline, payload.message, state),
+        _events(
+            pipeline,
+            payload.message,
+            state,
+            payload.history_turns(),
+            identity=_session_identity(request),
+        ),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",
             "Connection": "keep-alive",
-            # Nginx and several proxies buffer streamed responses by default,
-            # delivering the whole answer at once and defeating the point.
             "X-Accel-Buffering": "no",
         },
     )
+
+
+def _session_identity(request: Request) -> SessionIdentity:
+    """Claims from a verified session, when auth is on."""
+    session = getattr(request.state, "session", None)
+    if isinstance(session, SessionClaims):
+        return SessionIdentity(
+            subject=session.subject,
+            role=session.role.value if hasattr(session.role, "value") else str(session.role),
+            country=session.country,
+            branch=session.branch,
+        )
+    return SessionIdentity()
 
 
 def _password_matches(provided: str, expected: str) -> bool:
@@ -165,20 +196,25 @@ def _password_matches(provided: str, expected: str) -> bool:
 
 
 def _sse(event: str, data: object) -> str:
+    """One SSE event. ``text`` fields must be plain strings for the widget."""
+    if isinstance(data, dict) and "text" in data and data["text"] is not None:
+        data = {**data, "text": data["text"] if isinstance(data["text"], str) else str(data["text"])}
     return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
 
 
-def _events(pipeline: Pipeline, message: str, state: ConversationState) -> Iterator[str]:
-    """Server-sent events for one turn.
-
-    Ordered so the client learns the decision first and the wording second:
-    one ``verdict``, then any number of ``text``, then exactly one ``done``.
-    ``done`` always arrives, including after a failure, so a client can rely on
-    it rather than on the connection closing.
-    """
+def _events(
+    pipeline: Pipeline,
+    message: str,
+    state: ConversationState,
+    history: tuple[HistoryTurn, ...] = (),
+    *,
+    identity: SessionIdentity | None = None,
+) -> Iterator[str]:
+    """Server-sent events for one turn."""
     start: StreamStart | None = None
+    identity = identity or SessionIdentity()
 
-    for event in pipeline.stream(message, state):
+    for event in pipeline.stream(message, state, history, identity=identity):
         match event:
             case StreamStart():
                 start = event
@@ -193,6 +229,8 @@ def _events(pipeline: Pipeline, message: str, state: ConversationState) -> Itera
                         "notes": list(event.notes),
                         "needsAHuman": event.route.needs_a_human,
                         "awaitingAnswer": event.awaiting_answer,
+                        "candidates": _candidates_of(event.resolution),
+                        "actions": _actions_of(event.actions),
                     },
                 )
 

@@ -33,12 +33,20 @@ class TestHandoverWins:
             "they want their personal data deleted",
             "a journalist has been in touch",
             "should we refund this booking",
-            "there is a grievance against a staff member",
             "can we get a discount on this",
         ],
     )
     def test_sensitive_subjects_reach_a_person(self, router: Router, message: str) -> None:
         assert router.route(message).intent is Intent.HANDOVER
+
+    def test_hr_requests_are_not_a_special_handover(self, router: Router) -> None:
+        """Employment asks are outside capability — not an HR handover banner."""
+        for message in (
+            "there is a grievance against a staff member",
+            "fire jeremy",
+            "we need to fire someone",
+        ):
+            assert router.route(message).intent is not Intent.HANDOVER
 
     def test_a_service_mentioned_alongside_an_injury_does_not_win(self, router: Router) -> None:
         """The case the ordering exists for. Photography is a real catalog
@@ -70,6 +78,38 @@ class TestHandoverWins:
 
 
 class TestOrdinaryIntents:
+    @pytest.mark.parametrize(
+        "message",
+        [
+            "how much budget is left",
+            "how much money do we have in the london branch",
+            "what's left in the London branch",
+            "funds remaining at Milton Keynes",
+        ],
+    )
+    def test_money_and_remaining_questions_are_budget(
+        self, router: Router, message: str
+    ) -> None:
+        assert router.route(message).intent is Intent.BUDGET
+
+    def test_sticky_budget_keeps_followups_on_budget(self, router: Router) -> None:
+        state = ConversationState(active_tool="budget", budget_country="Canada")
+        assert router.route("all of them", state).intent is Intent.BUDGET
+        assert router.route("and for the uk?", state).intent is Intent.BUDGET
+        assert router.route("what about the UK?", state).intent is Intent.BUDGET
+        assert router.route("August", state).intent is Intent.BUDGET
+
+    def test_sticky_budget_exits_on_scoping(self, router: Router) -> None:
+        state = ConversationState(active_tool="budget", budget_country="Canada")
+        assert router.route("can we do billboards?", state).intent is Intent.SCOPING
+
+    def test_sticky_budget_bare_branch_stays_on_budget(self) -> None:
+        router = Router(branches=("Acme London", "Acme Manchester"))
+        state = ConversationState(active_tool="budget", budget_country="Canada")
+        route = router.route("London", state)
+        assert route.intent is Intent.BUDGET
+        assert route.branch == "Acme London"
+
     def test_a_bare_service_name_is_a_scoping_question(self, router: Router) -> None:
         assert router.route("billboards?").intent is Intent.SCOPING
 

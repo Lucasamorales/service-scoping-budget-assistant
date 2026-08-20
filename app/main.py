@@ -10,7 +10,7 @@ refresh per request.
 Startup is deliberately intolerant of one thing and tolerant of everything
 else. A corpus that will not parse is fatal, because without it there are no
 verdicts and the service has nothing truthful to say. A missing index, an
-unconfigured model or an unreachable Vertex are all survivable: the assistant
+unconfigured model or an unreachable Gemini backend are all survivable: the assistant
 answers from the catalog and says so.
 """
 
@@ -59,6 +59,10 @@ async def _lifespan(application: FastAPI) -> AsyncIterator[None]:
         model=pipeline.model.name if pipeline.model else "deterministic",
         embeddings=pipeline.index.has_embeddings,
         embedder=pipeline.embedder.contract.model if pipeline.embedder else None,
+        budget=pipeline.budget_store is not None,
+        quote=pipeline.quote_store is not None,
+        contacts=len(pipeline.contacts.contacts),
+        mail=settings.mail_configured,
         origins=settings.origins or "unchecked (local only)",
         auth=settings.session_auth_enabled,
     )
@@ -116,7 +120,10 @@ def _mount_widget(application: FastAPI) -> None:
 
         @application.get("/", include_in_schema=False)
         def internal_page() -> FileResponse:
-            return FileResponse(WIDGET_INDEX)
+            return FileResponse(
+                WIDGET_INDEX,
+                headers={"Cache-Control": "no-store"},
+            )
 
 
 def _install_middleware(application: FastAPI) -> None:

@@ -1,12 +1,21 @@
-"""One turn, start to finish.
+"""One turn, start to finish: plan, execute, compose.
 
-Route, resolve, retrieve, assemble, and only then generate. Each step narrows
-what the next is allowed to do, and by the time the model is called every
-decision that affects correctness has already been made.
+    message
+      → safety gates          handover topics and pending Yes/No, by rule
+      → plan                  which lookups this needs (model, or the router)
+      → execute               the tools, deterministically, possibly several
+      → compose               the model words the facts it was given
+      → guard                 anything unsupported falls back to the facts
 
-The model is optional throughout. When it is absent, unreachable or slow, the
-turn completes from :mod:`app.orchestrator.composer` using the same facts, and
-the answer says so. Nothing about the verdict changes.
+The order is the design. Nothing that affects correctness happens after the
+tools have run: verdicts are lookups, prices come from the rate card, budgets
+come from the tracker, and the model's only job is the sentence. A bad plan
+therefore costs a clarifying question rather than a confident wrong answer,
+because an empty fact pack has nothing to assert.
+
+The model is optional at both ends. With no planner the router still routes;
+with no composer the facts still read as English. Neither absence changes a
+verdict, and the reply says when it happened.
 """
 
 from __future__ import annotations
@@ -23,22 +32,43 @@ from app.knowledge.embeddings import Embedder, build_embedder
 from app.knowledge.index import IndexContractError, KnowledgeIndex
 from app.knowledge.manifest import Manifest
 from app.knowledge.retriever import InMemoryRetriever, RetrievalResult
-from app.orchestrator.composer import compose
-from app.orchestrator.context import ContextPack, build_context, load_system_prompt
-from app.orchestrator.llm import (
-    DETERMINISTIC,
-    LanguageModel,
-    ModelUnavailableError,
-    build_model,
-)
+from app.orchestrator.context import load_system_prompt
+from app.orchestrator.executor import Executor
+from app.orchestrator.facts import FactPack
+from app.orchestrator.history import HistoryTurn
+from app.orchestrator.intent_semantics import InventoryIntentDetector
+from app.orchestrator.llm import LanguageModel, build_model
+from app.orchestrator.plan import Capability, Plan
+from app.orchestrator.planner import ModelPlanner, Planner, build_planner
 from app.orchestrator.resolver import Outcome, Resolution, ScopeResolver
-from app.orchestrator.router import ConversationState, Intent, Route, Router
+from app.orchestrator.router import ConversationState, Route, Router
+from app.orchestrator.wording import Worded, stream_wording, word_answer
+from app.store.audit import (
+    OUTCOME_CHAT_ONLY,
+    OUTCOME_EMAIL_PENDING,
+    AuditEvent,
+    AuditStore,
+    build_audit_store,
+    new_conversation_id,
+)
+from app.store.budget import BudgetStore, build_budget_store
+from app.store.contacts import ContactDirectory, load_contacts
+from app.store.mail import Mailer, build_mailer
+from app.store.quote import QuoteStore, load_quote_store
+from app.store.roster import RosterStore, load_roster
+from app.tools.actions import Action
+from app.tools.budget import BudgetToolResult
+from app.tools.flows import PendingAction, SessionIdentity
 
 __all__ = ["Answer", "Pipeline", "StreamEnd", "StreamStart", "TextPiece"]
 
 logger = structlog.get_logger(__name__)
 
 EVIDENCE_LIMIT = 4
+
+NO_CITATIONS = ("No supporting documents retrieved.",)
+"""Even "nothing was retrieved" is a citation: the alternative is an answer
+whose basis nobody can check."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -57,6 +87,7 @@ class StreamStart:
     citations: tuple[str, ...]
     notes: tuple[str, ...]
     next_state: ConversationState
+    actions: tuple[Action, ...] = ()
 
     @property
     def awaiting_answer(self) -> bool:
@@ -99,6 +130,16 @@ class Answer:
 
     notes: tuple[str, ...] = field(default=())
     next_state: ConversationState = field(default_factory=ConversationState)
+    actions: tuple[Action, ...] = ()
+
+    plan: Plan | None = None
+    """Which lookups this turn asked for, and who decided. ``None`` only for
+    answers built directly in tests."""
+
+    satisfied: tuple[Capability, ...] = ()
+    """Which of them actually produced facts. A planned lookup that found
+    nothing is absent here, which is the difference between an answer and a
+    question."""
 
     @property
     def status(self) -> Status | None:
@@ -114,8 +155,9 @@ class Answer:
         return self.resolution.outcome is Outcome.AMBIGUOUS
 
     def explain(self) -> str:
+        plan = f"{self.plan.explain()} | " if self.plan is not None else ""
         return (
-            f"{self.route.explain()} | {self.resolution.explain()} | "
+            f"{plan}{self.route.explain()} | {self.resolution.explain()} | "
             f"answered by {self.source}"
         )
 
@@ -132,15 +174,46 @@ class Pipeline:
         embedder: Embedder | None = None,
         system_prompt: str | None = None,
         branches: tuple[str, ...] = (),
+        budget_store: BudgetStore | None = None,
+        quote_store: QuoteStore | None = None,
+        contacts: ContactDirectory | None = None,
+        roster: RosterStore | None = None,
+        mailer: Mailer | None = None,
+        audit_log: AuditStore | None = None,
+        use_semantic_inventory: bool = False,
+        use_llm_planner: bool = True,
+        use_llm_composer: bool = True,
     ) -> None:
         self.catalog = catalog
         self.index = index
         self.retriever = InMemoryRetriever(index)
         self.resolver = ScopeResolver(catalog, self.retriever)
-        self.router = Router(branches)
+        inventory_detector = (
+            InventoryIntentDetector(embedder)
+            if embedder is not None and use_semantic_inventory
+            else None
+        )
+        self.router = Router(branches, inventory_detector=inventory_detector)
+        self.planner: Planner = build_planner(model, catalog, use_model=use_llm_planner)
         self.model = model
         self.embedder = embedder
+        self.budget_store = budget_store
+        self.quote_store = quote_store
+        self.contacts = contacts or ContactDirectory(())
+        self.roster = roster
+        self.mailer = mailer or build_mailer(api_key="", from_address="")
+        self.audit_log = audit_log
+        self.use_llm_composer = use_llm_composer
         self._system_prompt = system_prompt
+        self.executor = Executor(
+            catalog=catalog,
+            resolver=self.resolver,
+            contacts=self.contacts,
+            budget_store=budget_store,
+            quote_store=quote_store,
+            roster=roster,
+            audit_log=audit_log,
+        )
 
     @classmethod
     def load(cls, settings: Settings | None = None, **overrides: object) -> Pipeline:
@@ -159,6 +232,35 @@ class Pipeline:
         catalog = load_catalog(Manifest.load(settings.documents_dir)).catalog
         index = KnowledgeIndex.load_local(settings.local_index_path)
         embedder = build_embedder(settings)
+        budget_store = build_budget_store(
+            xlsx_path=settings.budget_xlsx_path,
+            spreadsheet_id=settings.budget_spreadsheet_id,
+            credentials_path=settings.google_application_credentials,
+        )
+        branches = tuple(branch.name for branch in budget_store.branches()) if budget_store else ()
+        quote_store = load_quote_store(
+            settings.quote_rate_card_path,
+            spreadsheet_id=settings.budget_spreadsheet_id,
+            credentials_path=settings.google_application_credentials,
+        )
+        contacts = load_contacts(settings.contacts_path)
+        roster = load_roster(
+            settings.budget_xlsx_path,
+            spreadsheet_id=settings.budget_spreadsheet_id,
+            credentials_path=settings.google_application_credentials,
+        )
+        mailer = build_mailer(
+            api_key=settings.mail_api_key,
+            from_address=settings.mail_from_address,
+            provider=settings.mail_provider,
+        )
+        audit_log = build_audit_store(
+            backend=settings.audit_backend,
+            jsonl_path=settings.audit_log_path,
+            gcp_project_id=settings.gcp_project_id,
+            firestore_database=settings.firestore_database,
+            credentials_path=settings.google_application_credentials,
+        )
 
         if index.is_empty:
             logger.warning(
@@ -183,195 +285,414 @@ class Pipeline:
             model=build_model(settings),
             embedder=embedder,
             system_prompt=load_system_prompt(settings.system_prompt_path),
+            branches=branches,
+            budget_store=budget_store,
+            quote_store=quote_store,
+            contacts=contacts,
+            roster=roster,
+            mailer=mailer,
+            audit_log=audit_log,
+            use_semantic_inventory=settings.use_semantic_inventory,
+            use_llm_planner=settings.use_llm_planner,
+            use_llm_composer=settings.use_llm_composer,
             **overrides,  # type: ignore[arg-type]
         )
 
+    def plan_for(
+        self,
+        question: str,
+        route: Route,
+        state: ConversationState,
+        history: tuple[HistoryTurn, ...] = (),
+    ) -> Plan:
+        """Which lookups this turn needs. Never raises: a failed plan is a rule plan."""
+        if isinstance(self.planner, ModelPlanner):
+            return self.planner.plan(question, route, state, history)
+        return self.planner.plan(question, route, state)
+
     def prepare(
-        self, question: str, state: ConversationState | None = None
-    ) -> tuple[Route, Resolution, RetrievalResult, ContextPack]:
-        """Everything up to the model call. Deterministic once embeddings settle."""
+        self,
+        question: str,
+        state: ConversationState | None = None,
+        history: tuple[HistoryTurn, ...] = (),
+    ) -> _Turn:
+        """Everything up to the wording: plan, lookups, facts.
+
+        Exposed so a turn can be inspected without generating — which is how
+        ``scripts.ask --prompt`` shows what the model would be told.
+        """
         state = state or ConversationState()
         route = self.router.route(question, state)
+        plan = self.plan_for(question, route, state, history)
+        resolution, retrieval = self._lookup(question, plan, route)
 
-        if route.intent is Intent.HANDOVER:
-            # Nothing is looked up. The point of a handover is that the
-            # assistant does not engage with the substance at all, and
-            # retrieving supporting documents would invite it to.
-            resolution = Resolution(Outcome.UNKNOWN, question)
-            retrieval = RetrievalResult(mode="skipped")
-        else:
-            resolution = self._resolve(question, route)
-            retrieval = self.retriever.retrieve(
-                question,
-                limit=EVIDENCE_LIMIT,
-                query_vector=self._query_vector(question),
-                force_item_ids=resolution.force_item_ids,
-            )
-
-        pack = build_context(
-            route, resolution, retrieval, system_prompt=self._system_prompt
+        confirm = (
+            _pending_from_state(state)
+            if plan.wants(Capability.MAIL) and state.awaiting_action_confirm
+            else None
         )
-        return route, resolution, retrieval, pack
-
-    def answer(self, question: str, state: ConversationState | None = None) -> Answer:
-        route, resolution, retrieval, pack = self.prepare(question, state)
-
-        fallback = compose(route, resolution, retrieval)
-        text, source, degraded = self._generate(pack, fallback, route)
-
-        answer = Answer(
-            text=text,
-            route=route,
+        facts = self.executor.run(
+            question,
+            plan,
+            route,
+            state,
+            SessionIdentity(),
+            history,
             resolution=resolution,
-            citations=pack.citations,
-            source=source,
-            degraded=degraded,
-            notes=pack.notes,
-            next_state=_carry_forward(route, resolution),
+            retrieval=retrieval,
+            confirm=confirm,
+            mailer=self.mailer,
+        )
+        return _Turn(route, plan, resolution, retrieval, facts)
+
+    def _lookup(
+        self, question: str, plan: Plan, route: Route
+    ) -> tuple[Resolution, RetrievalResult]:
+        """Resolve and retrieve, but only for turns that are about a service."""
+        if not plan.needs_a_service:
+            return Resolution(Outcome.UNKNOWN, question), RetrievalResult(mode="skipped")
+
+        resolution = self.executor.resolve(question, plan, route)
+        retrieval = self.retriever.retrieve(
+            question,
+            limit=EVIDENCE_LIMIT,
+            query_vector=self._query_vector(question),
+            force_item_ids=resolution.force_item_ids,
+        )
+        return resolution, retrieval
+
+    def _run_turn(
+        self,
+        question: str,
+        state: ConversationState,
+        history: tuple[HistoryTurn, ...],
+        identity: SessionIdentity,
+        conversation_id: str | None = None,
+    ) -> _Turn:
+        """Plan and execute one turn, with the real session identity."""
+        route = self.router.route(question, state)
+        plan = self.plan_for(question, route, state, history)
+        resolution, retrieval = self._lookup(question, plan, route)
+
+        confirm = (
+            _pending_from_state(state)
+            if plan.wants(Capability.MAIL) and state.awaiting_action_confirm
+            else None
+        )
+        facts = self.executor.run(
+            question,
+            plan,
+            route,
+            state,
+            identity,
+            history,
+            resolution=resolution,
+            retrieval=retrieval,
+            confirm=confirm,
+            mailer=self.mailer,
+            conversation_id=conversation_id or state.conversation_id,
+        )
+        return _Turn(route, plan, resolution, retrieval, facts)
+
+    def answer(
+        self,
+        question: str,
+        state: ConversationState | None = None,
+        history: tuple[HistoryTurn, ...] = (),
+        *,
+        identity: SessionIdentity | None = None,
+    ) -> Answer:
+        state = state or ConversationState()
+        identity = identity or SessionIdentity()
+        conversation_id = state.conversation_id or new_conversation_id()
+
+        turn = self._run_turn(question, state, history, identity, conversation_id)
+        worded = word_answer(
+            self._composer(),
+            turn.facts,
+            question,
+            history,
+            system_prompt=self._system_prompt,
+        )
+
+        answer = self._assemble(
+            turn, worded, conversation_id, identity, state=state
+        )
+        self._audit(
+            conversation_id,
+            question,
+            answer,
+            identity,
+            outcome=turn.facts.audit_outcome,
+            email=turn.facts.email,
+            facts=turn.facts,
         )
         logger.info("pipeline.answered", question=question, detail=answer.explain())
         return answer
 
     def stream(
-        self, question: str, state: ConversationState | None = None
+        self,
+        question: str,
+        state: ConversationState | None = None,
+        history: tuple[HistoryTurn, ...] = (),
+        *,
+        identity: SessionIdentity | None = None,
     ) -> Iterator[StreamStart | TextPiece | StreamEnd]:
         """Answer incrementally: one :class:`StreamStart`, then text, then one
         :class:`StreamEnd`.
-
-        The verdict rides in the first event, before any prose, because it is a
-        lookup rather than a completion. That is the main reason streaming is
-        worth having here at all.
-
-        Falling back is only possible until the first fragment is emitted;
-        after that the bytes are gone. So a failure before the first fragment
-        is invisible to the user, and a failure after it is reported as
-        truncation rather than by silently appending a second, different
-        answer.
         """
-        route, resolution, retrieval, pack = self.prepare(question, state)
-        fallback = compose(route, resolution, retrieval)
+        state = state or ConversationState()
+        identity = identity or SessionIdentity()
+        conversation_id = state.conversation_id or new_conversation_id()
 
-        yield StreamStart(
-            route=route,
-            resolution=resolution,
-            citations=pack.citations,
-            notes=pack.notes,
-            next_state=_carry_forward(route, resolution),
+        turn = self._run_turn(question, state, history, identity, conversation_id)
+        next_state = _carry_forward(
+            turn.route,
+            turn.plan,
+            turn.resolution,
+            identity.branch,
+            conversation_id=conversation_id,
+            pending=turn.facts.pending,
+            prior=state,
+            budget=turn.facts.budget,
         )
 
-        model = self._model_for(route)
-        if model is None:
-            yield TextPiece(fallback)
-            yield StreamEnd(fallback, DETERMINISTIC)
+        # The decision is known before a word is written, so it goes out first:
+        # a dropped connection mid-answer still delivered the consequences.
+        yield StreamStart(
+            route=turn.route,
+            resolution=turn.resolution,
+            citations=turn.citations,
+            notes=turn.facts.notes,
+            next_state=next_state,
+            actions=turn.facts.actions,
+        )
+
+        worded: Worded | None = None
+        for piece in stream_wording(
+            self._composer(),
+            turn.facts,
+            question,
+            history,
+            system_prompt=self._system_prompt,
+        ):
+            if isinstance(piece, Worded):
+                worded = piece
+                continue
+            yield TextPiece(piece)
+
+        assert worded is not None
+        yield StreamEnd(
+            worded.text,
+            worded.source,
+            degraded=worded.degraded,
+            truncated=worded.truncated,
+        )
+        self._audit(
+            conversation_id,
+            question,
+            self._assemble(turn, worded, conversation_id, identity, state=state),
+            identity,
+            outcome=turn.facts.audit_outcome,
+            email=turn.facts.email,
+            facts=turn.facts,
+        )
+
+    def _composer(self) -> LanguageModel | None:
+        """The model allowed to write this turn's wording, if any."""
+        return self.model if self.use_llm_composer else None
+
+    def _assemble(
+        self,
+        turn: _Turn,
+        worded: Worded,
+        conversation_id: str,
+        identity: SessionIdentity,
+        *,
+        state: ConversationState,
+    ) -> Answer:
+        return Answer(
+            text=worded.text,
+            route=turn.route,
+            resolution=turn.resolution,
+            citations=turn.citations,
+            source=worded.source,
+            degraded=worded.degraded,
+            notes=turn.facts.notes,
+            next_state=_carry_forward(
+                turn.route,
+                turn.plan,
+                turn.resolution,
+                identity.branch,
+                conversation_id=conversation_id,
+                pending=turn.facts.pending,
+                prior=state,
+                budget=turn.facts.budget,
+            ),
+            actions=turn.facts.actions,
+            plan=turn.plan,
+            satisfied=turn.facts.satisfied,
+        )
+
+    def _audit(
+        self,
+        conversation_id: str,
+        question: str,
+        answer: Answer,
+        identity: SessionIdentity,
+        *,
+        outcome: str | None = None,
+        email: dict[str, object] | None = None,
+        facts: FactPack | None = None,
+    ) -> None:
+        if self.audit_log is None:
             return
-
-        pieces: list[str] = []
-
-        try:
-            for piece in model.stream(pack.as_prompt()):
-                pieces.append(piece)
-                yield TextPiece(piece)
-        except ModelUnavailableError as exc:
-            if not pieces:
-                logger.warning("pipeline.stream_degraded", error=str(exc))
-                yield TextPiece(fallback)
-                yield StreamEnd(fallback, DETERMINISTIC, degraded=True)
-                return
-
-            logger.error("pipeline.stream_truncated", error=str(exc), emitted=len(pieces))
-            yield StreamEnd("".join(pieces), model.name, truncated=True)
-            return
-
-        text = "".join(pieces).strip()
-        if not text:
-            # An empty completion is a real outcome, not a transport failure.
-            # Nothing has reached the user yet, so the fallback still works.
-            logger.warning("pipeline.stream_empty", model=model.name)
-            yield TextPiece(fallback)
-            yield StreamEnd(fallback, DETERMINISTIC, degraded=True)
-            return
-
-        yield StreamEnd(text, model.name)
+        resolved_outcome = outcome
+        if resolved_outcome is None:
+            if answer.next_state.pending_action_kind:
+                resolved_outcome = OUTCOME_EMAIL_PENDING
+            else:
+                resolved_outcome = OUTCOME_CHAT_ONLY
+        self.audit_log.append(
+            AuditEvent(
+                conversation_id=conversation_id,
+                kind="turn",
+                payload={
+                    "user_message": question,
+                    "assistant_message": answer.text,
+                    "intent": answer.route.intent.value,
+                    "status": answer.status.value if answer.status else None,
+                    "source": answer.source,
+                    "outcome": resolved_outcome,
+                    "email": email,
+                    "actions": [action.id for action in answer.actions],
+                    "pending_action_kind": answer.next_state.pending_action_kind,
+                    "active_tool": answer.next_state.active_tool,
+                    "budget_country": answer.next_state.budget_country,
+                    "budget_branch": answer.next_state.budget_branch,
+                    "budget_month": answer.next_state.budget_month,
+                    "subject": identity.subject,
+                    "role": identity.role,
+                    "country": identity.country,
+                    "branch": identity.branch,
+                    # Why the turn answered as it did. Without this a bad reply
+                    # can only be diagnosed by reproducing it locally.
+                    "trace": _trace(answer.plan, facts),
+                },
+            )
+        )
 
     def _query_vector(self, question: str) -> tuple[float, ...] | None:
-        """Embed the question when both sides of the contract are present.
-
-        Failure returns ``None`` and retrieval continues keyword-only within
-        the same turn. A missed paraphrase is cheaper than a failed answer.
-        """
+        """Embed the question when both sides of the contract are present."""
         if self.embedder is None or not self.index.has_embeddings:
             return None
         return self.embedder.embed_query(question)
 
-    def _model_for(self, route: Route) -> LanguageModel | None:
-        """The model that should write this turn, if any.
 
-        A handover gets none. That wording is fixed and has been reviewed, and
-        a model handed an injury to discuss might discuss it.
-        """
-        if route.intent is Intent.HANDOVER:
-            return None
-        return self.model
-
-    def _generate(
-        self, pack: ContextPack, fallback: str, route: Route
-    ) -> tuple[str, str, bool]:
-        """Ask the model, and fall back without ceremony if it cannot answer."""
-        model = self._model_for(route)
-        if model is None:
-            return fallback, DETERMINISTIC, False
-
-        try:
-            reply = model.generate(pack.as_prompt())
-        except ModelUnavailableError as exc:
-            logger.warning("pipeline.model_unavailable", error=str(exc))
-            return fallback, DETERMINISTIC, True
-
-        # Checked here rather than trusting the client, because every model
-        # implementation has to clear this bar. Blank output is a real outcome
-        # - safety filters and token exhaustion both produce it - and showing
-        # it would look like the assistant had nothing to say.
-        if not reply.text.strip():
-            logger.warning("pipeline.model_empty", model=reply.model)
-            return fallback, DETERMINISTIC, True
-        return reply.text.strip(), reply.model, False
-
-    def _resolve(self, question: str, route: Route) -> Resolution:
-        """Work out which service the turn is about.
-
-        Inherited context is a *fallback*, never a prefix. "And what about
-        merch?" and "and for Bedford?" are both follow-ups, and only the second
-        one lacks a subject of its own. Prepending the previous service to both
-        meant the first was answered about the previous service - the user
-        asked about merch and was told about translation, which is precisely
-        the kind of confident wrong answer this system exists to avoid.
-
-        No word count separates those two messages; only trying to resolve them
-        does. So the message is resolved on its own terms first, and the
-        previous subject is consulted only when that finds nothing.
-        """
-        if route.selected_item_id and (item := self.catalog.get(route.selected_item_id)):
-            return self.resolver.resolve(item.display_name)
-
-        resolution = self.resolver.resolve(question)
-        if resolution.outcome is not Outcome.UNKNOWN or not route.carried_item_ids:
-            return resolution
-
-        previous = self.catalog.get(route.carried_item_ids[0])
-        if previous is None:
-            return resolution
-
-        carried = self.resolver.resolve(f"{previous.display_name} {question}")
-        return carried if carried.outcome is not Outcome.UNKNOWN else resolution
+def _pending_from_state(state: ConversationState) -> PendingAction:
+    assert state.pending_action_kind is not None
+    return PendingAction(
+        kind=state.pending_action_kind,
+        service_id=state.pending_service_id,
+        quote_amount=state.pending_quote_amount,
+        currency=state.pending_currency or "GBP",
+        recipient_country=state.pending_recipient_country,
+        recipient_name=state.pending_recipient_name,
+        needs_country=state.pending_needs_country,
+    )
 
 
-def _carry_forward(route: Route, resolution: Resolution) -> ConversationState:
+@dataclass(frozen=True, slots=True)
+class _Turn:
+    """One turn's decisions and findings, before anything is worded."""
+
+    route: Route
+    plan: Plan
+    resolution: Resolution
+    retrieval: RetrievalResult
+    facts: FactPack
+
+    @property
+    def citations(self) -> tuple[str, ...]:
+        if self.facts.citations:
+            return self.facts.citations
+        # A Yes/No on a pending email looked nothing up. The placeholder
+        # "No supporting documents retrieved" reads like a failed search.
+        if Capability.MAIL in self.facts.satisfied:
+            return ()
+        return NO_CITATIONS
+
+    def briefing(self) -> str:
+        """What the model would be told for this turn."""
+        from app.orchestrator.wording import build_briefing
+
+        return build_briefing(self.facts, self.route.message)
+
+
+def _trace(plan: Plan | None, facts: FactPack | None) -> dict[str, object]:
+    """The audit trail's account of how a turn was decided."""
+    return {
+        "planned": [capability.value for capability in plan.capabilities] if plan else [],
+        "satisfied": [capability.value for capability in facts.satisfied] if facts else [],
+        "slots": plan.slots.filled() if plan else {},
+        "planner": plan.source if plan else None,
+        "reading": plan.reading if plan else None,
+    }
+
+
+def _carry_forward(
+    route: Route,
+    plan: Plan,
+    resolution: Resolution,
+    session_branch: str | None = None,
+    *,
+    conversation_id: str | None = None,
+    pending: PendingAction | None = None,
+    prior: ConversationState | None = None,
+    budget: BudgetToolResult | None = None,
+) -> ConversationState:
     """What the next turn needs to know about this one."""
+    branch = route.branch or session_branch
+    active_tool: str | None = None
+    budget_country: str | None = None
+    budget_branch: str | None = None
+    budget_month: str | None = None
+    # Sticky only when the ledger was the point of the turn. A price that
+    # happened to mention a budget must not capture the next question.
+    if plan.primary is Capability.BUDGET:
+        active_tool = "budget"
+        if budget is not None and not (
+            budget.ask_branch
+            and budget.resolved_country is None
+            and budget.resolved_branch is None
+        ):
+            budget_country = budget.resolved_country
+            budget_branch = budget.resolved_branch
+            budget_month = budget.resolved_month
+        elif prior is not None:
+            # Ask-branch with no new scope — keep prior sticky slots.
+            budget_country = prior.budget_country
+            budget_branch = prior.budget_branch
+            budget_month = budget.resolved_month if budget else prior.budget_month
+        elif budget is not None:
+            budget_month = budget.resolved_month
     return ConversationState(
         pending_candidates=(
             resolution.force_item_ids if resolution.outcome is Outcome.AMBIGUOUS else ()
         ),
         last_item_ids=resolution.force_item_ids,
-        last_branch=route.branch,
+        last_branch=branch,
         last_intent=route.intent,
+        conversation_id=conversation_id,
+        pending_action_kind=pending.kind if pending else None,
+        pending_service_id=pending.service_id if pending else None,
+        pending_quote_amount=pending.quote_amount if pending else None,
+        pending_currency=pending.currency if pending else "GBP",
+        pending_recipient_country=pending.recipient_country if pending else None,
+        pending_recipient_name=pending.recipient_name if pending else None,
+        pending_needs_country=pending.needs_country if pending else False,
+        active_tool=active_tool,
+        budget_country=budget_country,
+        budget_branch=budget_branch,
+        budget_month=budget_month,
     )

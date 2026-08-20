@@ -23,17 +23,47 @@ class Settings(BaseSettings):
         env_file_encoding="utf-8",
         extra="ignore",
         case_sensitive=False,
+        populate_by_name=True,
     )
 
     environment: str = "local"
     log_level: str = "INFO"
 
+    # Gemini Developer API (API key) — chat wording and dense embeddings.
+    gemini_api_key: str = ""
+    gemini_chat_model: str = "gemini-2.5-flash"
+    gemini_embed_model: str = "gemini-embedding-001"
+    gemini_embed_dimensions: int = 768
+    """gemini-embedding-001 natives to 3072; we request 768 for a smaller index."""
+
+    # GCP for Firestore / GCS / Sheets — not used for Gemini.
     gcp_project_id: str = ""
     gcp_region: str = "europe-west2"
+    google_application_credentials: str = ""
+    """Optional path to a service-account JSON key (Sheets / Firestore local)."""
 
-    vertex_chat_model: str = "gemini-2.5-flash"
-    vertex_embed_model: str = "text-embedding-005"
-    vertex_embed_dimensions: int = 768
+    use_llm_planner: bool = True
+    """Let the model choose which lookups a turn needs (slots included).
+
+    Off falls back to the pattern router, which is what runs anyway when no
+    ``GEMINI_API_KEY`` is configured. The planner cannot state a verdict or a
+    price; it only selects tools, and an invalid plan is discarded.
+    """
+
+    use_llm_composer: bool = True
+    """Let the model word the answer from the facts the tools returned.
+
+    Off uses the deterministic composer everywhere, which is also the automatic
+    fallback when the model fails or writes a figure the facts do not contain.
+    """
+
+    use_semantic_inventory: bool = False
+    """Opt-in embedding classifier for “list the services” paraphrases.
+
+    Off by default: false positives steal budget/scoping turns and, combined with
+    a canned CAPABILITIES reply, made every answer look the same. Prefer the
+    catalog-list regex until this is validated in production.
+    """
 
     knowledge_bucket: str = ""
     knowledge_index_object: str = "index/latest.json"
@@ -47,6 +77,23 @@ class Settings(BaseSettings):
     budget_cache_ttl_seconds: int = 900
     budget_spreadsheet_id: str = ""
     budget_sheet_range: str = ""
+    """Deprecated single-range knob; prefer the workbook path / tab names."""
+
+    budget_xlsx_path: Path = Path("fixtures/budget/acme_scope_db.xlsx")
+    """Offline/dev fallback only. When ``BUDGET_SPREADSHEET_ID`` is set, Sheets wins."""
+
+    quote_rate_card_path: Path = Path("fixtures/quote/rate_card.json")
+    """Service→tier map. Live tier prices come from the sheet ``Pricing_tiers`` tab."""
+
+    contacts_path: Path = Path("fixtures/contacts/country_ams.json")
+    """Country → Account Manager email matrix (v1 also used for PO CTAs)."""
+
+    audit_log_path: Path = Path("artifacts/audit")
+    """Local directory for conversation audit JSON when Firestore is off."""
+
+    audit_backend: str = "auto"
+    """``auto`` (Firestore when GCP project set, else JSONL), ``firestore``, or ``jsonl``."""
+
     mail_provider: str = "resend"
     mail_api_key: str = ""
     mail_from_address: str = ""
@@ -61,27 +108,31 @@ class Settings(BaseSettings):
     rate_limit_requests: int = 20
     rate_limit_window_seconds: int = 60
 
-    max_output_tokens: int = 1024
-    temperature: float = Field(default=0.2, ge=0.0, le=2.0)
-    """Low, because this assistant reports facts it has been handed. Wording
-    should vary a little; verdicts should not vary at all."""
+    max_output_tokens: int = 2048
+    temperature: float = Field(default=0.55, ge=0.0, le=2.0)
+    """Room for natural, conversational wording. Verdicts still come from the
+    catalog, not from sampling — temperature only shapes how the facts are said."""
 
     @property
     def is_local(self) -> bool:
         return self.environment == "local"
 
     @property
-    def vertex_configured(self) -> bool:
-        """Whether a Gemini call can be attempted.
+    def gemini_api_key_configured(self) -> bool:
+        return bool(self.gemini_api_key.strip())
 
-        When false the assistant still answers, from the deterministic
-        composer, because the verdict never depended on the model.
-        """
-        return bool(self.gcp_project_id)
+    @property
+    def gemini_configured(self) -> bool:
+        """Whether Gemini chat/embed can be attempted (Developer API key)."""
+        return self.gemini_api_key_configured
+
+    @property
+    def gcp_configured(self) -> bool:
+        return bool(self.gcp_project_id.strip())
 
     @property
     def budget_configured(self) -> bool:
-        return bool(self.budget_spreadsheet_id)
+        return bool(self.budget_spreadsheet_id) or self.budget_xlsx_path.is_file()
 
     @property
     def mail_configured(self) -> bool:

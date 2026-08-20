@@ -173,8 +173,8 @@ class Resolution:
             for number, candidate in enumerate(self.candidates, start=1)
         )
         return (
-            "A few different services could match that, and they are not "
-            f"handled the same way. Which do you mean?\n{options}"
+            "A couple of services could match that, and they aren't handled the "
+            f"same way — which one did you mean?\n{options}"
         )
 
     def explain(self) -> str:
@@ -191,6 +191,16 @@ class Resolution:
         return f"{self.outcome.value} via {via}: {names}"
 
 
+STEM_LENGTH = 6
+"""How many leading characters of a word are treated as its identity.
+
+Exact tokens miss the way people conjugate: "translating our web pages" shares no
+token with an item called Translation & localisation, so a request that named two
+services that disagree looked like a request that named one. Six characters is
+enough to keep translate/translating/translation together while keeping
+photo/photography apart from photoshoot, which are different items."""
+
+
 @dataclass(frozen=True, slots=True)
 class _Phrase:
     """One searchable name or alias, pre-tokenised for containment testing."""
@@ -198,6 +208,28 @@ class _Phrase:
     tokens: tuple[str, ...]
     item_id: str
     original: str
+
+
+@dataclass(frozen=True, slots=True)
+class _Identity:
+    """One name or alias, reduced to stems, for spotting a service by hand."""
+
+    item_id: str
+    stems: frozenset[str]
+    distinctive: frozenset[str]
+    """The stems of this name's rare words. Without one of these, a stem overlap
+    is a shared English word rather than a service being named."""
+
+    name_stems: frozenset[str]
+    """Stems of the item's short name. A rival has to be named as a service,
+    not as a place that happens to appear in its title ("merch for London"
+    is merch, not the London video-visit item)."""
+
+    original: str
+
+
+def _stems(tokens: tuple[str, ...]) -> frozenset[str]:
+    return frozenset(token[:STEM_LENGTH] for token in tokens)
 
 
 class ScopeResolver:
@@ -208,6 +240,7 @@ class ScopeResolver:
         self._retriever = retriever
         self._phrases = self._build_phrases(catalog)
         self._document_frequency = self._build_document_frequency(catalog)
+        self._identities = self._build_identities(catalog)
 
     @staticmethod
     def _build_phrases(catalog: ServiceCatalog) -> tuple[_Phrase, ...]:
@@ -232,6 +265,30 @@ class ScopeResolver:
             )
         return frequency
 
+    def _build_identities(self, catalog: ServiceCatalog) -> tuple[_Identity, ...]:
+        identities = []
+        for item in catalog:
+            name_stems = _stems(content_tokens(item.item))
+            for term in item.search_terms:
+                tokens = content_tokens(term)
+                if not tokens:
+                    continue
+                distinctive = tuple(
+                    token
+                    for token in tokens
+                    if self._document_frequency[token] <= MAX_DOCUMENTS_FOR_A_DECISIVE_WORD
+                )
+                identities.append(
+                    _Identity(
+                        item_id=item.item_id,
+                        stems=_stems(tokens),
+                        distinctive=_stems(distinctive),
+                        name_stems=name_stems,
+                        original=term,
+                    )
+                )
+        return tuple(identities)
+
     def _is_decisive(self, tokens: tuple[str, ...]) -> bool:
         """Whether matching this phrase is enough to settle the request alone."""
         rarest = min(self._document_frequency[token] for token in tokens)
@@ -243,9 +300,71 @@ class ScopeResolver:
             return Resolution(Outcome.UNKNOWN, query)
 
         resolution = self._resolve_by_phrase(query, tokens)
-        if resolution is not None:
+        if resolution is None:
+            resolution = self._resolve_by_keyword(query)
+        return self._check_for_disagreement(resolution, tokens)
+
+    def _check_for_disagreement(
+        self, resolution: Resolution, tokens: tuple[str, ...]
+    ) -> Resolution:
+        """Withdraw a verdict when the request also named a service that disagrees.
+
+        Both paths above pick a winner and stop looking. That is right when the
+        alternatives say the same thing, and dangerous when they do not: "do you
+        handle translating our web pages" resolves outright to Web pages, which
+        is free of charge, while Translation & localisation — named just as
+        plainly — belongs to the local site. Answering the first one is not a
+        near miss, it is telling someone their job is covered when it is not.
+
+        So a decided verdict is re-checked against every service the request
+        named by word, and any disagreement turns the answer into a question.
+        Agreement is left alone, because then the choice does not matter.
+        """
+        if not resolution.decided:
             return resolution
-        return self._resolve_by_keyword(query)
+
+        verdict = resolution.status
+        chosen = {candidate.item.item_id for candidate in resolution.candidates}
+        query_stems = _stems(tokens)
+
+        rivals: dict[str, Candidate] = {}
+        for identity in self._identities:
+            if identity.item_id in chosen or identity.item_id in rivals:
+                continue
+            if not identity.distinctive & query_stems:
+                continue
+            # Named as a service, not as a place-word in somebody else's title.
+            if not identity.name_stems:
+                continue
+            named = identity.name_stems & query_stems
+            if len(named) / len(identity.name_stems) < MIN_RIVAL_COVERAGE:
+                continue
+            item = self._catalog.require(identity.item_id)
+            if item.status is verdict:
+                continue
+            rivals[item.item_id] = Candidate(
+                item=item,
+                score=float(len(named)),
+                reason=f"also named {identity.original!r}",
+            )
+
+        if not rivals:
+            return resolution
+
+        candidates = resolution.candidates + tuple(rivals.values())
+        logger.info(
+            "resolver.disagreement",
+            query=resolution.query,
+            chose=resolution.candidates[0].item.display_name,
+            rivals=[candidate.item.display_name for candidate in rivals.values()],
+        )
+        return Resolution(
+            Outcome.AMBIGUOUS,
+            resolution.query,
+            candidates=candidates[:MAX_CANDIDATES],
+            matched_phrase=resolution.matched_phrase,
+            method=f"{resolution.method}+rival",
+        )
 
     def _resolve_by_phrase(self, query: str, tokens: tuple[str, ...]) -> Resolution | None:
         """Find the longest declared name or alias contained in the request.
@@ -264,8 +383,15 @@ class ScopeResolver:
                 best_length = len(phrase.tokens)
                 matches.append(phrase)
 
-        if not matches or not self._is_decisive(matches[0].tokens):
+        # Several names can be the same length, and which one the scan reached
+        # first is an accident of catalog order. Judging only that one meant a
+        # request naming both a common word and a distinctive one — "email my
+        # AM about the merch request" — was thrown away because "email" is
+        # everywhere, even though "merch" settles it outright.
+        decisive = [phrase for phrase in matches if self._is_decisive(phrase.tokens)]
+        if not decisive:
             return None
+        matches = decisive
 
         seen: dict[str, str] = {}
         for phrase in matches:
