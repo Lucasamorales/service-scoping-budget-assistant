@@ -3,13 +3,8 @@ export type ConversationState = {
   lastItemIds: string[];
   lastBranch: string | null;
   conversationId?: string | null;
-  pendingActionKind?: string | null;
-  pendingServiceId?: string | null;
-  pendingQuoteAmount?: number | null;
-  pendingCurrency?: string;
-  pendingRecipientCountry?: string | null;
-  pendingRecipientName?: string | null;
-  pendingNeedsCountry?: boolean;
+  /** Server-sealed mail action. Echo it back untouched; it cannot be read or built here. */
+  pendingToken?: string | null;
   activeTool?: string | null;
   budgetCountry?: string | null;
   budgetBranch?: string | null;

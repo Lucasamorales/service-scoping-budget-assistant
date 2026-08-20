@@ -11,7 +11,7 @@ from app.knowledge.index import KnowledgeIndex
 from app.orchestrator.llm import DETERMINISTIC
 from app.orchestrator.pipeline import Pipeline
 from app.orchestrator.router import Intent
-from app.store.audit import AuditLog
+from app.store.audit import JsonlAuditStore
 from app.store.budget import XlsxBudgetStore
 from app.store.contacts import load_contacts
 from app.store.mail import NullMailer
@@ -38,7 +38,7 @@ def flow_pipeline(corpus, tmp_path_factory) -> Pipeline:
         contacts=load_contacts(CONTACTS),
         roster=load_roster(BUDGET_XLSX),
         mailer=NullMailer(),
-        audit_log=AuditLog(audit_dir),
+        audit_log=JsonlAuditStore(audit_dir),
         branches=tuple(t.name for t in XlsxBudgetStore(BUDGET_XLSX).branches()),
     )
 
@@ -139,7 +139,9 @@ class TestConfirmMail:
             "campaign wrap-ups",
             identity=SessionIdentity(country="France"),
         )
-        second = flow_pipeline.answer("No", first.next_state, identity=SessionIdentity(country="France"))
+        second = flow_pipeline.answer(
+            "No", first.next_state, identity=SessionIdentity(country="France")
+        )
         assert "won't send" in second.text.lower() or "No problem" in second.text
 
     def test_asks_for_country_when_session_has_none(self, flow_pipeline: Pipeline) -> None:

@@ -15,14 +15,11 @@ tool; a customer-facing launch would want a denylist.
 
 from __future__ import annotations
 
-import base64
-import hashlib
-import hmac
-import json
 import time
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import Any
+
+from app.core.signing import SignatureError, sign, unsign
 
 __all__ = [
     "Role",
@@ -89,7 +86,7 @@ def issue_token(
         "iat": issued_at,
         "exp": claims.expires_at,
     }
-    return _sign(payload, secret), claims
+    return sign(payload, secret), claims
 
 
 def verify_token(token: str, secret: str, *, now: int | None = None) -> SessionClaims:
@@ -100,18 +97,11 @@ def verify_token(token: str, secret: str, *, now: int | None = None) -> SessionC
     """
     if not secret:
         raise SessionError("SESSION_TOKEN_SECRET is not configured.")
-    if not token or token.count(".") != 1:
-        raise SessionError("Malformed session token.")
-
-    body, signature = token.split(".", 1)
-    expected = _mac(body, secret)
-    if not hmac.compare_digest(signature, expected):
-        raise SessionError("Invalid session token.")
 
     try:
-        payload = json.loads(_b64decode(body))
-    except (ValueError, json.JSONDecodeError) as exc:
-        raise SessionError("Malformed session token.") from exc
+        payload = unsign(token, secret)
+    except SignatureError as exc:
+        raise SessionError(str(exc)) from exc
 
     try:
         claims = SessionClaims(
@@ -128,26 +118,6 @@ def verify_token(token: str, secret: str, *, now: int | None = None) -> SessionC
     if claims.expires_at <= moment:
         raise SessionError("Session has expired.")
     return claims
-
-
-def _sign(payload: dict[str, Any], secret: str) -> str:
-    body = _b64encode(json.dumps(payload, separators=(",", ":"), sort_keys=True))
-    return f"{body}.{_mac(body, secret)}"
-
-
-def _mac(body: str, secret: str) -> str:
-    digest = hmac.new(secret.encode("utf-8"), body.encode("utf-8"), hashlib.sha256).digest()
-    return _b64encode(digest)
-
-
-def _b64encode(raw: str | bytes) -> str:
-    data = raw.encode("utf-8") if isinstance(raw, str) else raw
-    return base64.urlsafe_b64encode(data).rstrip(b"=").decode("ascii")
-
-
-def _b64decode(text: str) -> bytes:
-    padding = "=" * (-len(text) % 4)
-    return base64.urlsafe_b64decode(text + padding)
 
 
 def _clean(value: str | None) -> str | None:

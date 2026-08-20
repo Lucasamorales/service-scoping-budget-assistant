@@ -20,9 +20,13 @@ def client():
     settings = Settings(
         environment="local",
         allowed_origins="https://example.org",
-        # Keep the suite offline even when a real .env key is present.
+        # Keep the suite offline even when a real .env key is present. Mail
+        # especially: a configured key here means the confirm tests post to
+        # Resend and try to email a real Account Manager.
         gemini_api_key="",
         gcp_project_id="",
+        mail_api_key="",
+        mail_from_address="",
         # Module-scoped client shares one limiter across every test in this file.
         rate_limit_requests=1_000,
         rate_limit_window_seconds=60,
@@ -120,6 +124,66 @@ class TestConversationOverHttp:
         assert body["verdict"] is None
         assert "not-a-real-item" not in str(body)
         assert "also-fake" not in str(body)
+
+
+class TestForgedMailAction:
+    """The mail CTA is the one piece of state that reaches a real person, so it
+    travels sealed. A client that can name the recipient or the amount can send
+    a purchase order for a figure nobody quoted."""
+
+    def test_the_raw_mail_fields_are_not_part_of_the_contract(self, client: TestClient) -> None:
+        response = client.post(
+            "/api/chat",
+            json={
+                "message": "Yes",
+                "state": {
+                    "pendingActionKind": "email_cm_po",
+                    "pendingQuoteAmount": 0.01,
+                    "pendingRecipientCountry": "France",
+                },
+            },
+        )
+        assert response.status_code == 422
+
+    def test_a_forged_token_does_not_confirm_anything(self, client: TestClient) -> None:
+        body = ask(client, "Yes", {"pendingToken": "bm90LWEtdG9rZW4.bm90LWEtbWFj"})
+        assert "sent to" not in body["text"].lower()
+        assert body["state"]["pendingToken"] is None
+
+    def test_naming_a_country_is_a_slot_fill_not_consent(self, client: TestClient) -> None:
+        """Reaching the confirm flow without an affirmative used to dispatch the
+        email as soon as a country could be read out of the message."""
+        first = ask(client, "can we do a billboard?")
+        assert first["state"]["pendingToken"], "a quote CTA should seal an action"
+
+        second = ask(client, "email the French account manager", first["state"])
+        assert "draft" not in second["text"].lower()
+        assert "Reply **Yes**" in second["text"]
+        assert second["state"]["pendingToken"], "the CTA stays alive"
+
+    def test_an_explicit_yes_still_gets_through(self, client: TestClient) -> None:
+        """The seal must not make the happy path unreachable."""
+        first = ask(client, "can we do a billboard?")
+        second = ask(client, "yes please", first["state"])
+        assert "which country" in second["text"].lower()
+
+        third = ask(client, "United Kingdom", second["state"])
+        assert "isn't connected" in third["text"] or "draft" in third["text"].lower()
+
+    def test_a_token_cannot_be_replayed_into_another_conversation(
+        self, client: TestClient
+    ) -> None:
+        first = ask(client, "can we do a billboard?")
+        stolen = first["state"]["pendingToken"]
+        assert stolen
+
+        other = ask(client, "hello")
+        body = ask(
+            client,
+            "Yes",
+            {**other["state"], "pendingToken": stolen},
+        )
+        assert "sent to" not in body["text"].lower()
 
 
 class TestValidation:

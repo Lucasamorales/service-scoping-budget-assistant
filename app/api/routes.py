@@ -21,6 +21,7 @@ import structlog
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 
+from app.api.pending import open_pending, seal_pending
 from app.api.schemas import (
     ActionModel,
     ChatRequest,
@@ -34,7 +35,13 @@ from app.api.schemas import (
 from app.api.session import SessionClaims, SessionError, issue_token
 from app.core.config import Settings
 from app.orchestrator.history import HistoryTurn
-from app.orchestrator.pipeline import Pipeline, StreamEnd, StreamStart, TextPiece
+from app.orchestrator.pipeline import (
+    Pipeline,
+    StreamEnd,
+    StreamStart,
+    TextPiece,
+    pending_from_state,
+)
 from app.orchestrator.resolver import Outcome, Resolution
 from app.orchestrator.router import ConversationState
 from app.tools.flows import SessionIdentity
@@ -52,10 +59,32 @@ def _pipeline(request: Request) -> Pipeline:
     return pipeline
 
 
-def _state_from(payload: ChatRequest, pipeline: Pipeline) -> ConversationState:
+def _state_from(
+    payload: ChatRequest,
+    pipeline: Pipeline,
+    settings: Settings,
+) -> ConversationState:
+    """Rebuild internal state, opening the sealed mail action if there is one."""
     if payload.state is None:
         return ConversationState()
-    return payload.state.to_state(pipeline.catalog.item_ids)
+    pending = open_pending(
+        payload.state.pending_token,
+        conversation_id=payload.state.conversation_id,
+        secret=settings.session_token_secret,
+        ttl_seconds=settings.pending_action_ttl_seconds,
+    )
+    return payload.state.to_state(pipeline.catalog.item_ids, pending=pending)
+
+
+def _seal_for(state: ConversationState, settings: Settings) -> str | None:
+    """Seal the outgoing pending action, if this turn left one."""
+    if not state.pending_action_kind:
+        return None
+    return seal_pending(
+        pending_from_state(state),
+        conversation_id=state.conversation_id,
+        secret=settings.session_token_secret,
+    )
 
 
 def _verdict_of(resolution: Resolution) -> Verdict | None:
@@ -143,19 +172,24 @@ def create_session(payload: SessionRequest, request: Request) -> SessionResponse
 @router.post("/chat", response_model=ChatResponse)
 def chat(payload: ChatRequest, request: Request) -> ChatResponse:
     pipeline = _pipeline(request)
+    settings: Settings = request.app.state.settings
     answer = pipeline.answer(
         payload.message,
-        _state_from(payload, pipeline),
+        _state_from(payload, pipeline, settings),
         history=payload.history_turns(),
         identity=_session_identity(request),
     )
-    return ChatResponse.from_answer(answer)
+    return ChatResponse.from_answer(
+        answer,
+        pending_token=_seal_for(answer.next_state, settings),
+    )
 
 
 @router.post("/chat/stream")
 def chat_stream(payload: ChatRequest, request: Request) -> StreamingResponse:
     pipeline = _pipeline(request)
-    state = _state_from(payload, pipeline)
+    settings: Settings = request.app.state.settings
+    state = _state_from(payload, pipeline, settings)
 
     return StreamingResponse(
         _events(
@@ -164,6 +198,7 @@ def chat_stream(payload: ChatRequest, request: Request) -> StreamingResponse:
             state,
             payload.history_turns(),
             identity=_session_identity(request),
+            settings=settings,
         ),
         media_type="text/event-stream",
         headers={
@@ -198,7 +233,8 @@ def _password_matches(provided: str, expected: str) -> bool:
 def _sse(event: str, data: object) -> str:
     """One SSE event. ``text`` fields must be plain strings for the widget."""
     if isinstance(data, dict) and "text" in data and data["text"] is not None:
-        data = {**data, "text": data["text"] if isinstance(data["text"], str) else str(data["text"])}
+        text = data["text"]
+        data = {**data, "text": text if isinstance(text, str) else str(text)}
     return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
 
 
@@ -209,6 +245,7 @@ def _events(
     history: tuple[HistoryTurn, ...] = (),
     *,
     identity: SessionIdentity | None = None,
+    settings: Settings,
 ) -> Iterator[str]:
     """Server-sent events for one turn."""
     start: StreamStart | None = None
@@ -238,6 +275,7 @@ def _events(
                 yield _sse("text", {"text": event.text})
 
             case StreamEnd():
+                final_state = start.next_state if start else ConversationState()
                 yield _sse(
                     "done",
                     {
@@ -246,7 +284,8 @@ def _events(
                         "degraded": event.degraded,
                         "truncated": event.truncated,
                         "state": StateModel.from_state(
-                            start.next_state if start else ConversationState()
+                            final_state,
+                            pending_token=_seal_for(final_state, settings),
                         ).model_dump(by_alias=True, mode="json"),
                     },
                 )

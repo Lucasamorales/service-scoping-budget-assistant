@@ -11,6 +11,12 @@ in it, so ids are checked against the catalog before use. The blast radius is
 small - the worst a forged id achieves is a verdict the caller could have asked
 for directly - but validating means a malformed client cannot produce a
 confusing answer, and unknown ids are dropped rather than echoed.
+
+The pending mail action is a different matter, because acting on it sends a real
+email to a real person. Those fields are not on this contract at all: they
+travel as one opaque ``pendingToken`` sealed in :mod:`app.api.pending`, so a
+caller cannot name the recipient or the amount. ``extra="forbid"`` means an
+attempt to send the raw fields is a 422 rather than a silent downgrade.
 """
 
 from __future__ import annotations
@@ -26,6 +32,7 @@ from app.orchestrator.history import HistoryTurn
 from app.orchestrator.pipeline import Answer
 from app.orchestrator.router import ConversationState
 from app.tools.actions import Action
+from app.tools.flows import PendingAction
 
 __all__ = [
     "MAX_HISTORY_MESSAGES",
@@ -50,6 +57,9 @@ MAX_HISTORY_CHARS = 12_000
 from ``MAX_MESSAGE_CHARS`` so a catalogue list does not 422 the next turn."""
 """Longer than any real scoping question. A cap here bounds prompt cost and
 removes the easiest way to run up a bill or bury instructions in padding."""
+
+MAX_PENDING_TOKEN_CHARS = 1024
+"""Generous ceiling on the sealed mail action. The real thing is ~300 chars."""
 
 MAX_CARRIED_IDS = 8
 """Ceiling on ids echoed back in state. The resolver never produces more than
@@ -76,33 +86,38 @@ class StateModel(Base):
     last_item_ids: tuple[str, ...] = Field(default=(), max_length=MAX_CARRIED_IDS)
     last_branch: str | None = Field(default=None, max_length=100)
     conversation_id: str | None = Field(default=None, max_length=64)
-    pending_action_kind: str | None = Field(default=None, max_length=40)
-    pending_service_id: str | None = Field(default=None, max_length=200)
-    pending_quote_amount: float | None = None
-    pending_currency: str = Field(default="GBP", max_length=8)
-    pending_recipient_country: str | None = Field(default=None, max_length=80)
-    pending_recipient_name: str | None = Field(default=None, max_length=120)
-    pending_needs_country: bool = False
+    pending_token: str | None = Field(default=None, max_length=MAX_PENDING_TOKEN_CHARS)
+    """Sealed mail action. Opaque to the client; see :mod:`app.api.pending`."""
+
     active_tool: str | None = Field(default=None, max_length=40)
     budget_country: str | None = Field(default=None, max_length=80)
     budget_branch: str | None = Field(default=None, max_length=100)
     budget_month: str | None = Field(default=None, max_length=16)
 
-    def to_state(self, known: frozenset[str]) -> ConversationState:
-        """Convert to the internal type, dropping ids the catalog does not have."""
-        service_id = self.pending_service_id if self.pending_service_id in known else None
+    def to_state(
+        self,
+        known: frozenset[str],
+        *,
+        pending: PendingAction | None = None,
+    ) -> ConversationState:
+        """Convert to the internal type, dropping ids the catalog does not have.
+
+        ``pending`` comes from opening the sealed token and is the only source
+        of mail-action fields; nothing on the wire can set them.
+        """
+        service_id = pending.service_id if pending else None
         return ConversationState(
             pending_candidates=tuple(i for i in self.pending_candidates if i in known),
             last_item_ids=tuple(i for i in self.last_item_ids if i in known),
             last_branch=self.last_branch,
             conversation_id=self.conversation_id,
-            pending_action_kind=self.pending_action_kind,
-            pending_service_id=service_id,
-            pending_quote_amount=self.pending_quote_amount,
-            pending_currency=self.pending_currency or "GBP",
-            pending_recipient_country=self.pending_recipient_country,
-            pending_recipient_name=self.pending_recipient_name,
-            pending_needs_country=self.pending_needs_country,
+            pending_action_kind=pending.kind if pending else None,
+            pending_service_id=service_id if service_id in known else None,
+            pending_quote_amount=pending.quote_amount if pending else None,
+            pending_currency=(pending.currency if pending else None) or "GBP",
+            pending_recipient_country=pending.recipient_country if pending else None,
+            pending_recipient_name=pending.recipient_name if pending else None,
+            pending_needs_country=pending.needs_country if pending else False,
             active_tool=self.active_tool,
             budget_country=self.budget_country,
             budget_branch=self.budget_branch,
@@ -110,19 +125,18 @@ class StateModel(Base):
         )
 
     @classmethod
-    def from_state(cls, state: ConversationState) -> StateModel:
+    def from_state(
+        cls,
+        state: ConversationState,
+        *,
+        pending_token: str | None = None,
+    ) -> StateModel:
         return cls(
             pending_candidates=state.pending_candidates,
             last_item_ids=state.last_item_ids,
             last_branch=state.last_branch,
             conversation_id=state.conversation_id,
-            pending_action_kind=state.pending_action_kind,
-            pending_service_id=state.pending_service_id,
-            pending_quote_amount=state.pending_quote_amount,
-            pending_currency=state.pending_currency,
-            pending_recipient_country=state.pending_recipient_country,
-            pending_recipient_name=state.pending_recipient_name,
-            pending_needs_country=state.pending_needs_country,
+            pending_token=pending_token,
             active_tool=state.active_tool,
             budget_country=state.budget_country,
             budget_branch=state.budget_branch,
@@ -221,7 +235,7 @@ class ChatResponse(Base):
     state: StateModel
 
     @classmethod
-    def from_answer(cls, answer: Answer) -> ChatResponse:
+    def from_answer(cls, answer: Answer, *, pending_token: str | None = None) -> ChatResponse:
         verdict = None
         if answer.status is not None and answer.resolution.status_meaning:
             verdict = Verdict(
@@ -241,7 +255,7 @@ class ChatResponse(Base):
             candidates=candidates_from(answer),
             actions=actions_from(answer),
             notes=answer.notes,
-            state=StateModel.from_state(answer.next_state),
+            state=StateModel.from_state(answer.next_state, pending_token=pending_token),
         )
 
 

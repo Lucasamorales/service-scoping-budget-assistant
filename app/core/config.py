@@ -36,9 +36,8 @@ class Settings(BaseSettings):
     gemini_embed_dimensions: int = 768
     """gemini-embedding-001 natives to 3072; we request 768 for a smaller index."""
 
-    # GCP for Firestore / GCS / Sheets — not used for Gemini.
+    # GCP for Firestore / Sheets — not used for Gemini.
     gcp_project_id: str = ""
-    gcp_region: str = "europe-west2"
     google_application_credentials: str = ""
     """Optional path to a service-account JSON key (Sheets / Firestore local)."""
 
@@ -65,20 +64,18 @@ class Settings(BaseSettings):
     catalog-list regex until this is validated in production.
     """
 
-    knowledge_bucket: str = ""
-    knowledge_index_object: str = "index/latest.json"
     local_index_path: Path = Path("artifacts/index.json")
     documents_dir: Path = Path("documents")
     system_prompt_path: Path = Path("prompts/system.md")
 
-    # Declared so the file stays in step with .env.example. None of these are
-    # wired yet; the properties below are what decide whether a subsystem runs.
     firestore_database: str = "(default)"
-    budget_cache_ttl_seconds: int = 900
-    budget_spreadsheet_id: str = ""
-    budget_sheet_range: str = ""
-    """Deprecated single-range knob; prefer the workbook path / tab names."""
 
+    budget_cache_ttl_seconds: int = 900
+    """How long budget/spend figures may be served before the sheet is re-read.
+    The tracker is edited during the day, so a store loaded once at startup
+    answered "what is left?" from whenever the container happened to boot."""
+
+    budget_spreadsheet_id: str = ""
     budget_xlsx_path: Path = Path("fixtures/budget/acme_scope_db.xlsx")
     """Offline/dev fallback only. When ``BUDGET_SPREADSHEET_ID`` is set, Sheets wins."""
 
@@ -105,6 +102,11 @@ class Settings(BaseSettings):
     """Shared password for the internal MVP page to mint a session. Empty
     disables ``POST /api/session``. Not a substitute for IAP in production."""
 
+    pending_action_ttl_seconds: int = 900
+    """How long a sealed mail CTA stays confirmable. Short on purpose: a "Yes"
+    typed into a tab left open since this morning should not send an email the
+    user has forgotten proposing."""
+
     rate_limit_requests: int = 20
     rate_limit_window_seconds: int = 60
 
@@ -125,10 +127,6 @@ class Settings(BaseSettings):
     def gemini_configured(self) -> bool:
         """Whether Gemini chat/embed can be attempted (Developer API key)."""
         return self.gemini_api_key_configured
-
-    @property
-    def gcp_configured(self) -> bool:
-        return bool(self.gcp_project_id.strip())
 
     @property
     def budget_configured(self) -> bool:

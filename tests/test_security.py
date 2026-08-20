@@ -16,6 +16,9 @@ def _client(**overrides: object) -> TestClient:
         "session_token_secret": "",
         "internal_access_password": "",
         "allowed_origins": "",
+        # Never let a developer's real key turn a test into a sent email.
+        "mail_api_key": "",
+        "mail_from_address": "",
         "rate_limit_requests": 100,
         "rate_limit_window_seconds": 60,
     }
