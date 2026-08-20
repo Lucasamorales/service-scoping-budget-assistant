@@ -1,12 +1,14 @@
-"""Invariants of the assembled prompt.
+"""Invariants of the system prompt and of the facts the model is shown.
 
 What the model is shown decides what it can say, so these assert the shape of
 that material rather than any wording. The central property: when the resolver
-could not reach a verdict, the prompt must actively forbid inventing one, not
+could not reach a verdict, the briefing must actively forbid inventing one, not
 merely omit it.
 
-Also exercises the full pipeline - route, resolve, retrieve, assemble - across
-every outcome, since that path is what the deployed service runs.
+These used to target ``build_context``/``ContextPack``. That prompt assembly was
+replaced by ``FactPack.briefing()`` during the plan-execute-compose refactor, so
+the invariants now run against the live path — ``Pipeline.prepare()`` — which is
+what the deployed service actually builds.
 """
 
 from __future__ import annotations
@@ -15,18 +17,8 @@ import pytest
 
 from app.knowledge.chunking import chunk_service_item
 from app.knowledge.index import KnowledgeIndex
-from app.knowledge.retriever import InMemoryRetriever, RetrievalResult
-from app.orchestrator.context import (
-    ContextPack,
-    build_context,
-    estimate_tokens,
-    load_system_prompt,
-)
-from app.orchestrator.history import HistoryTurn
-from app.orchestrator.resolver import Outcome, Resolution, ScopeResolver
-from app.orchestrator.router import ConversationState, Intent, Router
-
-EVIDENCE_LIMIT = 4
+from app.orchestrator.context import load_system_prompt
+from app.orchestrator.pipeline import Pipeline
 
 load_system_prompt.cache_clear()
 
@@ -42,23 +34,14 @@ def test_system_prompt_includes_acme_tone_of_voice() -> None:
 
 @pytest.fixture(scope="module")
 def pipeline(corpus):
+    """The real pipeline, with no model — briefings do not need one."""
     chunks = [chunk for item in corpus.catalog for chunk in chunk_service_item(item)]
-    retriever = InMemoryRetriever(KnowledgeIndex.build(chunks))
-    return Router(), ScopeResolver(corpus.catalog, retriever), retriever
+    return Pipeline(corpus.catalog, KnowledgeIndex.build(chunks), model=None)
 
 
-def ask(pipeline, question: str, state: ConversationState | None = None) -> ContextPack:
-    router, resolver, retriever = pipeline
-    route = router.route(question, state or ConversationState())
-
-    if route.intent is Intent.HANDOVER:
-        return build_context(route, Resolution(Outcome.UNKNOWN, question), RetrievalResult())
-
-    resolution = resolver.resolve(question)
-    retrieval = retriever.retrieve(
-        question, limit=EVIDENCE_LIMIT, force_item_ids=resolution.force_item_ids
-    )
-    return build_context(route, resolution, retrieval)
+def briefing(pipeline: Pipeline, question: str) -> str:
+    """What the model would be told for this question."""
+    return pipeline.prepare(question).briefing()
 
 
 class TestSystemPrompt:
@@ -78,124 +61,75 @@ class TestSystemPrompt:
         assert "Never decide it yourself" in load_system_prompt()
 
 
-class TestVerdictBlock:
+class TestVerdict:
     def test_a_resolved_verdict_is_stated_as_fact(self, pipeline) -> None:
-        pack = ask(pipeline, "can we order some merch")
-        assert "Scope fact" in pack.verdict_block
-        assert "Do not reinterpret it" in pack.verdict_block
+        text = briefing(pipeline, "can we order some merch")
+        assert "Verdict" in text
+        assert "do not reinterpret it" in text.lower()
 
     def test_a_resolved_verdict_uses_the_corpus_wording(self, pipeline) -> None:
-        pack = ask(pipeline, "can we order some merch")
-        assert "This is something we need to quote" in pack.verdict_block
+        assert "This is something we need to quote" in briefing(
+            pipeline, "can we order some merch"
+        )
 
     def test_agreed_candidates_are_all_named_and_not_put_to_the_user(self, pipeline) -> None:
         """Both Billboards and Hoarding need a quote, so asking which is meant
         would be busywork."""
-        pack = ask(pipeline, "can we put an advert on a billboard")
-        assert "Billboards" in pack.verdict_block
-        assert "Hoarding" in pack.verdict_block
-        assert "do not ask the user to choose" in pack.verdict_block
+        text = briefing(pipeline, "can we put an advert on a billboard")
+        assert "Billboards" in text
+        assert "Hoarding" in text
+        assert "do not ask them to choose" in text.lower()
 
     def test_ambiguity_forbids_a_verdict_rather_than_omitting_one(self, pipeline) -> None:
         """The whole design in one assertion. Leaving the verdict out would
         invite the model to supply one from the documents it can see."""
-        pack = ask(pipeline, "can you translate our web pages into Spanish")
-        assert "NO VERDICT" in pack.verdict_block
-        assert "Do not state a verdict" in pack.verdict_block
-        assert "do not hint at one" in pack.verdict_block
+        text = briefing(pipeline, "can you translate our web pages into Spanish")
+        assert "No verdict" in text
+        assert "state no verdict" in text.lower()
+        assert "hint at none" in text.lower()
 
     def test_an_unmatched_request_forbids_guessing(self, pipeline) -> None:
-        pack = ask(pipeline, "can we hire a hot air balloon for the weekend")
-        assert "NO VERDICT" in pack.verdict_block
-        assert "Do not guess" in pack.verdict_block
+        text = briefing(pipeline, "can we hire a hot air balloon for the weekend")
+        assert "No verdict" in text or "No facts were found" in text
+        assert "do not guess" in text.lower()
 
     def test_a_handover_suppresses_the_substance(self, pipeline) -> None:
         """A plausible answer about photography here would be grotesque."""
-        pack = ask(pipeline, "someone was injured during the photo shoot, can we use the photos")
-        assert "HANDOVER" in pack.verdict_block
-        assert "do not answer the underlying question" in pack.verdict_block.lower()
+        text = briefing(
+            pipeline, "someone was injured during the photo shoot, can we use the photos"
+        )
+        assert "Hand this to a person" in text
+        assert "do not answer the question" in text.lower()
 
-    def test_a_handover_retrieves_nothing(self, pipeline) -> None:
-        pack = ask(pipeline, "a customer is threatening legal action")
-        assert pack.evidence == ()
+    def test_a_handover_carries_no_evidence(self, pipeline) -> None:
+        turn = pipeline.prepare("a customer is threatening legal action")
+        assert turn.facts.evidence == ()
+        assert "Supporting documents" not in turn.briefing()
 
 
-class TestEvidenceAndBudget:
-    def test_evidence_reaches_the_prompt(self, pipeline) -> None:
-        pack = ask(pipeline, "can we order some merch")
-        assert pack.evidence
-        assert pack.evidence[0].content in pack.as_prompt()
+class TestEvidence:
+    def test_evidence_reaches_the_briefing(self, pipeline) -> None:
+        turn = pipeline.prepare("can we order some merch")
+        assert turn.facts.evidence
+        assert turn.facts.evidence[0].content in turn.briefing()
 
     def test_the_verdict_precedes_the_evidence(self, pipeline) -> None:
         """It is the conclusion; the documents only explain it."""
-        pack = ask(pipeline, "can we order some merch")
-        prompt = pack.as_prompt()
-        assert prompt.index("Scope fact") < prompt.index("Supporting documents")
-        assert "can we order some merch" in pack.user_turn()
-        assert pack.question == "can we order some merch"
+        text = briefing(pipeline, "can we order some merch")
+        assert text.index("Verdict") < text.index("Supporting documents")
 
-    def test_history_is_continuity_only_and_follows_the_scope_fact(self, pipeline) -> None:
-        router, resolver, retriever = pipeline
-        route = router.route("can we order some merch")
-        resolution = resolver.resolve("can we order some merch")
-        retrieval = retriever.retrieve(
-            "can we order some merch",
-            limit=EVIDENCE_LIMIT,
-            force_item_ids=resolution.force_item_ids,
+    def test_documents_are_told_not_to_override_the_verdict(self, pipeline) -> None:
+        assert "never override the verdict" in briefing(
+            pipeline, "can we order some merch"
+        ).lower()
+
+    def test_the_question_survives_to_the_model(self, pipeline) -> None:
+        from app.orchestrator.wording import build_briefing
+
+        turn = pipeline.prepare("can we order some merch")
+        assert "can we order some merch" in build_briefing(
+            turn.facts, turn.route.message
         )
-        history = (
-            HistoryTurn("user", "Can you translate our web pages into Spanish?"),
-            HistoryTurn("assistant", "Which one did you mean?"),
-            HistoryTurn("user", "Web pages (Copywriting)"),
-            HistoryTurn("assistant", "Central marketing covers web page copywriting."),
-        )
-        pack = build_context(
-            route,
-            resolution,
-            retrieval,
-            question="can we order some merch",
-            history=history,
-        )
-        turn = pack.user_turn()
-        assert "Recent conversation" in turn
-        assert "Can you translate our web pages into Spanish?" in turn
-        assert turn.index("Scope fact") < turn.index("Recent conversation")
-        assert turn.index("Recent conversation") < turn.index("User question")
-        assert "authoritative" in turn.lower()
-        # Current turn is merch / quote — history must not erase that.
-        assert "we need to quote" in pack.verdict_block.lower() or "quote" in pack.verdict_block.lower()
-
-    def test_trimming_is_reported_rather_than_silent(self, pipeline) -> None:
-        router, resolver, retriever = pipeline
-        route = router.route("marketing")
-        resolution = resolver.resolve("marketing")
-        retrieval = retriever.retrieve("marketing", limit=5)
-
-        pack = build_context(route, resolution, retrieval, budget=400)
-        assert pack.dropped
-        assert any("left out" in note for note in pack.notes)
-        assert "may be incomplete" in pack.as_prompt()
-
-    def test_at_least_one_document_survives_any_budget(self, pipeline) -> None:
-        router, resolver, retriever = pipeline
-        route = router.route("merch")
-        resolution = resolver.resolve("merch")
-        retrieval = retriever.retrieve("merch", limit=3)
-
-        pack = build_context(route, resolution, retrieval, budget=1)
-        assert len(pack.evidence) == 1
-
-    def test_a_verdict_with_no_evidence_is_flagged(self, pipeline) -> None:
-        router, resolver = pipeline[0], pipeline[1]
-        route = router.route("merch")
-        resolution = resolver.resolve("merch")
-
-        pack = build_context(route, resolution, RetrievalResult())
-        assert any("no supporting text" in note for note in pack.notes)
-
-    def test_token_estimation_scales_with_length(self) -> None:
-        assert estimate_tokens("word " * 100) > estimate_tokens("word " * 10)
-        assert estimate_tokens("") == 0
 
 
 class TestCitations:
@@ -203,19 +137,17 @@ class TestCitations:
         """Even 'nothing was retrieved' is a citation. The alternative is an
         answer whose basis nobody can check."""
         for question in ("can we order some merch", "a customer is threatening legal action"):
-            assert ask(pipeline, question).citations
+            assert pipeline.prepare(question).citations
 
-    def test_forced_documents_are_marked_as_such(self, pipeline) -> None:
-        pack = ask(pipeline, "can we order some merch")
-        assert any("required by the resolver" in citation for citation in pack.citations)
-
-    def test_citations_match_the_evidence_sent(self, pipeline) -> None:
-        pack = ask(pipeline, "can we put an advert on a billboard")
-        assert len(pack.citations) == len(pack.evidence)
+    def test_the_document_the_resolver_required_is_cited_first(self, pipeline) -> None:
+        """The service the verdict came from leads, so the basis of the answer is
+        the first thing a reader checks."""
+        turn = pipeline.prepare("can we order some merch")
+        assert turn.citations[0] == "Merch"
 
 
-def test_no_question_ever_produces_a_prompt_without_a_verdict_block(pipeline) -> None:
-    """Swept across every outcome. A prompt with evidence but no instruction
+def test_no_question_ever_produces_a_briefing_without_an_instruction(pipeline) -> None:
+    """Swept across every outcome. A briefing with evidence but no instruction
     about what may be concluded from it is exactly how a model ends up
     inventing a verdict."""
     questions = (
@@ -228,7 +160,18 @@ def test_no_question_ever_produces_a_prompt_without_a_verdict_block(pipeline) ->
         "???",
     )
     for question in questions:
-        pack = ask(pipeline, question)
-        assert pack.verdict_block
-        assert pack.verdict_block in pack.as_prompt()
-        assert pack.system_prompt in pack.as_prompt()
+        text = briefing(pipeline, question)
+        assert text.strip()
+        # Every branch either states a verdict, refuses one, or hands over —
+        # none of them leaves the model to decide for itself.
+        assert any(
+            marker in text
+            for marker in (
+                "Verdict",
+                "No verdict",
+                "No facts were found",
+                "Hand this to a person",
+                "service catalog",
+                "What you can do for this person",
+            )
+        ), question

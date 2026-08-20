@@ -8,6 +8,15 @@
 
 This document is intentionally dense and self-contained. Prefer it over chatting history.
 
+> **Partly superseded — read §2 for intent, not §3/§4 for structure.**
+> The design principle ("verdicts are looked up, never inferred") still holds and is still the
+> point of the product. The *turn structure* described below does not: a turn is now
+> plan → execute → compose, and the pieces named `ContextPack`, `build_context` and
+> `composer.py` have been deleted. Prompt assembly lives in `FactPack.briefing()`
+> (`app/orchestrator/facts.py`), and the deterministic wording fallback is in
+> `app/orchestrator/wording.py` behind the output guard in `app/orchestrator/guard.py`.
+> See `docs/ASSESSMENT-AND-PLAN.md` for why that changed.
+
 ---
 
 ## 1. One-sentence product definition

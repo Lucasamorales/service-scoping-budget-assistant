@@ -33,7 +33,7 @@ from app.core.types import Status
 from app.knowledge.catalog import ServiceCatalog
 from app.orchestrator.llm import LanguageModel, ModelUnavailableError
 from app.orchestrator.plan import Capability, Plan, Slots
-from app.orchestrator.router import ConversationState, Intent, Route, Router
+from app.orchestrator.router import ConversationState, Intent, Route
 from app.tools.budget import country_in_message, month_in_message
 from app.tools.catalog import section_in_message, status_filter_in_message, wants_service_list
 
@@ -451,14 +451,3 @@ def build_planner(
         logger.info("planner.rules_only", reason="no model" if model is None else "disabled")
         return rules
     return ModelPlanner(model, rules)
-
-
-def rule_router_plan(
-    router: Router,
-    catalog: ServiceCatalog | None,
-    message: str,
-    state: ConversationState | None = None,
-) -> Plan:
-    """Convenience for tests and evals: route and plan in one call."""
-    state = state or ConversationState()
-    return RulePlanner(catalog).plan(message, router.route(message, state), state)

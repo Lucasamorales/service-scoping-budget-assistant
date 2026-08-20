@@ -106,7 +106,7 @@ class InventoryIntentDetector:
                 for text in _SCOPING_EXEMPLARS
                 if (vec := self._embedder.embed_query(text)) is not None
             )
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - detector disables itself, regex path remains
             self._failed = True
             logger.warning("intent.inventory_anchors_failed", error=str(exc))
             return False

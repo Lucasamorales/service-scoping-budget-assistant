@@ -30,8 +30,8 @@ from typing import Any
 
 from app.core.config import get_settings
 from app.core.errors import CatalogError
-from app.orchestrator.plan import Capability, Plan
 from app.orchestrator.pipeline import Answer, Pipeline
+from app.orchestrator.plan import Capability, Plan
 from app.orchestrator.router import ConversationState
 from app.tools.flows import SessionIdentity
 

@@ -66,9 +66,9 @@ def wants_service_list(message: str) -> bool:
     if _LIST_RE.search(message):
         return True
     # "on demand services" / "services that are local" without other list verbs
-    if re.search(r"\bservices?\b", message, re.IGNORECASE) and _status_filter(message):
-        return True
-    return False
+    return bool(
+        re.search(r"\bservices?\b", message, re.IGNORECASE) and _status_filter(message)
+    )
 
 
 def status_filter_in_message(message: str) -> Status | None:
@@ -108,7 +108,10 @@ def list_services(
     if not by_section:
         if status_filter is not None:
             label = _STATUS_LABEL[status_filter]
-            return f"I don’t have any **{label}** services in that slice. Try the full list, or another filter."
+            return (
+                f"I don’t have any **{label}** services in that slice. "
+                "Try the full list, or another filter."
+            )
         return (
             "I couldn’t match that to a section. "
             "Ask for the full list, or name a category like Events or Photography."

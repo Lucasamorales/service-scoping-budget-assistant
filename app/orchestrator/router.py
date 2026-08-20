@@ -27,6 +27,7 @@ import structlog
 
 from app.core.keys import content_tokens, normalize_term, branch_key
 from app.tools.catalog import wants_service_list
+from app.tools.flows import is_affirmative
 
 __all__ = [
     "ConversationState",
@@ -191,14 +192,6 @@ _ACTION_RE = re.compile(
     re.IGNORECASE,
 )
 
-_CONFIRM_YES_RE = re.compile(
-    r"^\s*(yes|yep|yeah|y|sure|please|ok|okay|do it|send it)\s*[.!?]?\s*$",
-    re.IGNORECASE,
-)
-_CONFIRM_NO_RE = re.compile(
-    r"^\s*(no|nope|nah|n|no thanks|cancel)\s*[.!?]?\s*$",
-    re.IGNORECASE,
-)
 
 _CAPABILITIES_RE = re.compile(
     r"\b("
@@ -390,9 +383,13 @@ class Router:
         if state.awaiting_action_confirm:
             if state.pending_needs_country:
                 return Route(Intent.ACTION, message, matched="country", branch=branch)
-            if _CONFIRM_YES_RE.match(message):
+            # One yes/no vocabulary, shared with the flow that acts on it. When
+            # these disagreed, a CTA could be routed here and then refuse to
+            # fire, or fire on a message the flow never treated as consent.
+            confirmed = is_affirmative(message)
+            if confirmed is True:
                 return Route(Intent.ACTION, message, matched="yes", branch=branch)
-            if _CONFIRM_NO_RE.match(message):
+            if confirmed is False:
                 return Route(Intent.ACTION, message, matched="no", branch=branch)
 
         # Inventory → full catalog tool (not top-k retrieval). Cheap patterns
@@ -581,6 +578,4 @@ def _leaves_budget_sticky(message: str) -> bool:
         return True
     if _BUDGET_RE.search(message) or _LEFT_RE.search(message):
         return False
-    if _SCOPING_RE.search(message):
-        return True
-    return False
+    return bool(_SCOPING_RE.search(message))

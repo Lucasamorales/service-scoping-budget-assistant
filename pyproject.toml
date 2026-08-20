@@ -46,7 +46,16 @@ target-version = "py312"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "N", "UP", "B", "SIM", "RUF", "ANN", "PTH", "BLE"]
-ignore = ["ANN401"]
+ignore = [
+    "ANN401",
+    # Curly apostrophes and en dashes are deliberate in user-facing copy: this
+    # product writes to marketing staff, and "I'll" typed as a straight quote
+    # looks like a bug in the widget. Flagging them trains people to mangle the
+    # prose to satisfy the linter.
+    "RUF001",
+    "RUF002",
+    "RUF003",
+]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = ["ANN"]

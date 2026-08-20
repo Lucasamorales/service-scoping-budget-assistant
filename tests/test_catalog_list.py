@@ -6,7 +6,7 @@ from app.core.config import Settings
 from app.orchestrator.llm import DETERMINISTIC
 from app.orchestrator.pipeline import Pipeline
 from app.orchestrator.router import Intent, Router
-from app.tools.catalog import list_services, wants_service_list
+from app.tools.catalog import list_services
 
 
 class TestRouterCatalogList:

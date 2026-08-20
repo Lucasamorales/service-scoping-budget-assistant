@@ -2,10 +2,16 @@
 
 Supersedes `PLAN-budget-spend-actions.md`. Spreadsheet/xlsx is **read-only context** for budget. The accounts Google Form is **out of scope** for the RAG. Side effects are chat-confirmed emails.
 
+> **Delivered; the flow table below is still accurate, the mechanics are not.**
+> "Phase 0 intent gates" no longer exist — a planner picks capabilities and the model words
+> every turn, with `app/orchestrator/guard.py` rejecting any reply whose figures, verdict or
+> country are not in the facts. Budget is also no longer read once at startup: it is cached for
+> `BUDGET_CACHE_TTL_SECONDS`, and a month with no cap on the sheet reports *unknown* rather
+> than zero remaining.
+
 ## Keep
 
-- Phase 0 intent gates (BUDGET / QUOTE / ACTION skip retrieve+LLM until tools run).
-- `XlsxBudgetStore` + `answer_budget` (read-only remaining = cap − spent).
+- `XlsxBudgetStore` + `answer_budget` (read-only remaining = cap − spent, when a cap exists).
 
 ## Flows (from business + quote logic docs)
 

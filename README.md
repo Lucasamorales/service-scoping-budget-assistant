@@ -226,6 +226,7 @@ message
 | Did they confirm the email? | Rules matching Yes/No against pending state |
 | Which lookups? (scope, budget, quote, list, roster, …) | Gemini planner, rule fallback |
 | Verdict, price, remaining budget | Catalog + Sheet. Not the model |
+| Is the budget figure current? | Re-read from the Sheet every `BUDGET_CACHE_TTL_SECONDS` |
 | How to say it | Gemini composer, from the fact pack |
 | Catch a bad sentence | Guard, then the deterministic wording |
 
@@ -379,10 +380,12 @@ something a user reads, and it runs **after** every decision. Three outcomes, al
 - there was no model → deterministic wording, nothing marked, because that is not a fault
 
 [`app/orchestrator/guard.py`](app/orchestrator/guard.py) reads the reply back before anyone sees
-it. It looks for the two failures that cost money: a **figure nobody looked up**, and a **verdict
-turned upside down** (saying "free of charge" about something that needs a PO). Turns that carry
-a figure or a verdict are generated whole and checked before streaming, because a guarded answer
-cannot be un-sent halfway through.
+it. It looks for the failures that cost money: a **figure nobody looked up**, a **verdict turned
+upside down** (saying "free of charge" about something that needs a PO), a claim that an
+**email was sent** when none was, and **the right figures about the wrong country** — a budget
+answer that names a country the lookup was not about is wrong even when every number in it is
+real. Turns that carry a figure or a verdict are generated whole and checked before streaming,
+because a guarded answer cannot be un-sent halfway through.
 
 ## Answering a turn
 
