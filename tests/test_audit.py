@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from pathlib import Path
+
+from google.cloud.firestore_v1.transforms import Increment
 
 from app.orchestrator.llm import DETERMINISTIC
 from app.orchestrator.pipeline import Pipeline
@@ -11,10 +14,13 @@ from app.store.audit import (
     OUTCOME_CHAT_ONLY,
     OUTCOME_EMAIL_DRAFTED,
     OUTCOME_EMAIL_PENDING,
+    OUTCOME_EMAIL_SENT,
     AuditEvent,
     FirestoreAuditStore,
     JsonlAuditStore,
     build_audit_store,
+    new_conversation_id,
+    person_key,
 )
 from app.tools.flows import SessionIdentity
 from tests.test_pipeline import RecordingModel
@@ -63,13 +69,17 @@ class _FakeConvDoc:
         data = self._store.conversations.get(self._id)
         return _FakeDoc(data, exists=data is not None)
 
-    def set(self, data: dict) -> None:
-        self._store.conversations[self._id] = data
-        self._store.turns[self._id] = self._turns
-
-    def update(self, data: dict) -> None:
-        current = self._store.conversations.setdefault(self._id, {})
-        current.update(data)
+    def set(self, data: dict, merge: bool = False) -> None:
+        """Emulates merge plus server-side ``Increment``, which is the whole
+        point of the write: no read, no lost update."""
+        current = self._store.conversations.setdefault(self._id, {}) if merge else {}
+        for key, value in data.items():
+            if isinstance(value, Increment):
+                current[key] = (current.get(key) or 0) + value.value
+            else:
+                current[key] = value
+        self._store.conversations[self._id] = current
+        self._store.turns.setdefault(self._id, self._turns)
 
     def collection(self, name: str) -> _FakeTurnCollection:
         assert name == "turns"
@@ -107,14 +117,33 @@ class TestJsonlAuditStore:
                     "user_message": "hi",
                     "assistant_message": "hello",
                     "outcome": OUTCOME_CHAT_ONLY,
-                    "subject": "Alex",
+                    "person": "Alex",
                 },
             )
         )
         events = store.read("abc")
         assert len(events) == 1
-        assert events[0].payload["subject"] == "Alex"
+        assert events[0].payload["person"] == "Alex"
         assert events[0].payload["assistant_message"] == "hello"
+
+
+class TestConversationIds:
+    """Firestore lists documents by id, so the id is the index."""
+
+    def test_ids_sort_by_time_and_name_the_person(self) -> None:
+        early = new_conversation_id("Alex Marsh", now=datetime(2026, 8, 20, 9, 0, tzinfo=UTC))
+        late = new_conversation_id("Alex Marsh", now=datetime(2026, 8, 20, 14, 3, tzinfo=UTC))
+        assert early < late
+        assert early.startswith("20260820-090000-alex-marsh-")
+        assert len(late) <= 64, "must fit the conversationId field on the wire"
+
+    def test_an_unknown_person_still_produces_a_usable_id(self) -> None:
+        assert "-anon-" in new_conversation_id(None)
+
+    def test_person_key_collapses_the_ways_a_name_gets_typed(self) -> None:
+        assert person_key("Alex") == person_key(" alex ") == "alex"
+        assert person_key("Alex Marsh") == "alex-marsh"
+        assert person_key(None) == ""
 
 
 class TestFirestoreAuditStore:
@@ -129,13 +158,15 @@ class TestFirestoreAuditStore:
                     "user_message": "budget?",
                     "assistant_message": "500 left",
                     "outcome": OUTCOME_CHAT_ONLY,
-                    "subject": "Sam",
+                    "person": "Sam",
                     "country": "Canada",
                 },
             )
         )
-        assert client.conversations["c1"]["subject"] == "Sam"
-        assert client.conversations["c1"]["turn_count"] == 1
+        conversation = client.conversations["c1"]
+        assert conversation["person"] == "Sam"
+        assert conversation["person_key"] == "sam"
+        assert conversation["turn_count"] == 1
         events = store.read("c1")
         assert len(events) == 1
         assert events[0].payload["user_message"] == "budget?"
@@ -148,13 +179,77 @@ class TestFirestoreAuditStore:
                     "user_message": "yes",
                     "assistant_message": "draft",
                     "outcome": OUTCOME_EMAIL_DRAFTED,
-                    "subject": "Sam",
-                    "email": {"to": "am@example.com"},
+                    "person": "Sam",
+                    "email": {"to": "am@example.com", "to_name": "Marie"},
                 },
             )
         )
-        assert client.conversations["c1"]["turn_count"] == 2
-        assert client.conversations["c1"]["email_count"] == 1
+        conversation = client.conversations["c1"]
+        assert conversation["turn_count"] == 2
+        assert conversation["emails_drafted"] == 1
+        assert "emails_sent" not in conversation, "a draft never reached anyone"
+
+    def test_timestamps_are_real_datetimes(self) -> None:
+        """Stored as strings the console cannot sort or range-filter on them."""
+        client = _FakeFirestore()
+        FirestoreAuditStore(client).append(
+            AuditEvent(conversation_id="20260820-090000-sam-ab12", kind="turn", payload={})
+        )
+        conversation = client.conversations["20260820-090000-sam-ab12"]
+        assert isinstance(conversation["updated_at"], datetime)
+        assert conversation["started_at"] == datetime(2026, 8, 20, 9, 0, tzinfo=UTC)
+        turns = client.turns["20260820-090000-sam-ab12"]
+        assert isinstance(turns.docs.popitem()[1]["at"], datetime)
+
+    def test_the_summary_says_what_the_conversation_was(self) -> None:
+        client = _FakeFirestore()
+        FirestoreAuditStore(client).append(
+            AuditEvent(
+                conversation_id="c2",
+                kind="turn",
+                payload={
+                    "person": "Alex Marsh",
+                    "country": "United Kingdom",
+                    "branch": "Acme Bedford",
+                    "status": "quote_required",
+                    "outcome": OUTCOME_EMAIL_SENT,
+                    "email": {"to_name": "Marie Dupont"},
+                },
+            )
+        )
+        summary = client.conversations["c2"]["summary"]
+        assert summary == (
+            "Alex Marsh | United Kingdom | Acme Bedford | quote_required | emailed Marie Dupont"
+        )
+
+    def test_a_later_turn_without_a_country_does_not_erase_one(self) -> None:
+        client = _FakeFirestore()
+        store = FirestoreAuditStore(client)
+        store.append(
+            AuditEvent(conversation_id="c3", kind="turn", payload={"country": "France"})
+        )
+        store.append(AuditEvent(conversation_id="c3", kind="turn", payload={}))
+        assert client.conversations["c3"]["country"] == "France"
+
+    def test_turns_are_ordered_by_their_document_id(self) -> None:
+        client = _FakeFirestore()
+        store = FirestoreAuditStore(client)
+        for index in range(3):
+            store.append(
+                AuditEvent(
+                    conversation_id="c4",
+                    kind="turn",
+                    payload={"user_message": f"turn {index}"},
+                    at=f"2026-08-20T09:00:0{index}+00:00",
+                )
+            )
+        ids = list(client.turns["c4"].docs)
+        assert ids == sorted(ids)
+        assert [event.payload["user_message"] for event in store.read("c4")] == [
+            "turn 0",
+            "turn 1",
+            "turn 2",
+        ]
 
 
 class TestBuildAuditStore:
@@ -198,17 +293,18 @@ class TestPipelineAudit:
         events = store.read(answer.next_state.conversation_id or "")
         assert len(events) == 1
         payload = events[0].payload
-        assert payload["subject"] == "Alex"
+        assert payload["person"] == "Alex"
         assert payload["user_message"] == "how much budget is left"
         assert payload["assistant_message"] == answer.text
         assert payload["outcome"] == OUTCOME_CHAT_ONLY
         assert "text_preview" not in payload
 
     def test_in_scope_cta_marks_email_pending(self, corpus, tmp_path: Path) -> None:
+        from pathlib import Path
+
         from app.knowledge.chunking import chunk_service_item
         from app.knowledge.index import KnowledgeIndex
         from app.store.contacts import load_contacts
-        from pathlib import Path as P
 
         chunks = [chunk for item in corpus.catalog for chunk in chunk_service_item(item)]
         store = JsonlAuditStore(tmp_path)
@@ -217,7 +313,7 @@ class TestPipelineAudit:
             KnowledgeIndex.build(chunks),
             model=RecordingModel("should not run"),
             audit_log=store,
-            contacts=load_contacts(P("fixtures/contacts/country_ams.json")),
+            contacts=load_contacts(Path("fixtures/contacts/country_ams.json")),
         )
         answer = pipeline.answer(
             "can we do campaign wrap-ups",
@@ -230,6 +326,12 @@ class TestPipelineAudit:
 
 class TestHrCapabilityDenial:
     def test_fire_jeremy_is_not_handover(self, corpus) -> None:
+        """An HR instruction is out of scope, not a safety or legal escalation.
+
+        Routing it to handover would tell the user a person is being brought in
+        to deal with sacking their colleague. The right answer is to say this
+        tool does not cover it and name what it does.
+        """
         from app.knowledge.chunking import chunk_service_item
         from app.knowledge.index import KnowledgeIndex
 
@@ -244,5 +346,10 @@ class TestHrCapabilityDenial:
             identity=SessionIdentity(subject="Alex"),
         )
         assert answer.route.intent is not Intent.HANDOVER
-        assert "capability" in answer.text.lower()
         assert answer.source == DETERMINISTIC
+        lowered = answer.text.lower()
+        # Steers back to what it can answer instead of engaging with the request.
+        assert "couldn't tell which service" in lowered or "capability" in lowered
+        assert "covered" in lowered or "scope" in lowered
+        # Never reads as though the instruction is being acted on.
+        assert "fired" not in lowered

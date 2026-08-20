@@ -54,13 +54,25 @@ def build_transcript(
     conversation_id: str | None,
     audit_log: AuditStore | None,
     history: tuple[HistoryTurn, ...] = (),
+    current_message: str | None = None,
 ) -> tuple[TranscriptTurn, ...]:
-    """Prefer the audit log; use client history only when nothing was stored."""
+    """Prefer the audit log; use client history only when nothing was stored.
+
+    ``current_message`` is the message being handled right now. It has to be
+    passed in because the attachment is built while the turn is still running —
+    the audit row for it does not exist yet — and without it the PDF stops one
+    message short of the "Yes" that authorised the email.
+    """
+    turns: tuple[TranscriptTurn, ...] = ()
     if conversation_id and audit_log is not None:
-        from_log = _from_audit(audit_log.read(conversation_id))
-        if from_log:
-            return from_log
-    return _from_history(history)
+        turns = _from_audit(audit_log.read(conversation_id))
+    if not turns:
+        turns = _from_history(history)
+
+    pending = (current_message or "").strip()
+    if not pending or (turns and turns[-1].role == "user" and turns[-1].content.strip() == pending):
+        return turns
+    return (*turns, TranscriptTurn(at="", role="user", content=pending))
 
 
 def render_transcript_text(

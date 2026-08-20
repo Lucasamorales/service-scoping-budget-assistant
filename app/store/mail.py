@@ -43,6 +43,13 @@ class MailResult:
     sent: bool
     provider_id: str = ""
     detail: str = ""
+    attempted: bool = False
+    """Whether a provider was actually called.
+
+    Distinguishes "mail is not configured here, so this is a draft" from "we
+    tried to send and it was rejected". Both leave ``sent`` false, but only the
+    second is a failure someone needs to chase.
+    """
 
 
 class Mailer(Protocol):
@@ -96,15 +103,19 @@ class ResendMailer:
             )
         except httpx.HTTPError as exc:
             logger.error("mail.resend_error", error=str(exc))
-            return MailResult(sent=False, detail=f"Mail provider error: {exc}")
+            return MailResult(sent=False, detail=f"Mail provider error: {exc}", attempted=True)
 
         if response.status_code >= 400:
             logger.error("mail.resend_rejected", status=response.status_code, body=response.text)
-            return MailResult(sent=False, detail=f"Mail provider rejected send ({response.status_code}).")
+            return MailResult(
+                sent=False,
+                detail=f"Mail provider rejected send ({response.status_code}).",
+                attempted=True,
+            )
 
         data = response.json() if response.content else {}
         provider_id = str(data.get("id") or "")
-        return MailResult(sent=True, provider_id=provider_id, detail="sent")
+        return MailResult(sent=True, provider_id=provider_id, detail="sent", attempted=True)
 
 
 def build_mailer(*, api_key: str, from_address: str, provider: str = "resend") -> Mailer:

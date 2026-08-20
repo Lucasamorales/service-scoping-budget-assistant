@@ -37,7 +37,7 @@ from app.orchestrator.executor import Executor
 from app.orchestrator.facts import FactPack
 from app.orchestrator.history import HistoryTurn
 from app.orchestrator.intent_semantics import InventoryIntentDetector
-from app.orchestrator.llm import LanguageModel, build_model
+from app.orchestrator.llm import DETERMINISTIC, LanguageModel, build_model
 from app.orchestrator.plan import Capability, Plan
 from app.orchestrator.planner import ModelPlanner, Planner, build_planner
 from app.orchestrator.resolver import Outcome, Resolution, ScopeResolver
@@ -236,6 +236,7 @@ class Pipeline:
             xlsx_path=settings.budget_xlsx_path,
             spreadsheet_id=settings.budget_spreadsheet_id,
             credentials_path=settings.google_application_credentials,
+            cache_ttl_seconds=settings.budget_cache_ttl_seconds,
         )
         branches = tuple(branch.name for branch in budget_store.branches()) if budget_store else ()
         quote_store = load_quote_store(
@@ -327,7 +328,7 @@ class Pipeline:
         resolution, retrieval = self._lookup(question, plan, route)
 
         confirm = (
-            _pending_from_state(state)
+            pending_from_state(state)
             if plan.wants(Capability.MAIL) and state.awaiting_action_confirm
             else None
         )
@@ -375,7 +376,7 @@ class Pipeline:
         resolution, retrieval = self._lookup(question, plan, route)
 
         confirm = (
-            _pending_from_state(state)
+            pending_from_state(state)
             if plan.wants(Capability.MAIL) and state.awaiting_action_confirm
             else None
         )
@@ -404,7 +405,7 @@ class Pipeline:
     ) -> Answer:
         state = state or ConversationState()
         identity = identity or SessionIdentity()
-        conversation_id = state.conversation_id or new_conversation_id()
+        conversation_id = state.conversation_id or new_conversation_id(identity.subject)
 
         turn = self._run_turn(question, state, history, identity, conversation_id)
         worded = word_answer(
@@ -443,7 +444,7 @@ class Pipeline:
         """
         state = state or ConversationState()
         identity = identity or SessionIdentity()
-        conversation_id = state.conversation_id or new_conversation_id()
+        conversation_id = state.conversation_id or new_conversation_id(identity.subject)
 
         turn = self._run_turn(question, state, history, identity, conversation_id)
         next_state = _carry_forward(
@@ -468,35 +469,50 @@ class Pipeline:
             actions=turn.facts.actions,
         )
 
+        # Audited in a finally, because a browser that navigates away mid-answer
+        # closes the generator and everything after the last yield is skipped.
+        # The widget streams every turn, so leaving it after the final yield
+        # meant a dropped connection lost the record of an email being sent.
         worded: Worded | None = None
-        for piece in stream_wording(
-            self._composer(),
-            turn.facts,
-            question,
-            history,
-            system_prompt=self._system_prompt,
-        ):
-            if isinstance(piece, Worded):
-                worded = piece
-                continue
-            yield TextPiece(piece)
+        try:
+            for piece in stream_wording(
+                self._composer(),
+                turn.facts,
+                question,
+                history,
+                system_prompt=self._system_prompt,
+            ):
+                if isinstance(piece, Worded):
+                    worded = piece
+                    continue
+                yield TextPiece(piece)
 
-        assert worded is not None
-        yield StreamEnd(
-            worded.text,
-            worded.source,
-            degraded=worded.degraded,
-            truncated=worded.truncated,
-        )
-        self._audit(
-            conversation_id,
-            question,
-            self._assemble(turn, worded, conversation_id, identity, state=state),
-            identity,
-            outcome=turn.facts.audit_outcome,
-            email=turn.facts.email,
-            facts=turn.facts,
-        )
+            assert worded is not None
+            yield StreamEnd(
+                worded.text,
+                worded.source,
+                degraded=worded.degraded,
+                truncated=worded.truncated,
+            )
+        finally:
+            self._audit(
+                conversation_id,
+                question,
+                self._assemble(
+                    turn,
+                    # No wording means the turn was abandoned before it
+                    # finished. Recorded as truncated rather than invented.
+                    worded
+                    or Worded(text="", source=DETERMINISTIC, degraded=True, truncated=True),
+                    conversation_id,
+                    identity,
+                    state=state,
+                ),
+                identity,
+                outcome=turn.facts.audit_outcome,
+                email=turn.facts.email,
+                facts=turn.facts,
+            )
 
     def _composer(self) -> LanguageModel | None:
         """The model allowed to write this turn's wording, if any."""
@@ -571,7 +587,9 @@ class Pipeline:
                     "budget_country": answer.next_state.budget_country,
                     "budget_branch": answer.next_state.budget_branch,
                     "budget_month": answer.next_state.budget_month,
-                    "subject": identity.subject,
+                    # "person", not "subject": the turn also records an email
+                    # subject line, and one of those names a human.
+                    "person": identity.subject,
                     "role": identity.role,
                     "country": identity.country,
                     "branch": identity.branch,
@@ -589,7 +607,8 @@ class Pipeline:
         return self.embedder.embed_query(question)
 
 
-def _pending_from_state(state: ConversationState) -> PendingAction:
+def pending_from_state(state: ConversationState) -> PendingAction:
+    """Rebuild the pending mail action a previous turn left in state."""
     assert state.pending_action_kind is not None
     return PendingAction(
         kind=state.pending_action_kind,

@@ -50,6 +50,7 @@ def build_request_email(
     conversation_id: str | None = None,
     audit_log: AuditStore | None = None,
     role: str | None = None,
+    current_message: str | None = None,
 ) -> MailDraft:
     service = item.display_name if item else "a marketing request"
     subject = {
@@ -80,6 +81,7 @@ def build_request_email(
             conversation_id=conversation_id,
             audit_log=audit_log,
             history=history,
+            current_message=current_message,
         ),
         title=subject,
         filename_stem=stem,

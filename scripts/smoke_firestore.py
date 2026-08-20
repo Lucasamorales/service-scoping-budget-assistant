@@ -47,18 +47,20 @@ def main() -> int:
         print("Firestore is NOT active — check API, IAM, and credentials.")
         return 1
 
-    conversation_id = new_conversation_id()
+    conversation_id = new_conversation_id("Firestore Smoke")
     store.append(
         AuditEvent(
             conversation_id=conversation_id,
             kind="turn",
             payload={
-                "subject": "Firestore smoke",
+                "person": "Firestore Smoke",
                 "role": "account_manager",
                 "country": "United Kingdom",
                 "branch": "Acme London",
-                "question": "smoke test question",
-                "answer": "smoke test answer",
+                # Same keys the pipeline writes, so the smoke row is shaped like
+                # a real one and a schema change here cannot pass unnoticed.
+                "user_message": "smoke test question",
+                "assistant_message": "smoke test answer",
                 "outcome": OUTCOME_CHAT_ONLY,
             },
         )
@@ -73,7 +75,7 @@ def main() -> int:
         return 1
     try:
         events = firestore_store.read(conversation_id)
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - a smoke script reports any failure and exits
         print(f"Firestore read failed: {exc}")
         return 1
     print(f"conversation_id={conversation_id}")
