@@ -11,7 +11,8 @@ Live workbook tab titles (source of truth) — local xlsx fixtures may differ:
 
 from __future__ import annotations
 
-from typing import Any, Sequence
+from collections.abc import Sequence
+from typing import Any
 
 import structlog
 
@@ -55,9 +56,9 @@ def quote_sheet_title(title: str) -> str:
 def sheets_service(*, credentials_path: str = "") -> Any:
     """Build a Sheets API v4 client from ADC or an explicit key file."""
     try:
+        import google.auth
         from google.auth.transport.requests import Request
         from google.oauth2 import service_account
-        import google.auth
         from googleapiclient.discovery import build
     except ImportError as exc:
         raise SheetsError(
@@ -74,10 +75,18 @@ def sheets_service(*, credentials_path: str = "") -> Any:
     else:
         creds, _project = google.auth.default(scopes=list(_READONLY_SCOPES))
         if hasattr(creds, "refresh"):
+            # A failure here is not fatal — the client refreshes lazily on the
+            # first call — but swallowing it silently meant a bad credential
+            # surfaced later as an unexplained "budget isn't loaded", with
+            # nothing in the logs pointing at auth.
             try:
                 creds.refresh(Request())
-            except Exception:
-                pass
+            except Exception as exc:  # noqa: BLE001 - google.auth raises many types
+                logger.warning(
+                    "sheets.credential_refresh_failed",
+                    error=str(exc),
+                    detail="continuing; the client will retry on first use",
+                )
 
     return build("sheets", "v4", credentials=creds, cache_discovery=False)
 
@@ -121,8 +130,22 @@ def fetch_sheet_values(
         raise SheetsError(str(exc)) from exc
 
     value_ranges = response.get("valueRanges") or []
+    # batchGet returns one range per requested range, in order. If it ever does
+    # not, pairing by position silently maps one tab's rows onto another tab's
+    # parser — caps read as spend, spend read as roster. Refuse instead.
+    if len(value_ranges) != len(titles):
+        logger.error(
+            "sheets.range_count_mismatch",
+            spreadsheet=spreadsheet_id,
+            requested=len(titles),
+            returned=len(value_ranges),
+        )
+        raise SheetsError(
+            f"expected {len(titles)} ranges from the Sheets API, got {len(value_ranges)}"
+        )
+
     out: dict[str, list[list[object]]] = {}
-    for title, entry in zip(titles, value_ranges, strict=False):
+    for title, entry in zip(titles, value_ranges, strict=True):
         rows_raw = entry.get("values") or []
         rows: list[list[object]] = []
         for row in rows_raw:

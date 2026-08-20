@@ -9,7 +9,7 @@ from datetime import date
 import structlog
 
 from app.core.keys import normalize_term
-from app.store.budget import MONTHS, BudgetSnapshot, BudgetStore, BranchRef, canonical_month
+from app.store.budget import BudgetSnapshot, BudgetStore, BranchRef, canonical_month
 
 __all__ = [
     "BudgetToolResult",
@@ -311,6 +311,11 @@ def _format_snapshot(snapshot: BudgetSnapshot) -> str:
         f"- Spent: {_money(snapshot.spent)}",
         f"- Remaining: {_money(snapshot.remaining)}",
     ]
+    if not snapshot.cap_known:
+        lines.append(
+            "- The tracker has no cap for this site and month, so I can't say what is "
+            "left. Spend above is what has been logged."
+        )
     if snapshot.lines:
         recent = sorted(
             snapshot.lines,
@@ -338,16 +343,24 @@ def _format_rollups(
     if not snapshots:
         return f"No branches found for **{title}** in the budget tracker."
 
-    total_cap = round(sum(s.cap for s in snapshots), 2)
+    # Totals cover only the sites the sheet actually caps. Folding an unknown
+    # cap in as zero understated the rollup and made the gap invisible.
+    capped = tuple(s for s in snapshots if s.cap_known)
+    uncapped = len(snapshots) - len(capped)
+    total_cap = round(sum(s.cap or 0.0 for s in capped), 2)
     total_spent = round(sum(s.spent for s in snapshots), 2)
-    total_remaining = round(sum(s.remaining for s in snapshots), 2)
+    total_remaining = round(sum(s.remaining or 0.0 for s in capped), 2)
     lines = [
         f"**{title}** — fiscal **{month}** ({len(snapshots)} branches)",
         f"- Cap: {_money(total_cap)}",
         f"- Spent: {_money(total_spent)}",
         f"- Remaining: {_money(total_remaining)}",
-        "",
     ]
+    if uncapped:
+        lines.append(
+            f"- Excludes {uncapped} site(s) with no cap in the tracker for {month}."
+        )
+    lines.append("")
 
     if group_by_country:
         by_country: dict[str, list[BudgetSnapshot]] = {}
@@ -375,11 +388,9 @@ def _rollup_line(snapshot: BudgetSnapshot) -> str:
     )
 
 
-def _money(value: float) -> str:
+def _money(value: float | None) -> str:
+    if value is None:
+        return "unknown"
     if abs(value - round(value)) < 0.001:
         return f"{value:,.0f}"
     return f"{value:,.2f}"
-
-
-# Re-export for tests that want the month list.
-MONTH_LABELS = MONTHS

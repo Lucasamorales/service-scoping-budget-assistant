@@ -2,10 +2,23 @@
 
 The Dashboard tab is ignored. Remaining budget is always recomputed from
 ``Budget caps`` minus summed ``DB`` spend for the fiscal month.
+
+The sheet is read through a time-boxed cache. A store loaded once at startup
+served whatever the numbers were when the container booted, so an instance that
+had been up a week answered "how much is left?" from week-old spend — the one
+answer here that must not be stale. Reloading on a TTL keeps the read cheap
+without pinning the figures to process lifetime.
+
+A cap that is absent from the sheet is reported as *unknown*, not as zero.
+Treating a missing row as a zero cap turned a parsing gap into a confident
+"there is nothing left", which reads as a real budget decision.
 """
 
 from __future__ import annotations
 
+import threading
+import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import date, datetime
 from pathlib import Path
@@ -86,14 +99,22 @@ class SpendLine:
 class BudgetSnapshot:
     branch: BranchRef
     month: str
-    cap: float
+    cap: float | None
+    """``None`` when the sheet has no cap for this branch and month."""
+
     spent: float
-    remaining: float
+    remaining: float | None
+    """``None`` whenever the cap is unknown — spend alone cannot imply a balance."""
+
     lines: tuple[SpendLine, ...]
 
     @property
     def citation(self) -> str:
         return f"Budget tracker ({self.branch.name}, {self.month})"
+
+    @property
+    def cap_known(self) -> bool:
+        return self.cap is not None
 
 
 class BudgetStore(Protocol):
@@ -117,44 +138,91 @@ class _WorkbookData:
     spend: tuple[SpendLine, ...]
 
 
-class XlsxBudgetStore:
+class _CachedWorkbook:
+    """Holds parsed sheet data and reloads it once it is older than the TTL.
+
+    A refresh that fails keeps serving the data already in hand. Going dark on
+    a transient Sheets error would be worse than answering from figures a few
+    minutes old, and the alternative — refusing to answer — is indistinguishable
+    to the user from the budget not being configured at all.
+    """
+
+    def __init__(self, loader: Callable[[], _WorkbookData], *, ttl_seconds: int) -> None:
+        self._loader = loader
+        self._ttl = max(int(ttl_seconds), 0)
+        self._lock = threading.Lock()
+        self._data = loader()
+        self._loaded_at = time.monotonic()
+
+    @property
+    def data(self) -> _WorkbookData:
+        if self._ttl and time.monotonic() - self._loaded_at >= self._ttl:
+            self._refresh()
+        return self._data
+
+    def _refresh(self) -> None:
+        with self._lock:
+            # Another thread may have refreshed while this one waited.
+            if time.monotonic() - self._loaded_at < self._ttl:
+                return
+            try:
+                self._data = self._loader()
+            except Exception as exc:  # noqa: BLE001 - any load failure keeps the last good data
+                logger.warning(
+                    "budget.refresh_failed",
+                    error=str(exc),
+                    detail="serving the previously loaded figures",
+                )
+            else:
+                logger.info("budget.refreshed", branches=len(self._data.branches))
+            # Stamped either way, so a persistent failure retries on the TTL
+            # rather than on every single question.
+            self._loaded_at = time.monotonic()
+
+
+class _WorkbookBackedStore:
+    """Shared read paths for the xlsx and Sheets stores."""
+
+    _cache: _CachedWorkbook
+
+    def branches(self) -> tuple[BranchRef, ...]:
+        return self._cache.data.branches
+
+    def resolve_branch(self, text: str) -> BranchRef | None:
+        return _resolve_branch(self._cache.data, text)
+
+    def fiscal_month_for(self, when: date) -> str:
+        return _fiscal_month_for(self._cache.data, when)
+
+    def snapshot(self, branch: BranchRef, month: str) -> BudgetSnapshot:
+        return _snapshot(self._cache.data, branch, month, self.fiscal_month_for)
+
+
+class XlsxBudgetStore(_WorkbookBackedStore):
     """Read-only budget store backed by the exported workbook fixture."""
 
-    def __init__(self, path: Path) -> None:
+    def __init__(self, path: Path, *, ttl_seconds: int = 0) -> None:
         self._path = path
-        self._data = _load_workbook(path)
-
-    def branches(self) -> tuple[BranchRef, ...]:
-        return self._data.branches
-
-    def resolve_branch(self, text: str) -> BranchRef | None:
-        return _resolve_branch(self._data, text)
-
-    def fiscal_month_for(self, when: date) -> str:
-        return _fiscal_month_for(self._data, when)
-
-    def snapshot(self, branch: BranchRef, month: str) -> BudgetSnapshot:
-        return _snapshot(self._data, branch, month, self.fiscal_month_for)
+        # Defaults to no expiry: the fixture is a dev artefact that does not
+        # change under a running process the way the live sheet does.
+        self._cache = _CachedWorkbook(lambda: _load_workbook(path), ttl_seconds=ttl_seconds)
 
 
-class SheetsBudgetStore:
+class SheetsBudgetStore(_WorkbookBackedStore):
     """Read-only budget store backed by a Google Sheet (Viewer access)."""
 
-    def __init__(self, spreadsheet_id: str, *, credentials_path: str = "") -> None:
+    def __init__(
+        self,
+        spreadsheet_id: str,
+        *,
+        credentials_path: str = "",
+        ttl_seconds: int = 900,
+    ) -> None:
         self._spreadsheet_id = spreadsheet_id
-        self._data = _load_sheets(spreadsheet_id, credentials_path=credentials_path)
-
-    def branches(self) -> tuple[BranchRef, ...]:
-        return self._data.branches
-
-    def resolve_branch(self, text: str) -> BranchRef | None:
-        return _resolve_branch(self._data, text)
-
-    def fiscal_month_for(self, when: date) -> str:
-        return _fiscal_month_for(self._data, when)
-
-    def snapshot(self, branch: BranchRef, month: str) -> BudgetSnapshot:
-        return _snapshot(self._data, branch, month, self.fiscal_month_for)
+        self._cache = _CachedWorkbook(
+            lambda: _load_sheets(spreadsheet_id, credentials_path=credentials_path),
+            ttl_seconds=ttl_seconds,
+        )
 
 
 def _resolve_branch(data: _WorkbookData, text: str) -> BranchRef | None:
@@ -184,10 +252,10 @@ def _snapshot(
     data: _WorkbookData,
     branch: BranchRef,
     month: str,
-    fiscal_month_for,
+    fiscal_month_for: Callable[[date], str],
 ) -> BudgetSnapshot:
     month = canonical_month(month)
-    cap = data.caps.get(branch.key, {}).get(month, 0.0)
+    cap = data.caps.get(branch.key, {}).get(month)
     lines = tuple(
         line
         for line in data.spend
@@ -195,7 +263,7 @@ def _snapshot(
         and _line_month(line, fiscal_month_for) == month
     )
     spent = round(sum(line.amount for line in lines), 2)
-    remaining = round(cap - spent, 2)
+    remaining = None if cap is None else round(cap - spent, 2)
     return BudgetSnapshot(
         branch=branch,
         month=month,
@@ -206,7 +274,7 @@ def _snapshot(
     )
 
 
-def _line_month(line: SpendLine, fiscal_month_for) -> str:
+def _line_month(line: SpendLine, fiscal_month_for: Callable[[date], str]) -> str:
     if line.po_date is not None:
         return fiscal_month_for(line.po_date)
     return canonical_month(line.month_label) if line.month_label else ""
@@ -217,20 +285,26 @@ def build_budget_store(
     xlsx_path: Path | None = None,
     spreadsheet_id: str = "",
     credentials_path: str = "",
+    cache_ttl_seconds: int = 900,
 ) -> BudgetStore | None:
     """Load budget data.
 
     When ``spreadsheet_id`` is set the live Google Sheet is the **source of
     truth** — no silent fallback to the local xlsx. The xlsx path is only used
     for offline/dev when no spreadsheet id is configured.
+
+    ``cache_ttl_seconds`` bounds how stale a figure can get; see
+    :class:`_CachedWorkbook`.
     """
+    store: BudgetStore
     if spreadsheet_id.strip():
         try:
             store = SheetsBudgetStore(
                 spreadsheet_id.strip(),
                 credentials_path=credentials_path,
+                ttl_seconds=cache_ttl_seconds,
             )
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - budget degrades off rather than answering wrong
             logger.error(
                 "budget.sheets_load_failed",
                 spreadsheet=spreadsheet_id,
@@ -251,7 +325,7 @@ def build_budget_store(
         return None
     try:
         store = XlsxBudgetStore(path)
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - openpyxl raises many types on a bad workbook
         logger.error("budget.xlsx_load_failed", path=str(path), error=str(exc))
         return None
     logger.info("budget.xlsx_loaded", path=str(path), branches=len(store.branches()))

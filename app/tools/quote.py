@@ -79,16 +79,24 @@ def quote_for(
         if budget_reply.snapshot is not None:
             snapshot = budget_reply.snapshot
             remaining = snapshot.remaining
-            over = amount > remaining
-            budget_text = (
-                f" You currently have **{remaining:,.2f} {store.currency}** left in "
-                f"**{snapshot.branch.name}** for **{snapshot.month}**."
-            )
-            if over:
-                budget_text += (
-                    " That quote is above the remaining budget, so you'll need to request "
-                    "additional funds from your Country Manager."
+            if remaining is None:
+                # No cap on the sheet means no balance to compare against. Saying
+                # nothing about budget beats implying the quote clears one.
+                budget_text = (
+                    f" I can't tell what's left at **{snapshot.branch.name}** for "
+                    f"**{snapshot.month}** — the tracker has no cap for it."
                 )
+            else:
+                over = amount > remaining
+                budget_text = (
+                    f" You currently have **{remaining:,.2f} {store.currency}** left in "
+                    f"**{snapshot.branch.name}** for **{snapshot.month}**."
+                )
+                if over:
+                    budget_text += (
+                        " That quote is above the remaining budget, so you'll need to request "
+                        "additional funds from your Country Manager."
+                    )
 
     text = (
         f"We can do **{item.display_name}** on demand. The estimated cost is "

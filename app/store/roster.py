@@ -9,9 +9,13 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
+import structlog
+
 from app.core.keys import normalize_term
 
 __all__ = ["Person", "RosterStore", "load_roster"]
+
+logger = structlog.get_logger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
@@ -51,8 +55,9 @@ def load_roster(
                 spreadsheet_id.strip(),
                 credentials_path=credentials_path,
             )
-        except Exception:
+        except Exception as exc:  # noqa: BLE001 - never name the wrong person from a stale sheet
             # Spreadsheet is source of truth — do not fall back to a stale xlsx.
+            logger.warning("roster.sheets_load_failed", error=str(exc))
             return None
 
     if not xlsx_path.is_file():

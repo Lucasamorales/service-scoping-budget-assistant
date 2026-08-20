@@ -137,8 +137,169 @@ class TestBudgetTool:
         assert "aren't available" in result.text
 
 
+class TestMissingCapIsUnknown:
+    """A cap the sheet does not have is unknown, not zero.
+
+    Defaulting to 0.0 turned a parsing gap into "there is nothing left", which
+    reads as a real budget decision and stops a legitimate request.
+    """
+
+    def test_a_month_with_no_cap_has_no_remaining(self) -> None:
+        """Built directly, because the shipped fixture caps every month — which
+        is exactly why this case went unnoticed."""
+        from app.core.keys import branch_key
+        from app.store.budget import BranchRef, _snapshot, _WorkbookData
+
+        branch = BranchRef(
+            key=branch_key("Acme Nowhere"),
+            name="Acme Nowhere",
+            country="United Kingdom",
+            location="Nowhere",
+        )
+        data = _WorkbookData(
+            branches=(branch,),
+            by_key={branch.key: branch},
+            caps={branch.key: {"Jul": 500.0}},  # no August row
+            fiscal=(),
+            spend=(),
+        )
+        snap = _snapshot(data, branch, "Aug", lambda when: "Aug")
+        assert snap.cap is None
+        assert snap.remaining is None
+        assert not snap.cap_known
+
+    def test_spend_without_a_cap_does_not_become_a_negative_balance(self) -> None:
+        """The old default made remaining equal minus the spend."""
+        from datetime import date as _date
+
+        from app.core.keys import branch_key
+        from app.store.budget import SpendLine, BranchRef, _snapshot, _WorkbookData
+
+        branch = BranchRef(
+            key=branch_key("Acme Nowhere"),
+            name="Acme Nowhere",
+            country="United Kingdom",
+            location="Nowhere",
+        )
+        line = SpendLine(
+            branch="Acme Nowhere",
+            country="United Kingdom",
+            media_type="Print",
+            description="posters",
+            po_number="PO1",
+            requester="Alex",
+            po_date=_date(2026, 8, 1),
+            amount=120.0,
+            month_label="Aug",
+        )
+        data = _WorkbookData(
+            branches=(branch,),
+            by_key={branch.key: branch},
+            caps={},
+            fiscal=(),
+            spend=(line,),
+        )
+        snap = _snapshot(data, branch, "Aug", lambda when: "Aug")
+        assert snap.spent == pytest.approx(120.0)
+        assert snap.remaining is None
+
+    def test_a_known_cap_still_reports_a_balance(self, store: XlsxBudgetStore) -> None:
+        branch = store.resolve_branch("Milton Keynes")
+        assert branch is not None
+        snap = store.snapshot(branch, "Aug")
+        assert snap.cap_known
+        assert snap.remaining == pytest.approx(448.32)
+
+    def test_an_unknown_cap_is_said_rather_than_shown_as_zero(self) -> None:
+        from app.store.budget import BudgetSnapshot, BranchRef
+        from app.tools.budget import _format_snapshot
+
+        snap = BudgetSnapshot(
+            branch=BranchRef(key="k", name="Acme Nowhere", country="UK", location="Nowhere"),
+            month="Aug",
+            cap=None,
+            spent=120.0,
+            remaining=None,
+            lines=(),
+        )
+        text = _format_snapshot(snap)
+        assert "unknown" in text
+        assert "can't say what is left" in text
+        # The one thing it must never do is imply an empty budget.
+        assert "Remaining: 0" not in text
+
+
+class TestCacheTtl:
+    """Budget figures are re-read, not frozen at container start."""
+
+    def test_a_zero_ttl_never_reloads(self) -> None:
+        from types import SimpleNamespace
+
+        from app.store.budget import _CachedWorkbook
+
+        calls = []
+
+        def loader():
+            calls.append(1)
+            return SimpleNamespace(branches=())
+
+        cache = _CachedWorkbook(loader, ttl_seconds=0)
+        for _ in range(3):
+            assert cache.data is not None
+        assert len(calls) == 1
+
+    def test_an_expired_cache_reloads(self) -> None:
+        from types import SimpleNamespace
+
+        from app.store import budget as budget_module
+
+        calls = []
+
+        def loader():
+            calls.append(len(calls))
+            return SimpleNamespace(branches=(), label=f"load-{len(calls)}")
+
+        cache = budget_module._CachedWorkbook(loader, ttl_seconds=1)
+        assert cache.data.label == "load-1"
+        # Reach back in time rather than sleeping.
+        cache._loaded_at -= 5
+        assert cache.data.label == "load-2"
+        assert len(calls) == 2
+
+    def test_a_failed_refresh_keeps_serving_the_last_good_data(self) -> None:
+        """Going dark on a transient Sheets error is worse than a figure a few
+        minutes old, and is indistinguishable to the user from no budget at all."""
+        from types import SimpleNamespace
+
+        from app.store import budget as budget_module
+
+        state = {"fail": False}
+        good = SimpleNamespace(branches=(), label="good")
+
+        def loader():
+            if state["fail"]:
+                raise RuntimeError("sheets unavailable")
+            return good
+
+        cache = budget_module._CachedWorkbook(loader, ttl_seconds=1)
+        state["fail"] = True
+        cache._loaded_at -= 5
+        assert cache.data.label == "good"
+
+
 class TestPipelineBudget:
-    def test_budget_never_reaches_the_model(self, corpus, store: XlsxBudgetStore) -> None:
+    """Budget figures come from the tracker, whatever the model says.
+
+    These used to assert the model was never called on a budget turn. Since the
+    plan-execute-compose refactor it is called to word the answer, so the
+    protection is no longer "no prompt" but the output guard: a figure that is
+    not in the facts is rejected and the deterministic sentence is sent instead.
+    Asserting the mechanism hid the fact that the mechanism had changed.
+    """
+
+    def test_an_invented_budget_figure_never_reaches_the_user(
+        self, corpus, store: XlsxBudgetStore
+    ) -> None:
         model = RecordingModel("I invented a budget figure of 99999.")
         chunks = [chunk for item in corpus.catalog for chunk in chunk_service_item(item)]
         pipeline = Pipeline(
@@ -155,14 +316,15 @@ class TestPipelineBudget:
             "how much budget is left at Milton Keynes in August",
             identity=SessionIdentity(),
         )
-        assert model.prompts == []
+        assert model.prompts, "the model is consulted for wording"
+        # ...and overruled, because 99999 is not in the facts it was given.
         assert answer.source == DETERMINISTIC
         assert answer.route.intent is Intent.BUDGET
         assert "99999" not in answer.text
         assert "Milton Keynes" in answer.text
         assert "448" in answer.text or "448.32" in answer.text
 
-    def test_sticky_canada_then_uk_never_reaches_model(
+    def test_a_sticky_follow_up_is_answered_for_the_new_country(
         self, corpus, store: XlsxBudgetStore
     ) -> None:
         model = RecordingModel("I can only give budget details for Canada.")
@@ -189,7 +351,7 @@ class TestPipelineBudget:
             state=first.next_state,
             identity=SessionIdentity(),
         )
-        assert model.prompts == []
+        # The model insisted on Canada; the tracker said United Kingdom and won.
         assert second.source == DETERMINISTIC
         assert second.route.intent is Intent.BUDGET
         assert second.route.matched == "sticky:budget"

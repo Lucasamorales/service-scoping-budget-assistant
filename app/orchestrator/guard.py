@@ -6,16 +6,18 @@ shown, and if it contains a figure the facts do not contain, or contradicts the
 verdict that was looked up, it is discarded and the deterministic wording is
 used instead.
 
-Both checks are deliberately narrow. A guard that fires on innocent phrasing
+The checks are deliberately narrow. A guard that fires on innocent phrasing
 would push every turn back to template English and quietly undo the reason for
-having a model at all, so this looks for the two failures that actually cost
-money:
+having a model at all, so this looks for the failures that actually cost money:
 
 - **A number nobody looked up.** Every figure in the facts is permitted; a new
   one is invented, whatever it is a price of.
 - **A verdict turned upside down.** Saying "free of charge" about something that
   needs a purchase order is the single most expensive sentence this product can
   produce.
+- **The right figures about the wrong country.** A budget answer that names a
+  country the lookup was not about is wrong even when every number in it is
+  real, and it reads exactly as authoritative as a correct one.
 """
 
 from __future__ import annotations
@@ -65,6 +67,21 @@ _SENT_CLAIM = re.compile(
     re.IGNORECASE,
 )
 
+_COUNTRY_ALIASES = {
+    "united kingdom": "united kingdom",
+    "uk": "united kingdom",
+    "britain": "united kingdom",
+    "france": "france",
+    "paris": "france",
+    "canada": "canada",
+    "australia": "australia",
+}
+"""The countries the tracker covers, and the words people use for them.
+
+Only countries, not sites. A reply naming the wrong *branch* is also wrong, but
+the branch vocabulary is not in the facts, and guessing at it would fire on
+turns that legitimately mention a neighbouring site."""
+
 
 @dataclass(frozen=True, slots=True)
 class Violation:
@@ -91,6 +108,43 @@ def inspect(text: str, facts: FactPack) -> Violation | None:
     if _SENT_CLAIM.search(text) and facts.email is None:
         return Violation("mail", "the reply claims an email was sent; none was")
 
+    if place := _wrong_country(text, facts):
+        return Violation("place", place)
+
+    return None
+
+
+def _wrong_country(text: str, facts: FactPack) -> str | None:
+    """A budget reply that talks about a country the lookup was not about.
+
+    Sticky budget threads are where this bites: after a question about Canada,
+    "and for the uk?" is looked up correctly, and a model that keeps its previous
+    framing answers about Canada with no figure to betray it.
+    """
+    allowed = {
+        canonical
+        for canonical in (
+            _COUNTRY_ALIASES.get((snapshot.branch.country or "").strip().lower())
+            for snapshot in facts.budget_snapshots
+        )
+        if canonical
+    }
+    if facts.budget is not None:
+        resolved = _COUNTRY_ALIASES.get((facts.budget.resolved_country or "").strip().lower())
+        if resolved:
+            allowed.add(resolved)
+    if not allowed:
+        return None
+
+    lowered = text.lower()
+    for alias, canonical in _COUNTRY_ALIASES.items():
+        if canonical in allowed:
+            continue
+        if re.search(rf"\b{re.escape(alias)}\b", lowered):
+            return (
+                f"the reply is about {alias}, but the budget looked up was for "
+                f"{', '.join(sorted(allowed))}"
+            )
     return None
 
 

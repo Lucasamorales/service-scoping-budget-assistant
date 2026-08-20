@@ -68,7 +68,7 @@ def load_quote_store(
             spreadsheet_id.strip(),
             credentials_path=credentials_path,
         )
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - never quote stale JSON prices as live
         logger.error(
             "quote.sheets_tiers_failed",
             error=str(exc),

@@ -123,9 +123,7 @@ class FactPack:
             return False
         if self.scope is not None and self.scope.outcome is Outcome.AMBIGUOUS:
             return False
-        if Capability.MAIL in self.satisfied:
-            return False
-        return True
+        return Capability.MAIL not in self.satisfied
 
     def permitted_figures(self) -> frozenset[str]:
         """Numbers a reply is allowed to contain."""
@@ -136,9 +134,11 @@ class FactPack:
                 if value is not None:
                     sources.append(f"{value:.2f}")
         for snapshot in self.budget_snapshots:
-            sources.append(
-                f"{snapshot.cap:.2f} {snapshot.spent:.2f} {snapshot.remaining:.2f}"
-            )
+            figures = [f"{snapshot.spent:.2f}"]
+            for value in (snapshot.cap, snapshot.remaining):
+                if value is not None:
+                    figures.append(f"{value:.2f}")
+            sources.append(" ".join(figures))
         if self.budget is not None:
             sources.append(self.budget.text)
         return frozenset().union(*(figures_in(source) for source in sources))
@@ -343,14 +343,22 @@ class FactPack:
             )
         lines = ["## Budget (from the tracker — the only figures you may give)\n"]
         for snapshot in self.budget_snapshots:
+            if snapshot.cap is None or snapshot.remaining is None:
+                lines.append(
+                    f"- {snapshot.branch.name}, fiscal {snapshot.month}: "
+                    f"spent {snapshot.spent:,.2f}. The tracker has NO cap for this site "
+                    "and month, so the remaining budget is unknown — say so, and do not "
+                    "state or imply a balance."
+                )
+                continue
             lines.append(
                 f"- {snapshot.branch.name}, fiscal {snapshot.month}: "
                 f"cap {snapshot.cap:,.2f}, spent {snapshot.spent:,.2f}, "
                 f"remaining {snapshot.remaining:,.2f}"
             )
-        if len(self.budget_snapshots) > 1:
-            total = sum(snapshot.remaining for snapshot in self.budget_snapshots)
-            lines.append(f"- Total remaining across those sites: {total:,.2f}")
+        known = [s.remaining for s in self.budget_snapshots if s.remaining is not None]
+        if len(self.budget_snapshots) > 1 and known:
+            lines.append(f"- Total remaining across those sites: {sum(known):,.2f}")
         lines.append(
             "\nUse these numbers exactly as given. Lead with what they asked for rather "
             "than reciting the whole table, but never change a figure."
