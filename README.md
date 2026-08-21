@@ -46,6 +46,7 @@ Unit tests and corpus tooling still run offline without the key.
 For the architecture decision (why Gemini plans and words but never picks a
 verdict), see [`docs/ASSESSMENT-AND-PLAN.md`](docs/ASSESSMENT-AND-PLAN.md).
 For integrations and incidents, see [`docs/ASSESSMENT-HANDOFF.md`](docs/ASSESSMENT-HANDOFF.md).
+To clone this onto another PC or deploy to Cloud Run, see [`docs/HOSTING.md`](docs/HOSTING.md).
 
 ## Commands
 
@@ -596,8 +597,11 @@ To force the old rule-only path while testing: `USE_LLM_PLANNER=false` and/or
 
 **Built and wired locally:** budget tracker (live Sheet when configured), quoting
 (tier prices from Sheet + service→tier JSON), roster, Resend mail, Firestore audit.
-**Not built yet:** Dockerfile / Cloud Run, GCS index download at boot, IAP, production
-Resend DNS, moving service→tier onto the Sheet.
+**Docker image and Cloud Run script are in the repo.** Hosting is blocked until billing
+is linked on `your-gcp-project`. New machine, secrets, and GCP steps:
+[`docs/HOSTING.md`](docs/HOSTING.md).
+**Still later:** GCS index download at boot, IAP, production Resend DNS, moving
+service→tier onto the Sheet.
 
 Architecture write-up: [`docs/ASSESSMENT-AND-PLAN.md`](docs/ASSESSMENT-AND-PLAN.md).
 Status board: [`docs/ARCHITECTURE-AUDIT.md`](docs/ARCHITECTURE-AUDIT.md).
