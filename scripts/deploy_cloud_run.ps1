@@ -37,11 +37,21 @@ function Ensure-Secret {
     $tmp = [System.IO.Path]::GetTempFileName()
     try {
         [System.IO.File]::WriteAllText($tmp, $Value)
-        $exists = gcloud secrets describe $Name --project $ProjectId --format="value(name)" 2>$null
+        # First deploy: secret does not exist yet. gcloud writes NOT_FOUND to
+        # stderr and PowerShell treats that as a terminating error unless we
+        # suppress it and rely on exit code instead of output.
+        $prevEap = $ErrorActionPreference
+        $ErrorActionPreference = "Continue"
+        gcloud secrets describe $Name --project $ProjectId --format="value(name)" 2>$null | Out-Null
+        $exists = ($LASTEXITCODE -eq 0)
+        $ErrorActionPreference = $prevEap
         if ($exists) {
             gcloud secrets versions add $Name --project $ProjectId --data-file $tmp --quiet | Out-Null
         } else {
             gcloud secrets create $Name --project $ProjectId --data-file $tmp --replication-policy automatic --quiet | Out-Null
+        }
+        if ($LASTEXITCODE -ne 0) {
+            throw "Failed to write secret '$Name' (gcloud exit $LASTEXITCODE)."
         }
     } finally {
         Remove-Item $tmp -ErrorAction SilentlyContinue
@@ -84,6 +94,13 @@ if ([string]::IsNullOrWhiteSpace($sessionSecret)) {
     Write-Host "Generated SESSION_TOKEN_SECRET (stored in Secret Manager, not printed)."
 }
 
+if ([string]::IsNullOrWhiteSpace($password)) {
+    $passwordFile = "secrets/cloud-run-password.txt"
+    if (Test-Path $passwordFile) {
+        $password = (Get-Content $passwordFile -Raw).Trim()
+        Write-Host "Reusing INTERNAL_ACCESS_PASSWORD from secrets/cloud-run-password.txt"
+    }
+}
 if ([string]::IsNullOrWhiteSpace($password)) {
     $password = -join ((48..57) + (65..90) + (97..122) | Get-Random -Count 18 | ForEach-Object { [char]$_ })
     $secretsDir = "secrets"

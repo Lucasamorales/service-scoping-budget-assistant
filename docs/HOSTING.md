@@ -1,11 +1,11 @@
 # Where this project is, how to clone it, how to host it
 
-**Date:** 2026-08-21  
+**Date:** 2026-08-24  
 **Repo:** https://github.com/your-org/service-scoping-budget-assistant  
 **GCP project:** `your-gcp-project`  
 **Intended host:** Cloud Run in `us-central1` (not Vercel)
 
-This is the handoff file for opening the work on another PC, or for picking up hosting. Prefer it over chat history.
+This is the clone/run book. **Current deploy status and remaining steps:** [`DEPLOY-STATUS.md`](DEPLOY-STATUS.md). Prefer those two files over chat history.
 
 ---
 
@@ -13,15 +13,18 @@ This is the handoff file for opening the work on another PC, or for picking up h
 
 The assistant **runs end to end locally**: scope verdicts from the corpus, budget/roster/prices from a Google Sheet, Gemini for planning and wording, a guard that rejects invented figures / flipped verdicts / the wrong country, HMAC-signed mail CTAs, Resend résumé + PDF, Firestore audit.
 
-**Not live on the internet yet.** The Docker image and deploy script are in the repo. The last deploy attempt (2026-08-20) reached GCP, then stopped because **Cloud Run cannot be enabled until billing is linked** to `your-gcp-project`. Linking the agency billing account failed with Google’s *Cloud billing quota exceeded* (that account already has as many projects as Google will allow without a quota increase).
+**Not live on the internet yet.** Billing is linked. Secrets and an image exist in GCP. The live Sheet is shared with the Cloud Run runtime SA. Cloud Run still fails to **import** the app image (`ContainerImageImportFailed`). A Google hello image deploys in the same project, so the next step is rebuilding without the non-ASCII meeting-notes filename and deploying again — see [`DEPLOY-STATUS.md`](DEPLOY-STATUS.md).
 
 | Piece | Status |
 |---|---|
 | App + tests on `main` | Done |
 | GitHub remote `origin`, branch `main` | Pushed |
 | `Dockerfile`, `.dockerignore`, `.gcloudignore` | In repo |
-| `scripts/deploy_cloud_run.ps1` | In repo |
-| Cloud Run URL | **Blocked on billing** |
+| `scripts/deploy_cloud_run.ps1` | In repo (first-run secret create + password reuse) |
+| Billing on `your-gcp-project` | **On** |
+| Secret Manager + Artifact Registry image | Created |
+| Sheet Viewer for Cloud Run compute SA | Done |
+| Cloud Run URL | **Blocked on image import** — rebuild pending |
 | IAP, custom domain, GCS index at boot | Not started — after the test URL works |
 
 Do **not** host this on Vercel. That was the old Node RAG template. This is a FastAPI process that loads the catalog, index and Sheet at boot and streams SSE. Cloud Run is the host it was written for.
@@ -88,9 +91,11 @@ gcloud config set project your-gcp-project
 
 ## Host it on Cloud Run
 
-### 1. Billing (the current blocker)
+### 1. Billing (done)
 
-Cloud Run, Artifact Registry, Cloud Build and Secret Manager will not enable on a project with no billing account.
+Cloud Run, Artifact Registry, Cloud Build and Secret Manager will not enable on a project with no billing account. This project is already linked. Re-check only if a later deploy says billing is missing.
+
+If you ever need to link it again:
 
 1. Open https://console.cloud.google.com/billing/linkedaccount?project=your-gcp-project
 2. Attach a billing account that still has project quota.
@@ -127,7 +132,7 @@ The script prints:
 
 Then:
 
-1. Share the live Sheet as **Viewer** with that runtime SA (this is a different email from the local JSON key). Until you do, hosted budget/roster/prices stay empty.
+1. Share the live Sheet as **Viewer** with that runtime SA (this is a different email from the local JSON key). **Already done** for `000000000000-compute@developer.gserviceaccount.com`. Until you do, hosted budget/roster/prices stay empty.
 2. Open the URL, sign in with `INTERNAL_ACCESS_PASSWORD`.
 3. Hit `/api/health` — `status` should be `ok`. `budget` becomes true after the Sheet share.
 4. Ask “what’s left for London?” and “can we order merch”.
@@ -154,5 +159,7 @@ Do not set `GOOGLE_APPLICATION_CREDENTIALS` on Cloud Run. The runtime SA is ADC.
 | Health `ok` but `budget: false` | Sheet not shared with the **Cloud Run** SA |
 | Chat has no login / 503 on `/api/session` | `SESSION_TOKEN_SECRET` or `INTERNAL_ACCESS_PASSWORD` missing from Secret Manager |
 | Widget is a blank page | Image built without `npm run build` — the Dockerfile already does this; a hand-rolled image might not |
+| `Container import failed` | Rebuild without the meeting-notes filename; see [`DEPLOY-STATUS.md`](DEPLOY-STATUS.md) |
+| `NOT_FOUND` on `gcloud secrets describe` | First-run PowerShell issue — fixed in `deploy_cloud_run.ps1` |
 
-Re-run `.\scripts\deploy_cloud_run.ps1` after billing is fixed. It is safe to run again: it adds new secret versions and replaces the Cloud Run revision.
+Re-run `.\scripts\deploy_cloud_run.ps1` after `gcloud auth login`. It is safe to run again: it adds new secret versions and replaces the Cloud Run revision.

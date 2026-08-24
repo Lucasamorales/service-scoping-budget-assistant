@@ -30,4 +30,7 @@ Thumbs.db
 docs
 evals
 tests
-graphify-out
+
+# Meeting transcript, not catalog. Filename is not ASCII; Cloud Run
+# refuses to import an image that contains it.
+documents/Meeting started*
