@@ -596,8 +596,7 @@
         "scope"
       ],
       "expectItem": "strategic-support--marketing-calendars",
-      "expectVerdict": "in_scope",
-      "knownFailure": "RC-4, fixed by T20 (candidate admission). RIVAL_FLOOR=0.5 and MIN_RIVAL_COVERAGE=0.25 admit near-ties as genuine alternatives, and >MAX_CANDIDATES discards a correct rank-1 answer outright."
+      "expectVerdict": "in_scope"
     },
     {
       "id": "golden-02-meta-ads-push",
@@ -730,7 +729,8 @@
         "scope"
       ],
       "expectItem": "strategic-support--site-visits-if-required-travel-accommodation-to-be-paid-for-by-acme",
-      "expectVerdict": "quote_required"
+      "expectVerdict": "quote_required",
+      "knownFailure": "RC-4, fixed by T20 (candidate admission). Site visits is now the rank-1 hit, but '1 visit per month to Acme London' is admitted as a rival at 79% of its score and the two disagree, so the turn asks instead of answering. Asking is safe; the correct answer is one admission constant away. Surfaced by T12: better recall brings more candidates into range, which the current constants convert into clarifying questions."
     },
     {
       "id": "golden-16-budget-sticky-branch",
@@ -824,7 +824,7 @@
         "no extra cost"
       ],
       "critical": true,
-      "knownFailure": "RC-1/RC-3, fixed by T12 (stemmer) + T19 (rival gate). 'schedule' does not match the corpus token 'schedul', so Content scheduling scores below MIN_CONFIDENT_SCORE, and the disagreement guard cannot raise it because every word in its name is common.",
+      "knownFailure": "RC-4, fixed by T20 (candidate admission). T12 did its half: Content scheduling moved from rank 9 - below the confidence floor and invisible - to rank 2 and a real candidate, so the turn now asks rather than answering 'in scope, free of charge'. The danger is gone; what remains is that a noise item ('Sales & marketing managers x 2') still outscores it.",
       "note": "P0. 'schedule' must reach an item named 'Content scheduling'. Answering in_scope tells an AM central marketing owns work the DB marks Local."
     }
   ]

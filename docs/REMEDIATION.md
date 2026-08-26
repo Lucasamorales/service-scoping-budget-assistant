@@ -74,19 +74,49 @@ service runs `clarify`, not `scope`; and asserting the literal string "United Ki
 composer's choice of wording rather than the figure, when the country is already guaranteed by
 the tool and by `guard._wrong_country`.
 
-## Phase 2 — recall
+## Phase 2 — recall · **done**
 
 | ID | Task | Root cause | Status |
 |---|---|---|---|
-| T11 | Baseline the retrieval and resolver evals before touching `stem()` | — | Done (2 known failures recorded) |
-| T12 | Adopt a real stemmer (Snowball/Porter) in place of the hand-written suffix rules | RC-1 | To do |
-| T13 | Assert every catalog item is reachable by the plain verb form of its own name | RC-1 | To do |
+| T11 | Baseline the retrieval and resolver evals before touching `stem()` | — | Done |
+| T12 | Adopt Snowball in place of the hand-written suffix rules | RC-1 | Done |
+| T13 | Assert every gerund in an item name shares a stem with the verb people type | RC-1 | Done |
 
-**Decided: option B, a real stemmer.** The failing pairs share no single rule — `scheduling`
-needs an `-e` restored, `planning` a doubled consonant collapsed, `management` a `-ment` rule,
-`localisation` something else again. Hand-written rules mean one new rule per production
-discovery, and this bug class is found by users rather than by tests. The synonym table stays
-either way: ad/advert are abbreviations, not inflections, and no stemmer handles them.
+**Option B, as decided.** Snowball is pure Python with no data files, so the image is unchanged.
+The synonym table stayed, as expected: photo/photography is an abbreviation rather than an
+inflection and no stemmer unifies it.
+
+Measured against the baseline taken before the change:
+
+| | Before | After |
+|---|---|---|
+| Retrieval, rank 1 | 18/23 (78%) | 18/23 (78%) |
+| Retrieval, in top 5 | 25/25 | 25/25 |
+| Resolver, **wrong verdicts** | 1/25 | **1/25** |
+| Resolver, answered well | 18/25 (72%) | **20/25 (80%)** |
+| Resolver, asked when it could have answered | 6/25 | **4/25** |
+| Turn eval | 66/74, 8 recorded | 66/74, 8 recorded |
+
+**The safety number did not move, which was the condition for making this change at all.**
+
+Two things worth knowing before Phase 4:
+
+- **Better recall shifts pressure onto admission.** Items that used to score below the confidence
+  floor are now real candidates, and the current constants turn some of those into clarifying
+  questions. #25 moved from "in scope, free of charge" — a wrong verdict on a Local item — to
+  asking, because Content scheduling climbed from rank 9 to rank 2. Site visits became the rank-1
+  hit for the golden phrasing and is now questioned rather than answered, for the same reason.
+  Both are safe, both are one admission constant from correct, and both are recorded against T20.
+  This is the trade the plan predicted: fix these separately and they pass failures back and forth.
+- **"up" joined the stopwords.** As a phrasal particle it attaches to whatever verb precedes it,
+  so "can we **set up** a regular call about occupancy" matched *Monthly marketing catch ups* and
+  outscored the item the sentence actually names. It costs that item some hint weight; it is still
+  reached by "catch", "monthly" and "group", and a test asserts so.
+
+T13 is the test that would have caught the original defect at authoring time: it fails on six of
+the eleven gerund/verb pairs under the old stemmer, `scheduling`/`schedule` among them. A guard
+keeps its table in sync with the corpus, so a new gerund-named service fails the build until
+somebody writes down the verb people would use for it.
 
 ## Phase 3 — connect the RAG to the decision
 

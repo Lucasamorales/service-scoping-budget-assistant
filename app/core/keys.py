@@ -22,7 +22,12 @@ Two distinct normalisations live here and must not be confused:
 from __future__ import annotations
 
 import re
+import threading
 import unicodedata
+from functools import lru_cache
+from typing import Any
+
+import snowballstemmer
 
 _NON_ALPHANUMERIC = re.compile(r"[^a-z0-9]+")
 _WHITESPACE = re.compile(r"\s+")
@@ -57,31 +62,35 @@ def tokenize(text: str) -> tuple[str, ...]:
     return tuple(normalized.split()) if normalized else ()
 
 
-# Ordered longest-suffix-first. The goal is not linguistic correctness but
-# consistency: the same rules run over the corpus and over the query, so
-# "localisation" reducing to the non-word "localisate" is harmless as long as
-# both sides reduce identically. Under-stemming costs recall, which is what the
-# retrieval eval measured before this existed.
-_SUFFIX_RULES: tuple[tuple[str, str], ...] = (
-    ("ations", "ate"),
-    ("ation", "ate"),
-    ("ings", ""),
-    ("ies", "y"),
-    ("sses", "ss"),
-    ("shes", "sh"),
-    ("ches", "ch"),
-    ("xes", "x"),
-    ("ing", ""),
-    ("ed", ""),
-    # No bare "es" rule. It over-stems every plural whose singular ends in "e":
-    # "magazines" became "magazin" while a query for "magazine" stayed intact,
-    # so the two never matched. The genuine -es plurals are caught by the
-    # "sses", "shes", "ches" and "xes" rules above; everything else is a plain
-    # "s". This cost four retrieval cases before the eval caught it.
-    ("s", ""),
-)
+# Snowball's English stemmer, in place of the hand-written suffix rules this
+# module used to carry.
+#
+# Those rules were replaced rather than extended because the words they missed
+# had nothing in common. A request to "schedule" our posts never reached the
+# item named "Content scheduling", because stripping "-ing" leaves "schedul"
+# while the bare verb keeps its silent "-e" — and that answered a Local item as
+# in-scope and free of charge. The same gap sat under plan/planning,
+# manage/management and quote/quoting, and each one needs a different rule:
+# restore an "e", collapse a doubled consonant, strip "-ment". Hand-written
+# rules meant one new rule per defect found in production, and this is a class
+# of defect users find rather than tests.
+#
+# Snowball is pure Python with no data files, so it costs the image nothing.
+#
+# The stemmer holds mutable cursor state on the instance, so it cannot be
+# shared between threads — uvicorn runs sync handlers in a threadpool. One
+# instance per thread, with the results memoised in front of it: stemming is
+# deterministic, so a cache hit from another thread is still correct, and the
+# corpus vocabulary is small enough that almost every call is a hit.
+_local = threading.local()
 
-_MIN_STEM_LENGTH = 3
+
+def _stemmer() -> Any:
+    stemmer = getattr(_local, "stemmer", None)
+    if stemmer is None:
+        stemmer = _local.stemmer = snowballstemmer.stemmer("english")
+    return stemmer
+
 
 # Removed before scoring rather than left to inverse document frequency. These
 # words appear inside item names, where they would collect the full hint weight
@@ -92,7 +101,7 @@ STOPWORDS: frozenset[str] = frozenset(
     a an the and or but if then than that this these those of in on at to for from by with
     without into onto over under again further here there all any both each few more most
     other some such no nor not only own same so too very can will just should now
-    i we you he she it they them our your their us me my
+    i we you he she it they them our your their us me my up
     is are was were be been being am do does did doing have has had having would could
     need needs needed want wants like get gets got make makes made please help
     who what when where why how which whose whom whether
@@ -113,17 +122,30 @@ Digits are deliberately absent: "4-5 per month" and "every 6 months" appear in
 item names, so numerals do distinguish services even though number *words* do
 not. Ordinals are safe to drop because the router reads them from the raw text
 before tokenisation, so "the second one" still selects the second option.
+
+"up" is here despite appearing in the item name "Monthly marketing catch ups",
+which is the one case where a stopword costs an item some hint weight. It earns
+its place anyway: as a phrasal particle it attaches to whatever verb precedes
+it, so "can we **set up** a regular call about occupancy" matched the catch-ups
+item on "up" and outscored the item actually named in the sentence. The
+catch-ups item is still reached by "catch", "monthly" and "group", and a test
+asserts that; nothing is reached by "up".
 """
 
 
+@lru_cache(maxsize=8192)
 def stem(token: str) -> str:
-    """Reduce a token to a crude stem so singular and plural forms match."""
-    if len(token) <= _MIN_STEM_LENGTH or token.endswith("ss"):
-        return token
-    for suffix, replacement in _SUFFIX_RULES:
-        if token.endswith(suffix) and len(token) - len(suffix) >= _MIN_STEM_LENGTH:
-            return token[: -len(suffix)] + replacement
-    return token
+    """Reduce a token to its stem, so inflected forms of a word match.
+
+    The stem is not a word and does not need to be: "translation" and
+    "translate" both reduce to "translat", which is meaningless in isolation
+    and exactly right as a key, because the same reduction runs over the
+    corpus and over the query.
+
+    Bounded cache because this is called on arbitrary user text as well as on
+    the corpus, and an unbounded one would grow with traffic.
+    """
+    return str(_stemmer().stemWord(token))
 
 
 # Words this industry uses interchangeably but which no suffix rule will ever

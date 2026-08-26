@@ -13,6 +13,10 @@ dependencies = [
     "structlog>=24.4",
     "openpyxl>=3.1",
     "fpdf2>=2.8",
+    # Pure Python, no data files: stemming has to run inside the request, and
+    # the hand-written suffix rules it replaced missed every verb whose gerund
+    # the corpus uses as an item name.
+    "snowballstemmer>=2.2",
 ]
 
 [project.optional-dependencies]
@@ -76,6 +80,6 @@ pythonpath = ["."]
 # both — they were flagged as unused whenever the extra happened to be
 # installed, which is why they kept drifting.
 [[tool.mypy.overrides]]
-module = ["google.*", "googleapiclient.*", "openpyxl.*"]
+module = ["google.*", "googleapiclient.*", "openpyxl.*", "snowballstemmer.*"]
 follow_imports = "skip"
 ignore_missing_imports = true
