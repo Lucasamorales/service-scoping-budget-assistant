@@ -176,7 +176,14 @@ class TestSingleTermEvidence:
     """``_is_evidence`` decides whether a hit identifies a service or merely
     shares a word with one. Tested directly rather than through a corpus word,
     so the invariant does not depend on which words happen to be in the
-    documents today."""
+    documents today — which is also why the document frequency is passed in."""
+
+    RARE = 1
+    """A word used by one document: naming it is a choice."""
+
+    COMMON = 13
+    """The frequency of "website", the word that once carried an in-scope
+    verdict for a service this corpus does not offer."""
 
     @staticmethod
     def hit(matched: tuple[str, ...], coverage: float) -> ScoredChunk:
@@ -190,21 +197,46 @@ class TestSingleTermEvidence:
         )
         return ScoredChunk(chunk, score=99.0, matched=matched, coverage=coverage)
 
-    def test_one_term_covering_the_name_is_evidence(self) -> None:
-        assert _is_evidence(self.hit(("merch",), 1.0))
+    def test_one_rare_term_covering_the_name_is_evidence(self) -> None:
+        assert _is_evidence(self.hit(("merch",), 1.0), self.RARE)
+
+    def test_one_common_term_covering_the_name_is_not(self) -> None:
+        """Coverage says the word fits the name; rarity says it was aimed
+        there. "Build us a website from scratch" matched only "website", 59%
+        of the alias "website content", and answered in scope free of charge
+        for something the corpus does not offer."""
+        assert not _is_evidence(self.hit(("website",), 0.59), self.COMMON)
 
     def test_one_term_covering_almost_none_of_the_name_is_not(self) -> None:
-        """However high it scored. A huge score on one incidental word is what
-        the bare word "one" produced."""
-        assert not _is_evidence(self.hit(("one",), 0.02))
+        """However high it scored, and however rare it is. A huge score on one
+        incidental word is what the bare word "one" produced."""
+        assert not _is_evidence(self.hit(("one",), 0.02), self.RARE)
 
     def test_two_terms_are_evidence_regardless_of_coverage(self) -> None:
         """Two independent words agreeing on the same item is a different kind
-        of claim from one word appearing in it."""
-        assert _is_evidence(self.hit(("photo", "booth"), 0.0))
+        of claim from one word appearing in it, so rarity is not consulted."""
+        assert _is_evidence(self.hit(("photo", "booth"), 0.0), self.COMMON)
 
     def test_no_matched_terms_is_never_evidence(self) -> None:
-        assert not _is_evidence(self.hit((), 0.0))
+        assert not _is_evidence(self.hit((), 0.0), self.RARE)
+
+
+class TestBuildingAWebsiteIsNotAService:
+    """The corpus has no "build a website" item, so the honest answer is that
+    nothing matched. Kept as a resolver-level test because the failure was not
+    a bad score — it was one generic noun clearing the evidence bar alone."""
+
+    def test_it_names_no_service(self, resolver: ScopeResolver) -> None:
+        resolution = resolver.resolve("can you build us a new website from scratch")
+        assert resolution.outcome is Outcome.UNKNOWN
+        assert resolution.status is None
+
+    def test_a_one_word_request_for_a_real_service_still_works(
+        self, resolver: ScopeResolver
+    ) -> None:
+        """The bar this raises must not take genuine short requests with it."""
+        for request in ("merch", "billboards", "leaflets"):
+            assert resolver.resolve(request).decided, request
 
 
 def test_no_corpus_item_is_unreachable_by_its_own_name(corpus) -> None:

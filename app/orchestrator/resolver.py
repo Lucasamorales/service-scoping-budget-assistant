@@ -65,9 +65,12 @@ it can be considered at all."""
 MIN_SINGLE_TERM_COVERAGE = 0.5
 """How much of an item's name a *lone* matched term must account for.
 
-Applies only when the request matched exactly one term. "Merch" is one word and
-the item's entire identity, so it resolves; "one" is one word from somebody's
-body text, so it does not. See :func:`_is_evidence`."""
+Applies only when the request matched exactly one term, and is necessary
+rather than sufficient: the term must also be rare. "Merch" is one word, the
+item's entire identity, and used in one document; "one" is a word from
+somebody's body text; "website" is most of an alias but appears in thirteen
+documents, which is why it must not carry a verdict on its own. See
+:meth:`ScopeResolver._is_evidence`."""
 
 MIN_RIVAL_COVERAGE = 0.25
 """How much of its own name a runner-up must account for to count as a real
@@ -294,6 +297,20 @@ class ScopeResolver:
         rarest = min(self._document_frequency[token] for token in tokens)
         return rarest <= MAX_DOCUMENTS_FOR_A_DECISIVE_WORD
 
+    def _frequency_of(self, hit: ScoredChunk) -> int:
+        """How many documents this hit's lone matched term appears in.
+
+        A bigram carries no frequency of its own, so it is judged by its
+        commonest half — the weakest claim it can make. Only meaningful when
+        exactly one term matched, which is the only case that consults it.
+        """
+        if not hit.matched:
+            return 0
+        return max(
+            (self._document_frequency[part] for part in hit.matched[0].split()),
+            default=0,
+        )
+
     def resolve(self, query: str) -> Resolution:
         tokens = content_tokens(query)
         if not tokens:
@@ -422,7 +439,9 @@ class ScopeResolver:
         hits = [
             hit
             for hit in self._retriever.retrieve(query, limit=MAX_CANDIDATES + 1).hits
-            if hit.chunk.item_id and hit.score >= MIN_CONFIDENT_SCORE and _is_evidence(hit)
+            if hit.chunk.item_id
+            and hit.score >= MIN_CONFIDENT_SCORE
+            and _is_evidence(hit, self._frequency_of(hit))
         ]
         if not hits:
             return Resolution(Outcome.UNKNOWN, query, method="keyword")
@@ -501,7 +520,7 @@ class ScopeResolver:
         )
 
 
-def _is_evidence(hit: ScoredChunk) -> bool:
+def _is_evidence(hit: ScoredChunk, frequency: int) -> bool:
     """Whether a hit identifies a service, or merely shares a word with one.
 
     A score alone cannot tell these apart, because scores are normalised by
@@ -512,11 +531,26 @@ def _is_evidence(hit: ScoredChunk) -> bool:
 
     Raising the threshold would not fix that - it would only reject genuine
     short requests like "merch" alongside it. The distinction is not how much
-    the query scored but *what it named*: one term is enough when that term is
-    most of the item's identity, and never enough when it is a word from the
-    body.
+    the query scored but *what it named*.
+
+    So a lone term has to pass two tests, and the second is what stops a
+    generic noun speaking for a service. It must account for most of the
+    item's identity **and** be rare enough that using it was a choice. "Can
+    you build us a new website from scratch" matched only "website", which is
+    59% of the alias "website content" - enough on coverage alone to answer
+    Web pages, in scope, free of charge, for something this corpus does not
+    offer at all. Coverage says the word fits the name; rarity says the word
+    was aimed at it.
+
+    ``frequency`` is how many documents the term appears in, passed in rather
+    than looked up so the policy stays a pure function of its inputs and does
+    not change meaning when somebody edits the corpus.
     """
-    return len(hit.matched) > 1 or hit.coverage >= MIN_SINGLE_TERM_COVERAGE
+    if len(hit.matched) > 1:
+        return True
+    if hit.coverage < MIN_SINGLE_TERM_COVERAGE:
+        return False
+    return 0 < frequency <= MAX_DOCUMENTS_FOR_A_DECISIVE_WORD
 
 
 def _contains(haystack: tuple[str, ...], needle: tuple[str, ...]) -> bool:
