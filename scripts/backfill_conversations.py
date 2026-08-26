@@ -37,7 +37,7 @@ _LEGACY_EMAIL_OUTCOMES = {
 
 
 def _client(settings: Any) -> Any:
-    from google.cloud import firestore  # type: ignore[import-untyped]
+    from google.cloud import firestore
     from google.oauth2 import service_account
 
     kwargs: dict[str, Any] = {

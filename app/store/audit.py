@@ -286,7 +286,7 @@ def _as_datetime(at: str) -> datetime:
 def _increment(by: int) -> Any:
     """Server-side counter bump, or a plain int when Firestore is not installed."""
     try:
-        from google.cloud import firestore  # type: ignore[import-untyped]
+        from google.cloud import firestore
     except ImportError:
         return by
     return firestore.Increment(by)
@@ -365,7 +365,7 @@ def build_audit_store(
         return jsonl
 
     try:
-        from google.cloud import firestore  # type: ignore[import-untyped]
+        from google.cloud import firestore
         from google.oauth2 import service_account
     except ImportError:
         logger.warning(

@@ -68,3 +68,14 @@ warn_unreachable = true
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
+
+# Google's client libraries and openpyxl ship no type information. Skipping
+# them here rather than scattering inline ignores keeps `mypy app scripts`
+# clean in both installs: with the `cloud` extra present the modules resolve
+# to Any, and without it they are simply absent. Inline ignores could not do
+# both — they were flagged as unused whenever the extra happened to be
+# installed, which is why they kept drifting.
+[[tool.mypy.overrides]]
+module = ["google.*", "googleapiclient.*", "openpyxl.*"]
+follow_imports = "skip"
+ignore_missing_imports = true

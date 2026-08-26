@@ -296,7 +296,7 @@ class Pipeline:
             use_semantic_inventory=settings.use_semantic_inventory,
             use_llm_planner=settings.use_llm_planner,
             use_llm_composer=settings.use_llm_composer,
-            **overrides,  # type: ignore[arg-type]
+            **overrides,
         )
 
     def plan_for(

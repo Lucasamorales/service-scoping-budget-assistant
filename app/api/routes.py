@@ -44,6 +44,7 @@ from app.orchestrator.pipeline import (
 )
 from app.orchestrator.resolver import Outcome, Resolution
 from app.orchestrator.router import ConversationState
+from app.tools.actions import Action
 from app.tools.flows import SessionIdentity
 
 __all__ = ["router"]
@@ -106,7 +107,7 @@ def _candidates_of(resolution: Resolution) -> list[dict[str, str]]:
     ]
 
 
-def _actions_of(actions: tuple) -> list[dict[str, str | None]]:
+def _actions_of(actions: tuple[Action, ...]) -> list[dict[str, str | None]]:
     return [
         ActionModel.from_action(action).model_dump(by_alias=True, mode="json")
         for action in actions

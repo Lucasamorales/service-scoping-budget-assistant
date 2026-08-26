@@ -1,0 +1,87 @@
+# Gates every push and pull request.
+#
+# Two things this deliberately does NOT do:
+#
+#   * It never calls Gemini. Every job here is offline and deterministic, so a
+#     red build always means a real change in behaviour rather than a model
+#     having a different day. The deployed configuration is exercised by the
+#     nightly workflow instead, where cost and flakiness are affordable.
+#   * It never reads the live Google Sheet. `BUDGET_SPREADSHEET_ID` is left
+#     empty so the budget store falls back to `fixtures/budget/`, which is
+#     checked in and therefore reproducible.
+#
+# The index is built here rather than committed: `artifacts/` is gitignored,
+# and building it in CI is also the only thing that proves the corpus still
+# chunks cleanly.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Explicitly blank so a stray runner-level value cannot make the build reach
+  # the network. Every one of these has an offline fallback.
+  GEMINI_API_KEY: ""
+  GCP_PROJECT_ID: ""
+  BUDGET_SPREADSHEET_ID: ""
+  GOOGLE_APPLICATION_CREDENTIALS: ""
+  AUDIT_BACKEND: jsonl
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install
+        run: pip install -e ".[dev,cloud]"
+
+      - name: Lint
+        run: python -m ruff check .
+
+      - name: Types
+        run: python -m mypy app scripts
+
+      - name: Corpus
+        # Fails on a document that will not parse, which would take every
+        # verdict downstream with it.
+        run: python -m scripts.validate_catalog
+
+      - name: Build index
+        # Keyword-only: embedding needs a Gemini key, and the evals below are
+        # scored against keyword retrieval anyway.
+        run: python -m scripts.build_index
+
+      - name: Tests
+        run: python -m pytest -q
+
+      # The four evals, cheapest first. Each gates on unrecorded failures only;
+      # cases carrying `knownFailure` stay visible in the output without
+      # blocking, so recorded debt is reported on every run.
+      - name: Eval — routing
+        run: python -m scripts.eval_router
+
+      - name: Eval — retrieval
+        run: python -m scripts.eval_retrieval
+
+      - name: Eval — resolver verdicts
+        run: python -m scripts.eval_resolver
+
+      - name: Eval — whole turns
+        run: python -m scripts.eval_turns

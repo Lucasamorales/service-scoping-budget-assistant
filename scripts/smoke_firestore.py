@@ -36,7 +36,7 @@ def main() -> int:
         credentials_path=settings.google_application_credentials,
     )
     backends = (
-        [type(s).__name__ for s in store._stores]  # type: ignore[attr-defined]
+        [type(s).__name__ for s in store._stores]
         if isinstance(store, _MultiAuditStore)
         else [type(store).__name__]
     )

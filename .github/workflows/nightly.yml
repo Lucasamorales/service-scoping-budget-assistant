@@ -1,0 +1,56 @@
+# The deployed configuration, once a day.
+#
+# Separate from CI because this job has both properties CI must not have: it
+# spends money, and it is not reproducible. Gemini plans and words every turn,
+# so two runs of the same commit can differ. That is exactly why it exists —
+# defects in the seam between the planner and the tools cannot appear in the
+# rules-planner run that gates merges, and the 26 Aug budget-cap failure was
+# one of those: the planner emitted month="this month", which no regex-based
+# planner would ever produce.
+#
+# A red nightly is information, not a blocked merge. Read the run, decide.
+name: Nightly (deployed configuration)
+
+on:
+  schedule:
+    # 03:00 UTC, after the working day in every Acme country.
+    - cron: "0 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  GCP_PROJECT_ID: ""
+  GOOGLE_APPLICATION_CREDENTIALS: ""
+  AUDIT_BACKEND: jsonl
+
+jobs:
+  deployed:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    # Without a key there is nothing to test that CI has not already covered.
+    if: ${{ github.repository_owner == 'Studio-example' }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install
+        run: pip install -e ".[dev,cloud]"
+
+      - name: Build index
+        run: python -m scripts.build_index
+
+      - name: Eval — whole turns, planner and composer live
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          # Left blank so the run reads the checked-in fixture rather than the
+          # live sheet. Budget figures move for business reasons, and an eval
+          # that changes when someone books a photoshoot is not an eval.
+          BUDGET_SPREADSHEET_ID: ""
+        run: python -m scripts.eval_turns --mode deployed
