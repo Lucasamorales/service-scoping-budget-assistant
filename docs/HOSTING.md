@@ -5,7 +5,10 @@
 **GCP project:** `your-gcp-project`  
 **Intended host:** Cloud Run in `us-central1` (not Vercel)
 
-This is the clone/run book. **Current deploy status and remaining steps:** [`DEPLOY-STATUS.md`](DEPLOY-STATUS.md). Prefer those two files over chat history.
+**Live on Cloud Run:** https://your-service-url.a.run.app  
+Health: https://your-service-url.a.run.app/api/health  
+
+Session log: [`DEPLOY-STATUS.md`](DEPLOY-STATUS.md). Prefer those two files over chat history.
 
 ---
 
@@ -13,7 +16,7 @@ This is the clone/run book. **Current deploy status and remaining steps:** [`DEP
 
 The assistant **runs end to end locally**: scope verdicts from the corpus, budget/roster/prices from a Google Sheet, Gemini for planning and wording, a guard that rejects invented figures / flipped verdicts / the wrong country, HMAC-signed mail CTAs, Resend résumé + PDF, Firestore audit.
 
-**Not live on the internet yet.** Billing is linked. Secrets and an image exist in GCP. The live Sheet is shared with the Cloud Run runtime SA. Cloud Run still fails to **import** the app image (`ContainerImageImportFailed`). A Google hello image deploys in the same project, so the next step is rebuilding without the non-ASCII meeting-notes filename and deploying again — see [`DEPLOY-STATUS.md`](DEPLOY-STATUS.md).
+**Hosted.** Cloud Run `acme-scoping` in `us-central1` is Ready (revision `acme-scoping-00004-x5t`). The import failure was cleared by rebuilding without the non-ASCII meeting-notes filename. Log in with `INTERNAL_ACCESS_PASSWORD` from `secrets/cloud-run-password.txt`. Details: [`DEPLOY-STATUS.md`](DEPLOY-STATUS.md).
 
 | Piece | Status |
 |---|---|
@@ -24,7 +27,7 @@ The assistant **runs end to end locally**: scope verdicts from the corpus, budge
 | Billing on `your-gcp-project` | **On** |
 | Secret Manager + Artifact Registry image | Created |
 | Sheet Viewer for Cloud Run compute SA | Done |
-| Cloud Run URL | **Blocked on image import** — rebuild pending |
+| Cloud Run URL | **Live** — https://your-service-url.a.run.app |
 | IAP, custom domain, GCS index at boot | Not started — after the test URL works |
 
 Do **not** host this on Vercel. That was the old Node RAG template. This is a FastAPI process that loads the catalog, index and Sheet at boot and streams SSE. Cloud Run is the host it was written for.

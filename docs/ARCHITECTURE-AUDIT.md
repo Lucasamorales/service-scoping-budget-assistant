@@ -39,9 +39,13 @@ Handover and mail confirmation stay rules-only.
 | Mail | **Ready (test)** | Resend résumé + PDF from audit log; `onboarding@resend.dev` until DNS |
 | Contacts | **Temp** | Robin AM / Charlie CM |
 | Firestore audit | **Ready** | Dual-write JSONL; planned/satisfied capabilities in the trace |
-| Whole-turn eval | **Ready** | `python -m scripts.eval_turns` — 51/51 on rules planner |
+| Whole-turn eval | **Ready** | `python -m scripts.eval_turns` — 74 cases asserting item and verdict; 64/74 with 10 recorded defects, see [REMEDIATION.md](./REMEDIATION.md) |
 | Semantic inventory intent | **Off by default** | Caused identical canned replies; see handoff §10.4 |
-| Docker / Cloud Run / IAP / GCS index | **Missing** | |
+| Docker / Cloud Run | **Live** | `acme-scoping` in `us-central1`; see [DEPLOY-STATUS.md](./DEPLOY-STATUS.md) |
+| Dense index in production | **Missing** | Image builds keyword-only; no build-time Gemini key. T15 |
+| Dense retrieval in the *verdict* path | **Missing** | The resolver passes no query vector in any environment. T14/T16 |
+| CI | **Ready** | `.github/workflows/ci.yml` on push; nightly runs the deployed configuration |
+| IAP / GCS index at boot | **Missing** | `KNOWLEDGE_BUCKET` is declared and unread. T17 |
 
 ## Live Sheet tabs
 
@@ -60,9 +64,12 @@ Handover and mail confirmation stay rules-only.
 
 ## Remaining work
 
-1. Production Resend domain  
-2. Move service→tier onto Sheet  
-3. Confirm merch tier with business  
-4. Dockerfile + Cloud Run + secrets + IAP  
-5. CI that enforces embedded index  
-6. README is current; ASSESSMENT-HANDOFF still describes the pre-planner path in places
+Sequenced in [REMEDIATION.md](./REMEDIATION.md), which supersedes this list for anything
+touching retrieval or the resolver.
+
+1. The six root causes from the 26 Aug golden round — REMEDIATION.md phases 1–4
+2. Production Resend domain
+3. Move service→tier onto the Sheet
+4. Confirm merch tier with the business
+5. IAP and a custom domain
+6. ASSESSMENT-HANDOFF still describes the pre-planner path in places

@@ -78,15 +78,16 @@ To clone this onto another PC or deploy to Cloud Run, see [`docs/HOSTING.md`](do
 .\.venv\Scripts\python.exe -m scripts.eval_resolver
 .\.venv\Scripts\python.exe -m scripts.eval_resolver --verbose
 
-# Score intent routing. Fails outright on any missed handover.
+# Score intent routing. Fails outright if a critical case reaches a lookup.
 .\.venv\Scripts\python.exe -m scripts.eval_router
 
-# Score whole turns: did the right lookup run, and did the reply carry the right facts?
-# This is the eval that catches "what's left for london" landing on a capability denial.
+# Score whole turns: right lookup, right service, right verdict, right facts?
+# This is the eval that catches "schedule our instagram posts" being answered
+# from Marketing calendars — the right tool on the wrong item.
 .\.venv\Scripts\python.exe -m scripts.eval_turns
-.\.venv\Scripts\python.exe -m scripts.eval_turns --case budget-left-for-london --verbose
-.\.venv\Scripts\python.exe -m scripts.eval_turns --planner   # live Gemini plans; wording still off
-.\.venv\Scripts\python.exe -m scripts.eval_turns --model     # planner and wording both live
+.\.venv\Scripts\python.exe -m scripts.eval_turns --case golden-25-instagram-scheduling --verbose
+.\.venv\Scripts\python.exe -m scripts.eval_turns --mode planner    # live Gemini plans, deterministic wording
+.\.venv\Scripts\python.exe -m scripts.eval_turns --mode deployed   # what production runs
 
 # Ask the assistant something. Works with no API key and no network.
 .\.venv\Scripts\python.exe -m scripts.ask "can we do a billboard for the new branch"
@@ -263,7 +264,6 @@ it is a business policy decision and Acme should confirm or change it.**
 | data protection | GDPR, personal data, data breach, right to be forgotten |
 | press | journalist, press or media enquiry, statement to the press |
 | customer resolution | refund, chargeback, compensation, formal complaint |
-| people | grievance, harassment, disciplinary, dismissal |
 | commercial terms | discount, renegotiation, waiving a fee |
 
 Each carries a reason written for the person who asked, not for a log.
@@ -272,8 +272,16 @@ The patterns lean specific deliberately. "Complaint" on its own would swallow le
 about **Review management**, which is a real catalog item handled locally — a bad review is
 business as usual, not an escalation.
 
-`scripts.eval_router` scores 31 messages and **fails outright on any missed handover**, which is a
-different class of failure from an ordinary misroute.
+**Employment matters are refused rather than handed over.** Grievances, disciplinaries,
+harassment and dismissal route to `Intent.OUT_OF_REMIT`, which says plainly that the subject is
+outside what this tool covers and stops. Handover names the person who owns a subject, and there
+is no people directory here to name; implying one would be worse than saying so. What it must
+never do is fall through to scoping, which is what used to happen — "a grievance raised against
+an instructor" was answered as a question about instructor reviews.
+
+`scripts.eval_router` scores 31 messages and **fails outright whenever a critical message reaches
+a lookup**. Refusing via handover or via out-of-remit both count as safe; which one is a product
+choice. An ordinary misroute between everyday intents is a different, recoverable class.
 
 ### Carrying context without inventing it
 
@@ -528,10 +536,20 @@ Do not delete the assertion.
 plan → execute → compose. Catalog, Sheet, roster and mail are deterministic; Gemini may choose
 lookups and word the facts; a guard discards a reply that invents a figure or flips a verdict.
 
-[`evals/turns.json`](evals/turns.json) is the product eval (51 cases). On the rules planner with
-the live catalog and Sheet it last scored **51/51, 0 of 9 critical failures**. That set includes
-the phrases that used to fail in production: "what's left for london", "who is my account
-manager", "do you handle translating our web pages", "what do I get for free".
+[`evals/turns.json`](evals/turns.json) is the product eval (74 cases), and it asserts the
+**item and the verdict**, not only which capability ran. That distinction matters more than any
+other number here: until 26 Aug 2026 the suite scored 51/51 while a request to schedule Instagram
+posts was being answered from *Marketing calendars* — the right tool on the wrong item, which no
+capability assertion can see.
+
+On the rules planner it currently scores **64/74, 0 of 15 critical failures, with 10 recorded
+known failures**. Those ten are the defects found by the 26 August golden-question round: each
+one names the task that will fix it, stays visible in every run, and does not gate CI — see
+[`docs/REMEDIATION.md`](docs/REMEDIATION.md). A case that starts passing is reported so its
+marker gets removed.
+
+The set includes the phrases that used to fail in production: "what's left for london", "who is
+my account manager", "do you handle translating our web pages", "what do I get for free".
 
 All 81 documents parse into a typed registry with zero errors and 385 searchable phrases. The
 resolver returns a verdict, a clarifying question, or a handover. Gemini is wired via
