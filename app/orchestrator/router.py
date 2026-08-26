@@ -30,6 +30,7 @@ from app.tools.catalog import wants_service_list
 from app.tools.flows import is_affirmative
 
 __all__ = [
+    "OUT_OF_REMIT_REPLY",
     "ConversationState",
     "HandoverTopic",
     "Intent",
@@ -62,6 +63,19 @@ class Intent(StrEnum):
 
     CAPABILITIES = "capabilities"
     GREETING = "greeting"
+
+    OUT_OF_REMIT = "out_of_remit"
+    """A real subject that this assistant has no business answering.
+
+    Distinct from HANDOVER, which names a topic and routes to the person who
+    owns it, and distinct from UNKNOWN, which means nothing was recognised.
+    This says plainly that the request is outside what a marketing scoping
+    tool covers, and stops. Employment matters are the case it was added for:
+    naming an HR contact implies a directory this tool does not have, while
+    letting it fall through to scoping answered a grievance with "I couldn't
+    tell which service you mean".
+    """
+
     UNKNOWN = "unknown"
 
 
@@ -155,6 +169,28 @@ HANDOVER_TOPICS: tuple[tuple[re.Pattern[str], HandoverTopic], ...] = (
             "and country leads.",
         ),
     ),
+)
+
+OUT_OF_REMIT_REPLY = (
+    "That one is outside what I cover — I only handle marketing scoping, "
+    "budgets and quotes. Your manager or the relevant internal contact is the "
+    "right place for it."
+)
+"""Said verbatim, for the same reason handover text is: a friendlier rewrite of
+a refusal is where a model starts offering to help."""
+
+# Employment and conduct matters. Checked after handover so that an injury or
+# a legal threat mentioned in the same message still wins, and kept narrow:
+# every term here is one that only appears when somebody means it. "Fire" is
+# deliberately absent — "fired up", "fire exit" and "fire marshal" are all
+# ordinary venue vocabulary — so dismissal is matched by its formal names.
+_OUT_OF_REMIT_RE = re.compile(
+    r"\b(grievance|disciplinar\w*|harass\w*|bullying|whistleblow\w*|"
+    r"employment tribunal|gross misconduct|unfair dismissal|"
+    r"redundanc\w*|hr (issue|matter|case|complaint)|"
+    r"(sack|dismiss)(ing|ed)? (someone|him|her|them|a member of staff)|"
+    r"(fire|sack) (someone|him|her|them))\b",
+    re.IGNORECASE,
 )
 
 _BUDGET_RE = re.compile(
@@ -365,6 +401,15 @@ class Router:
                 matched=trigger,
                 handover_topic=topic,
                 branch=branch,
+            )
+
+        # After handover, before everything else: these messages name no
+        # service, and letting them reach the resolver is how "a grievance
+        # against an instructor" became a question about instructor reviews.
+        if refusal := _OUT_OF_REMIT_RE.search(message):
+            logger.info("router.out_of_remit", matched=refusal.group(0))
+            return Route(
+                Intent.OUT_OF_REMIT, message, matched=refusal.group(0), branch=branch
             )
 
         if state.awaiting_answer and (

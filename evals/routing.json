@@ -67,7 +67,6 @@
       "message": "thanks",
       "expect": "greeting"
     },
-
     {
       "id": "injury",
       "message": "a customer hurt their shoulder in the branch yesterday, what do we do",
@@ -114,9 +113,9 @@
     {
       "id": "hr",
       "message": "we have a grievance raised against an instructor",
-      "expect": "handover",
+      "expect": "out_of_remit",
       "critical": true,
-      "expectTopic": "people"
+      "note": "Employment matters are refused outright rather than handed to a named HR contact: this tool has no people directory, and implying one is worse than saying plainly that the subject is outside what it covers. It must still never reach the resolver - 'a grievance against an instructor' once became a scoping question about instructor reviews."
     },
     {
       "id": "discount",
@@ -131,18 +130,25 @@
       "expect": "scoping",
       "note": "Review management is a real catalog item handled locally. A negative review is business as usual, not an escalation, so the handover patterns must not swallow it."
     },
-
     {
       "id": "follow-up-another-branch",
       "message": "and for Basingstoke?",
       "expect": "follow_up",
-      "state": {"lastItemIds": ["photography--billboards"]}
+      "state": {
+        "lastItemIds": [
+          "photography--billboards"
+        ]
+      }
     },
     {
       "id": "follow-up-what-about",
       "message": "what about posters",
       "expect": "follow_up",
-      "state": {"lastItemIds": ["photography--billboards"]}
+      "state": {
+        "lastItemIds": [
+          "photography--billboards"
+        ]
+      }
     },
     {
       "id": "follow-up-without-history",
@@ -154,36 +160,59 @@
       "id": "long-message-is-not-a-follow-up",
       "message": "and while I remember, we need a full set of interior photographs taken for the website refresh next month",
       "expect": "scoping",
-      "state": {"lastItemIds": ["photography--billboards"]},
+      "state": {
+        "lastItemIds": [
+          "photography--billboards"
+        ]
+      },
       "note": "Opens with 'and' but stands on its own. Carrying stale context into a complete question is invisible to the user."
     },
-
     {
       "id": "clarification-by-number",
       "message": "the second one",
       "expect": "clarification_reply",
-      "state": {"pendingCandidates": ["photography--billboards", "photography--hoarding"]},
+      "state": {
+        "pendingCandidates": [
+          "photography--billboards",
+          "photography--hoarding"
+        ]
+      },
       "expectSelected": "photography--hoarding"
     },
     {
       "id": "clarification-by-digit",
       "message": "1",
       "expect": "clarification_reply",
-      "state": {"pendingCandidates": ["photography--billboards", "photography--hoarding"]},
+      "state": {
+        "pendingCandidates": [
+          "photography--billboards",
+          "photography--hoarding"
+        ]
+      },
       "expectSelected": "photography--billboards"
     },
     {
       "id": "clarification-by-name",
       "message": "the hoarding one",
       "expect": "clarification_reply",
-      "state": {"pendingCandidates": ["photography--billboards", "photography--hoarding"]},
+      "state": {
+        "pendingCandidates": [
+          "photography--billboards",
+          "photography--hoarding"
+        ]
+      },
       "expectSelected": "photography--hoarding"
     },
     {
       "id": "changing-the-subject-mid-question",
       "message": "actually how much budget is left",
       "expect": "budget",
-      "state": {"pendingCandidates": ["photography--billboards", "photography--hoarding"]},
+      "state": {
+        "pendingCandidates": [
+          "photography--billboards",
+          "photography--hoarding"
+        ]
+      },
       "note": "People abandon questions. Answering the one they walked away from is worse than dropping it."
     },
     {
@@ -192,7 +221,12 @@
       "expect": "handover",
       "critical": true,
       "expectTopic": "safety",
-      "state": {"pendingCandidates": ["photography--billboards", "photography--hoarding"]}
+      "state": {
+        "pendingCandidates": [
+          "photography--billboards",
+          "photography--hoarding"
+        ]
+      }
     }
   ]
 }

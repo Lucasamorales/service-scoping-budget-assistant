@@ -127,6 +127,9 @@ class RulePlanner:
         if route.intent is Intent.HANDOVER:
             return Plan((Capability.HANDOVER,), slots)
 
+        if route.intent is Intent.OUT_OF_REMIT:
+            return Plan((Capability.OUT_OF_REMIT,), slots)
+
         if route.intent is Intent.ACTION and state.awaiting_action_confirm:
             return Plan((Capability.MAIL,), slots)
 
@@ -208,8 +211,9 @@ _SCHEMA_CAPABILITIES = (
     Capability.GREETING,
     Capability.CLARIFY,
 )
-"""What the model may ask for. Handover and mail confirmation are not here:
-both are decided by rule before the planner runs."""
+"""What the model may ask for. Handover, out-of-remit refusals and mail
+confirmation are not here: all three are decided by rule before the planner
+runs."""
 
 _INSTRUCTION = """\
 You route an internal Acme marketing assistant. You do NOT answer the user.
@@ -293,7 +297,11 @@ class ModelPlanner:
 
         # Safety gates and confirmations are settled; asking the model would
         # only add a way for them to go wrong.
-        if rules.primary in {Capability.HANDOVER, Capability.MAIL}:
+        if rules.primary in {
+            Capability.HANDOVER,
+            Capability.OUT_OF_REMIT,
+            Capability.MAIL,
+        }:
             return rules
 
         prompt = self._prompt(message, history)

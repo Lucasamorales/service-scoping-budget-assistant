@@ -68,6 +68,10 @@ class FactPack:
     clarifying question instead of a confident answer."""
 
     handover: HandoverTopic | None = None
+    out_of_remit: bool = False
+    """The request was refused as outside what this assistant covers. Carries
+    no subject of its own: naming one would imply an opinion about it."""
+
     scope: Resolution | None = None
     budget: BudgetToolResult | None = None
     quote: QuoteOutcome | None = None
@@ -119,7 +123,7 @@ class FactPack:
         contains the original request, and a model shown "No" plus that thread
         will re-answer the request instead of acknowledging the decline.
         """
-        if self.handover is not None:
+        if self.handover is not None or self.out_of_remit:
             return False
         if self.scope is not None and self.scope.outcome is Outcome.AMBIGUOUS:
             return False

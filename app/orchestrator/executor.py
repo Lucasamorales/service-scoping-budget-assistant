@@ -29,7 +29,7 @@ from app.orchestrator.facts import FactPack
 from app.orchestrator.history import HistoryTurn
 from app.orchestrator.plan import Capability, Plan
 from app.orchestrator.resolver import Outcome, Resolution, ScopeResolver
-from app.orchestrator.router import ConversationState, Route
+from app.orchestrator.router import OUT_OF_REMIT_REPLY, ConversationState, Route
 from app.store.audit import AuditStore
 from app.store.budget import BudgetStore
 from app.store.contacts import (
@@ -111,6 +111,14 @@ class Executor:
                 handover=route.handover_topic,
                 satisfied=(Capability.HANDOVER,),
                 fallback_text=route.handover_topic.reason,
+            )
+
+        if plan.wants(Capability.OUT_OF_REMIT):
+            return replace(
+                pack,
+                out_of_remit=True,
+                satisfied=(Capability.OUT_OF_REMIT,),
+                fallback_text=OUT_OF_REMIT_REPLY,
             )
 
         if plan.wants(Capability.MAIL) and confirm is not None and mailer is not None:
@@ -211,7 +219,7 @@ class Executor:
                 session_branch=effective.branch,
                 question=question if plan.wants(Capability.BUDGET) else "",
             )
-            flow = self._quote_flow(item, outcome, effective)
+            quote_flow = self._quote_flow(item, outcome, effective)
             pack = replace(
                 pack,
                 quote=outcome,
@@ -219,10 +227,13 @@ class Executor:
                 if Capability.QUOTE not in satisfied
                 else satisfied,
             )
-            return self._apply_flow(pack, flow)
+            return self._apply_flow(pack, quote_flow)
 
         if item.status is Status.IN_SCOPE:
-            flow = enrich_scope_flow(
+            # Named apart from the quote branch above: that one always produces
+            # a flow, this one may not, and sharing a name gave the pair a type
+            # narrower than the second assignment.
+            scope_flow = enrich_scope_flow(
                 item,
                 contacts=self.contacts,
                 quote_store=self.quote_store,
@@ -231,7 +242,7 @@ class Executor:
                 question=question if plan.wants(Capability.BUDGET) else "",
             )
             pack = replace(pack, satisfied=satisfied)
-            return self._apply_flow(pack, flow) if flow is not None else pack
+            return self._apply_flow(pack, scope_flow) if scope_flow is not None else pack
 
         # Local / out of scope: a verdict and a reason, no CTA to offer.
         meaning = resolution.status_meaning or ""

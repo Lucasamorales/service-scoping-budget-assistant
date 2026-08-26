@@ -39,14 +39,36 @@ class TestHandoverWins:
     def test_sensitive_subjects_reach_a_person(self, router: Router, message: str) -> None:
         assert router.route(message).intent is Intent.HANDOVER
 
-    def test_hr_requests_are_not_a_special_handover(self, router: Router) -> None:
-        """Employment asks are outside capability — not an HR handover banner."""
+    def test_employment_asks_are_refused_not_handed_over(self, router: Router) -> None:
+        """Employment asks are refused outright — not given an HR banner.
+
+        Handover names the person who owns a subject, and this tool has no
+        people directory to name. Refusing plainly is honest about that. What
+        it must not do is fall through to scoping, which answered "a grievance
+        against an instructor" as a question about instructor reviews.
+        """
         for message in (
             "there is a grievance against a staff member",
-            "fire jeremy",
             "we need to fire someone",
+            "we are starting a disciplinary process",
+            "an employee raised a harassment complaint",
         ):
-            assert router.route(message).intent is not Intent.HANDOVER
+            intent = router.route(message).intent
+            assert intent is Intent.OUT_OF_REMIT, message
+            assert intent is not Intent.HANDOVER, message
+
+    def test_ordinary_venue_words_are_not_employment_asks(self, router: Router) -> None:
+        """The refusal pattern must not swallow normal marketing requests.
+
+        "Fire" and its neighbours are everyday venue vocabulary, which is why
+        dismissal is matched by its formal names instead.
+        """
+        for message in (
+            "can we get the crowd fired up for the launch",
+            "we need signage for the fire exit",
+            "photos of the fire marshal training",
+        ):
+            assert router.route(message).intent is not Intent.OUT_OF_REMIT, message
 
     def test_a_service_mentioned_alongside_an_injury_does_not_win(self, router: Router) -> None:
         """The case the ordering exists for. Photography is a real catalog

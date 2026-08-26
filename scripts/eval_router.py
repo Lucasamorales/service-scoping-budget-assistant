@@ -8,7 +8,7 @@ runs in milliseconds and is worth running on every change.
 
 Two classes of failure, and they are not comparable:
 
-- A **missed handover** means the assistant answered something it had no
+- **Answering when it must refuse** means the assistant answered something it had no
   standing to answer: an injury, a legal threat, a data protection request.
   Any of these fails the run outright.
 - A **misroute** between ordinary intents produces a poor answer, which is bad
@@ -27,6 +27,11 @@ from typing import Any
 from app.orchestrator.router import ConversationState, Intent, Route, Router
 
 DEFAULT_CASES = Path("evals/routing.json")
+
+
+_REFUSING_INTENTS = frozenset({Intent.HANDOVER, Intent.OUT_OF_REMIT})
+"""Intents that decline instead of answering. A critical case must land on one
+of them; which one is a product choice, not a safety property."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -61,9 +66,17 @@ class CaseResult:
         return self.intent_correct and self.topic_correct and self.selection_correct
 
     @property
-    def missed_a_handover(self) -> bool:
-        """The assistant would have answered something it must not touch."""
-        return self.critical and self.route.intent is not Intent.HANDOVER
+    def answered_what_it_must_not(self) -> bool:
+        """The assistant would have attempted a subject it has to refuse.
+
+        Two intents decline rather than answer, and either is an acceptable
+        landing place for a critical case: HANDOVER names the person who owns
+        the subject, OUT_OF_REMIT says plainly that it is not covered. What
+        must never happen is a critical message reaching a lookup — that is
+        the failure this gate exists to catch, not the choice between the two
+        ways of declining.
+        """
+        return self.critical and self.route.intent not in _REFUSING_INTENTS
 
 
 def _state_from(raw: dict[str, Any] | None) -> ConversationState:
@@ -125,17 +138,17 @@ def main() -> int:
 
     total = len(results)
     passed = sum(result.passed for result in results)
-    missed = [result for result in results if result.missed_a_handover]
+    missed = [result for result in results if result.answered_what_it_must_not]
     critical = [result for result in results if result.critical]
     by_intent = Counter(result.route.intent.value for result in results)
 
     print("-" * 70)
-    print(f"  missed handovers:  {len(missed)}/{len(critical)} critical cases")
+    print(f"  answered when it must refuse:  {len(missed)}/{len(critical)} critical cases")
     print(f"  routed correctly:  {passed}/{total} ({passed / total:.0%})")
     print(f"\nrouted as: {', '.join(f'{k} {v}' for k, v in sorted(by_intent.items()))}")
 
     if missed:
-        print("\nMissed handovers, each one an answer the assistant must not give:")
+        print("\nAnswered when it must refuse - each one an answer it must not give:")
         for result in missed:
             print(f"  {result.case_id}: routed to {result.route.intent.value}")
 

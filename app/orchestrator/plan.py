@@ -58,6 +58,10 @@ class Capability(StrEnum):
 
     GREETING = "greeting"
 
+    OUT_OF_REMIT = "out_of_remit"
+    """A real subject this assistant has no business answering. Decided by rule
+    only, never by a model, for the same reason handover is."""
+
     CLARIFY = "clarify"
     """Nothing could be identified. Ask, rather than guess."""
 
