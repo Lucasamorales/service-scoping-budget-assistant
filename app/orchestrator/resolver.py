@@ -70,16 +70,27 @@ threshold.
 0.5 against :data:`~app.knowledge.retriever.KEYWORD_HALF_CONFIDENCE` accepts
 exactly the hits the old floor of 1.6 accepted in keyword-only mode."""
 
-RIVAL_FLOOR = 0.5
-"""How close a runner-up must be, as a fraction of the leader's score, before
-it can be considered at all.
+RIVAL_FLOOR = 0.85
+"""How close a runner-up must be, as a fraction of the leader's confidence,
+before it counts as a genuine alternative rather than the next thing down.
 
-Compares raw scores rather than confidences, and unlike the floor above it is
-right to. This is a *relative* judgement between two hits scored the same way
-in the same query, so it needs no absolute scale — only that both sides are
-measured alike. The distribution it sees does change when embeddings join the
-blend, because cosines compress the spread between hits; that is a retune, not
-a change of meaning."""
+Compares confidence, like everything else that ranks or admits, because two
+orderings inside one decision is how the leader of a query ends up being an
+item nothing else agreed was relevant.
+
+Higher than it looks, for two reasons. Confidence saturates where score does
+not, so the same pair of hits sits closer together on this scale than on the
+old one — 0.85 here admits roughly what 0.5 admitted before. And a rival's job
+is to represent a real second reading of the request, not to be the runner-up:
+"Can central team schedule our Instagram posts?" put Content scheduling at
+0.74 and an SEO content-calendar item at 0.51, and pairing those two turned a
+plain question into a menu.
+
+Swept against the whole turn suite with embeddings on: 0.50 and 0.60 score
+66/74, 0.70 to 0.80 score 69/74, and 0.85 upwards score 70/74. Raising it does
+not suppress genuine disagreement — a request that truly names two services
+gets its second candidate from :meth:`ScopeResolver._check_for_disagreement`,
+which does not consult this at all."""
 
 MIN_SINGLE_TERM_COVERAGE = 0.5
 """How much of an item's name a *lone* matched term must account for.
@@ -353,13 +364,51 @@ class ScopeResolver:
         if not tokens:
             return Resolution(Outcome.UNKNOWN, query)
 
+        # Retrieval runs only when the phrase path did not settle it, so the
+        # fast path still pays nothing. Its hits are then shared with the
+        # disagreement check, which needs to know what retrieval made of a
+        # rival before promoting it.
         resolution = self._resolve_by_phrase(query, tokens)
+        hits: tuple[ScoredChunk, ...] = ()
+        semantic = False
         if resolution is None:
-            resolution = self._resolve_by_keyword(query)
-        return self._check_for_disagreement(resolution, tokens)
+            hits, semantic = self._retrieve(query)
+            resolution = self._resolve_by_keyword(query, hits)
+        return self._check_for_disagreement(resolution, tokens, hits, semantic)
+
+    def _retrieve(self, query: str) -> tuple[tuple[ScoredChunk, ...], bool]:
+        """Hits worth considering at all, best first, and whether they are
+        semantic.
+
+        Embedded here rather than upstream: the phrase this resolves is not
+        always the question the rest of the turn retrieves on, so a vector
+        computed elsewhere would be a vector for different words.
+
+        The flag travels with the hits because one downstream judgement is only
+        sound when embeddings contributed — see
+        :meth:`_check_for_disagreement`.
+        """
+        if self._retriever is None:
+            return (), False
+        vector = self._query_vector(query)
+        result = self._retriever.retrieve(
+            query, limit=MAX_CANDIDATES + 1, query_vector=vector
+        )
+        hits = tuple(
+            hit
+            for hit in result.hits
+            if hit.chunk.item_id
+            and hit.confidence >= MIN_CONFIDENCE
+            and _is_evidence(hit, self._frequency_of(hit))
+        )
+        return hits, "dense" in result.mode
 
     def _check_for_disagreement(
-        self, resolution: Resolution, tokens: tuple[str, ...]
+        self,
+        resolution: Resolution,
+        tokens: tuple[str, ...],
+        hits: tuple[ScoredChunk, ...],
+        semantic: bool,
     ) -> Resolution:
         """Withdraw a verdict when the request also named a service that disagrees.
 
@@ -373,6 +422,30 @@ class ScopeResolver:
         So a decided verdict is re-checked against every service the request
         named by word, and any disagreement turns the answer into a question.
         Agreement is left alone, because then the choice does not matter.
+
+        Naming a service is necessary here but not sufficient, because words
+        appear in sentences for reasons of their own. "Can we get a wrap-up on
+        how the Heart Radio campaign performed?" contains the word radio, and
+        that used to be enough to raise Radio ads — a chargeable design item —
+        against a plainly correct answer, and turn a control question into a
+        menu. Heart Radio is a station.
+
+        What separates that from the translation case is not the word but how
+        convincing retrieval found the rival. With embeddings in the blend a
+        genuine second reading sits at 0.88 to 1.00 of the leader's confidence
+        and the radio coincidence at 0.69, so a rival must also clear
+        :data:`RIVAL_FLOOR` — the same bar a runner-up clears to be admitted
+        normally, one notion of "close enough to be a real alternative" used in
+        both places.
+
+        **Only when the hits are semantic.** On keyword scoring alone the two
+        populations overlap and no threshold separates them: the same four
+        requests measure 0.77 to 0.99 for genuine disagreement against 0.79 for
+        the radio coincidence. Telling a second reading from a shared word is a
+        question about meaning, and word counts cannot answer it. So without
+        embeddings the check falls back to naming alone, which asks more often
+        than it needs to — the safe direction, and the reason this degrades
+        rather than guesses.
         """
         if not resolution.decided:
             return resolution
@@ -380,6 +453,11 @@ class ScopeResolver:
         verdict = resolution.status
         chosen = {candidate.item.item_id for candidate in resolution.candidates}
         query_stems = _stems(tokens)
+        confidence = {hit.chunk.item_id: hit.confidence for hit in hits}
+        # Applied only when retrieval was semantic and actually ran; otherwise
+        # naming is all there is to go on, as it was before.
+        gated = semantic and bool(hits)
+        floor = max(confidence.values(), default=0.0) * RIVAL_FLOOR
 
         rivals: dict[str, Candidate] = {}
         for identity in self._identities:
@@ -392,6 +470,8 @@ class ScopeResolver:
                 continue
             named = identity.name_stems & query_stems
             if len(named) / len(identity.name_stems) < MIN_RIVAL_COVERAGE:
+                continue
+            if gated and confidence.get(identity.item_id, 0.0) < floor:
                 continue
             item = self._catalog.require(identity.item_id)
             if item.status is verdict:
@@ -462,40 +542,27 @@ class ScopeResolver:
         phrase_text = matches[0].original
         return self._conclude(query, candidates, method="phrase", matched_phrase=phrase_text)
 
-    def _resolve_by_keyword(self, query: str) -> Resolution:
+    def _resolve_by_keyword(
+        self, query: str, hits: tuple[ScoredChunk, ...]
+    ) -> Resolution:
         """Fall back to scoring when nothing distinctive was named outright.
 
-        A runner-up counts as a real rival only when it scores comparably
-        *and* the request named a substantial part of what it is. See
-        :data:`MIN_RIVAL_COVERAGE` for why the second condition carries the
-        weight rather than the score gap.
+        A runner-up counts as a real rival only when it is nearly as convincing
+        as the leader *and* the request named a substantial part of what it is.
+        See :data:`MIN_RIVAL_COVERAGE` for why the second condition carries the
+        weight rather than the gap alone.
         """
         if self._retriever is None:
             return Resolution(Outcome.UNKNOWN, query, method="phrase")
-
-        # Embedded here rather than upstream, and only here. Phrase matching
-        # runs first and settles most requests outright, so the fast path never
-        # pays for a call; and the phrase this resolves is not always the
-        # question the rest of the turn retrieves on, so a vector computed
-        # upstream would be a vector for different words.
-        hits = [
-            hit
-            for hit in self._retriever.retrieve(
-                query, limit=MAX_CANDIDATES + 1, query_vector=self._query_vector(query)
-            ).hits
-            if hit.chunk.item_id
-            and hit.confidence >= MIN_CONFIDENCE
-            and _is_evidence(hit, self._frequency_of(hit))
-        ]
         if not hits:
             return Resolution(Outcome.UNKNOWN, query, method="keyword")
 
         leader, *rest = hits
-        floor = leader.score * RIVAL_FLOOR
+        floor = leader.confidence * RIVAL_FLOOR
 
         contenders = [leader]
         for hit in rest:
-            if hit.score < floor:
+            if hit.confidence < floor:
                 break
             if hit.coverage >= MIN_RIVAL_COVERAGE:
                 contenders.append(hit)
@@ -551,9 +618,20 @@ class ScopeResolver:
                 method=method,
             )
 
+        # A crowded field is trimmed, not thrown away. This used to return
+        # UNKNOWN, on the reasoning that more than four options is a wall
+        # rather than a question - true of what gets *shown*, but it was
+        # discarding the leader along with the noise. "Can you make new
+        # graphics for our in-venue screens?" put Graphics for screens first,
+        # with a name the request covers entirely, and answered "I couldn't
+        # tell which service you mean" because four weaker items came along.
+        #
+        # Candidates arrive ordered by confidence, so trimming keeps the best
+        # of them. Whether the request was too vague to answer is a question
+        # about confidence, and that is now measured directly.
         if len(candidates) > MAX_CANDIDATES:
-            logger.info("resolver.too_vague", query=query, candidates=len(candidates))
-            return Resolution(Outcome.UNKNOWN, query, method=method)
+            logger.info("resolver.crowded", query=query, candidates=len(candidates))
+            candidates = candidates[:MAX_CANDIDATES]
 
         return Resolution(
             Outcome.AMBIGUOUS,

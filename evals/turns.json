@@ -54,7 +54,7 @@
       ],
       "expectVerdict": "local",
       "critical": true,
-      "knownFailure": "RC-1/RC-3, fixed by T12 (stemmer) + T19 (rival gate). 'schedule' does not match the corpus token 'schedul', so Content scheduling scores below MIN_CONFIDENT_SCORE, and the disagreement guard cannot raise it because every word in its name is common.",
+      "knownFailure": "Corpus gap, not a ranking defect. 'Instagram' appears in zero documents, as do Twitter and YouTube; the organic social items never name the platforms they cover, so the request has no distinctive word to match and the resolver correctly declines. Fixed by naming the platforms as aliases - see T26.",
       "note": "Every item in Organic social media is Local, so the verdict is certain even though the exact item is arguable. Answering in_scope tells an AM central marketing owns work the local team does."
     },
     {
@@ -586,7 +586,7 @@
         "approximately"
       ],
       "critical": true,
-      "knownFailure": "RC-4, fixed by T20 (candidate admission). RIVAL_FLOOR=0.5 and MIN_RIVAL_COVERAGE=0.25 admit near-ties as genuine alternatives, and >MAX_CANDIDATES discards a correct rank-1 answer outright.",
+      "knownFailure": "Passes in the deployed configuration and fails offline. Telling a genuine second reading of a request from a coincidental shared word is a question about meaning, and keyword scoring cannot answer it: across these cases genuine disagreement measures 0.77-0.99 of the leader's confidence and a pure coincidence 0.79, which no threshold separates. With embeddings the same cases measure 0.88-1.00 against 0.69. Recorded rather than tuned away, because the offline mode is a fallback and asking too often is its safe failure direction.",
       "note": "A vague pricing question must not settle on a service. Agreeing on the video items answers 'included, free of charge' to a question about cost."
     },
     {
@@ -614,7 +614,7 @@
       ],
       "expectItem": "analytics-tracking-dashboards--campaign-wrap-ups",
       "expectVerdict": "in_scope",
-      "knownFailure": "RC-3, fixed by T19. The rival gate fires on any rare word, so the station name in 'Heart Radio' pulls in the unrelated Radio ads item and forces a clarification.",
+      "knownFailure": "Passes in the deployed configuration and fails offline. Telling a genuine second reading of a request from a coincidental shared word is a question about meaning, and keyword scoring cannot answer it: across these cases genuine disagreement measures 0.77-0.99 of the leader's confidence and a pure coincidence 0.79, which no threshold separates. With embeddings the same cases measure 0.88-1.00 against 0.69. Recorded rather than tuned away, because the offline mode is a fallback and asking too often is its safe failure direction.",
       "note": "'Heart Radio' is a station name. Treating 'radio' as a request for Radio ads turns a control question into a clarification."
     },
     {
@@ -643,7 +643,7 @@
       "expectItem": "strategic-support--marketing-gms-calls-121",
       "expectVerdict": "out_of_scope",
       "critical": true,
-      "knownFailure": "RC-4, fixed by T20 (candidate admission). RIVAL_FLOOR=0.5 and MIN_RIVAL_COVERAGE=0.25 admit near-ties as genuine alternatives, and >MAX_CANDIDATES discards a correct rank-1 answer outright.",
+      "knownFailure": "Corpus gap, not a ranking defect. The item is named 'Marketing + GMs calls - 121', and no phrasing a person uses reaches it: '1:1' tokenises to ('1','1') and 'one to one' to nothing at all, because 'one' is a stopword. Fixed by declaring '1:1', 'one to one' and 'one-to-one' as aliases on the Scope sheet - see T25.",
       "note": "'GM' names this item outright. The rival call items are in scope, so a clarification here risks promising a call the retainer does not cover."
     },
     {
@@ -730,7 +730,7 @@
       ],
       "expectItem": "strategic-support--site-visits-if-required-travel-accommodation-to-be-paid-for-by-acme",
       "expectVerdict": "quote_required",
-      "knownFailure": "RC-4, fixed by T20 (candidate admission). Site visits is now the rank-1 hit, but '1 visit per month to Acme London' is admitted as a rival at 79% of its score and the two disagree, so the turn asks instead of answering. Asking is safe; the correct answer is one admission constant away. Surfaced by T12: better recall brings more candidates into range, which the current constants convert into clarifying questions."
+      "knownFailure": "Passes in the deployed configuration and fails offline. Telling a genuine second reading of a request from a coincidental shared word is a question about meaning, and keyword scoring cannot answer it: across these cases genuine disagreement measures 0.77-0.99 of the leader's confidence and a pure coincidence 0.79, which no threshold separates. With embeddings the same cases measure 0.88-1.00 against 0.69. Recorded rather than tuned away, because the offline mode is a fallback and asking too often is its safe failure direction."
     },
     {
       "id": "golden-16-budget-sticky-branch",
@@ -765,7 +765,8 @@
         "clarify"
       ],
       "expectOutcome": "unknown",
-      "note": "Sponsorship is not a catalogue service. Routing to a human is the correct answer; offering four near-tied items is not. Fixed by T10 as a side effect - the single-token floor removed enough weak candidates to leave nothing confident enough to name."
+      "note": "Sponsorship is not a catalogue service. Routing to a human is the correct answer; offering four near-tied items is not. Fixed by T10 as a side effect - the single-token floor removed enough weak candidates to leave nothing confident enough to name.",
+      "knownFailure": "Passes in the deployed configuration and fails offline. Telling a genuine second reading of a request from a coincidental shared word is a question about meaning, and keyword scoring cannot answer it: across these cases genuine disagreement measures 0.77-0.99 of the leader's confidence and a pure coincidence 0.79, which no threshold separates. With embeddings the same cases measure 0.88-1.00 against 0.69. Recorded rather than tuned away, because the offline mode is a fallback and asking too often is its safe failure direction."
     },
     {
       "id": "golden-21-build-a-website",
@@ -789,7 +790,7 @@
       ],
       "expectItem": "design-creative--design-for-paid-campaigns-across-all-platforms-inc-web-and-on-site-placements",
       "expectVerdict": "in_scope",
-      "knownFailure": "RC-4, fixed by T20 (candidate admission). RIVAL_FLOOR=0.5 and MIN_RIVAL_COVERAGE=0.25 admit near-ties as genuine alternatives, and >MAX_CANDIDATES discards a correct rank-1 answer outright."
+      "knownFailure": "Passes in the deployed configuration and fails offline. Telling a genuine second reading of a request from a coincidental shared word is a question about meaning, and keyword scoring cannot answer it: across these cases genuine disagreement measures 0.77-0.99 of the leader's confidence and a pure coincidence 0.79, which no threshold separates. With embeddings the same cases measure 0.88-1.00 against 0.69. Recorded rather than tuned away, because the offline mode is a fallback and asking too often is its safe failure direction."
     },
     {
       "id": "golden-23-adhoc-email-blast",
@@ -808,7 +809,7 @@
       ],
       "expectItem": "renders-and-other-designs-for-venue-exteriors--graphics-for-screens",
       "expectVerdict": "in_scope",
-      "knownFailure": "RC-4, fixed by T20 (candidate admission). RIVAL_FLOOR=0.5 and MIN_RIVAL_COVERAGE=0.25 admit near-ties as genuine alternatives, and >MAX_CANDIDATES discards a correct rank-1 answer outright.",
+      "knownFailure": "Passes in the deployed configuration and fails offline. Telling a genuine second reading of a request from a coincidental shared word is a question about meaning, and keyword scoring cannot answer it: across these cases genuine disagreement measures 0.77-0.99 of the leader's confidence and a pure coincidence 0.79, which no threshold separates. With embeddings the same cases measure 0.88-1.00 against 0.69. Recorded rather than tuned away, because the offline mode is a fallback and asking too often is its safe failure direction.",
       "note": "A clean rank-1 match. Returning UNKNOWN because the field is crowded discards a correct answer."
     },
     {
@@ -824,7 +825,7 @@
         "no extra cost"
       ],
       "critical": true,
-      "knownFailure": "RC-4, fixed by T20 (candidate admission). T12 did its half: Content scheduling moved from rank 9 - below the confidence floor and invisible - to rank 2 and a real candidate, so the turn now asks rather than answering 'in scope, free of charge'. The danger is gone; what remains is that a noise item ('Sales & marketing managers x 2') still outscores it.",
+      "knownFailure": "Passes in the deployed configuration and fails offline. Telling a genuine second reading of a request from a coincidental shared word is a question about meaning, and keyword scoring cannot answer it: across these cases genuine disagreement measures 0.77-0.99 of the leader's confidence and a pure coincidence 0.79, which no threshold separates. With embeddings the same cases measure 0.88-1.00 against 0.69. Recorded rather than tuned away, because the offline mode is a fallback and asking too often is its safe failure direction.",
       "note": "P0. 'schedule' must reach an item named 'Content scheduling'. Answering in_scope tells an AM central marketing owns work the DB marks Local."
     }
   ]

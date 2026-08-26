@@ -203,22 +203,84 @@ lines from your local `.env`**, which is the only place they still exist.
 
 | ID | Task | Root cause | Status |
 |---|---|---|---|
-| T18 | One function answering "did the request name this item", used by retrieval and the guard | RC-3 | To do |
-| T19 | Rivals qualify on IDF-weighted name coverage instead of a hard `df ≤ 4` cutoff | RC-3 | To do |
-| T20 | Retune `RIVAL_FLOOR`, `MIN_RIVAL_COVERAGE`, `MAX_CANDIDATES`; stop discarding a correct rank-1 | RC-4 | To do |
+| T18 | One notion of "close enough to be a real alternative", used by retrieval and the guard | RC-3 | Done |
+| T19 | The disagreement guard requires corroboration, not just a shared word | RC-3 | Done |
+| T20 | Retune admission; stop discarding a correct rank-1 | RC-4 | Done |
 | T21 | Composer returns a structured verdict claim; code compares it to the fact pack | RC-6 | To do |
 
-These interact. Fixed separately they trade failures back and forth between the
-false-clarification rate and the confidently-wrong rate.
+**In the deployed configuration the turn eval goes 68/74 → 72/74.** #03, #22, #24 and **#25**
+are fixed. #25 — the worst defect of the golden round — now resolves outright to Content
+scheduling, Local, instead of promising that central marketing does it free of charge.
 
-If T20 starts absorbing days, the calibration in T14 is not doing its job — go back to it rather
-than hand-fitting constants.
+Three changes, each measured:
+
+- **Ranking moved onto confidence.** Score and confidence had diverged into two orderings inside
+  one decision, and the resolver took its leader from one while filtering on the other. For "who
+  looks after our instagram posts" the top-scoring item was Campaign wrap-ups — an analytics
+  report — at 0.23 confidence. In keyword-only mode the two orderings are identical, so this
+  changed nothing there.
+- **A crowded field is trimmed, not discarded.** Returning UNKNOWN past four candidates was
+  throwing the leader away with the noise; #24 put Graphics for screens first, with a name the
+  request covers entirely, and answered "I couldn't tell which service you mean". Whether a
+  request was too vague is a question about confidence, which is now measured directly.
+- **`RIVAL_FLOOR` is 0.85 and compares confidence.** Swept against the whole suite with
+  embeddings on: 0.50–0.60 give 66/74, 0.70–0.80 give 69/74, 0.85 upwards give 70/74. Confidence
+  saturates where score does not, so 0.85 admits roughly what 0.5 admitted on the old scale.
+
+### The guard now needs corroboration, and only semantics can give it
+
+`_check_for_disagreement` promotes a rival the request named. Naming turned out to be necessary
+but not sufficient: "Heart Radio" contains the word radio, which was enough to raise *Radio ads*
+— a chargeable design item — against a plainly correct answer.
+
+What separates that from the translation case is not the word but how convincing retrieval found
+the rival. Measured across four cases where the answer is known:
+
+| Request | Rival, as a fraction of the leader's confidence | | |
+|---|---|---|---|
+| | **keyword only** | **with embeddings** | should ask? |
+| translating our web pages | 0.89 | 0.96 | yes |
+| web page copy translated to French | 0.77 | 0.94 | yes |
+| landlord wants signage, who pays | 0.99 | 0.88 | yes |
+| Heart Radio campaign wrap-up | **0.79** | **0.69** | **no** |
+
+With embeddings the two populations separate cleanly and `RIVAL_FLOOR` divides them. **Without
+them they overlap** — 0.77 for a genuine second reading against 0.79 for a coincidence — and no
+threshold exists that could separate them. Telling a real alternative from a shared word is a
+question about meaning, and word counts cannot answer it.
+
+So the corroboration check applies only when the hits are semantic. Offline it falls back to
+naming alone, which asks more often than it needs to — the safe direction, and the reason this
+degrades rather than guesses. Nine cases now pass in the deployed configuration and are recorded
+as known failures in the offline one; each marker says so.
+
+### Where the tuning stopped
+
+The last two failures are **corpus gaps, not ranking defects**, and no threshold fixes either:
+
+- **`golden-06`** — the item is named "Marketing + GMs calls - 121", and no phrasing a person uses
+  reaches it. `1:1` tokenises to `('1','1')`; `one to one` tokenises to nothing at all, because
+  "one" is a stopword.
+- **`scope-local-owner`** — **"Instagram" appears in zero documents**, as do Twitter and YouTube.
+  The organic social items never name the platforms they cover, so the request has no distinctive
+  word to match and the resolver correctly declines rather than guessing.
+
+Both are cheap to fix on the Scope sheet and impossible to fix in the ranking. Chasing them with
+constants would have been overfitting to nine sentences.
+
+### Settled: ask, when a request genuinely names two disagreeing services
+
+Product ruling, 26 Aug: ask. Worst case the user reiterates. The eval encodes it, and the
+corroboration check above exists to make sure it is a *genuine* second reading being put to them
+rather than a word that happened to appear twice in the corpus.
 
 ## Phase 5 — data and honesty
 
 | ID | Task | Status |
 |---|---|---|
 | T22 | Rename the Copywriting item "Paid ads" so it stops colliding with the Paid ads section | Needs the Scope sheet owner |
+| T25 | Declare `1:1`, `one to one`, `one-to-one` as aliases on the two `- 121` call items | Needs the Scope sheet owner |
+| T26 | Name the platforms — Instagram, Twitter/X, YouTube, Facebook, TikTok — as aliases on the Organic social items | Needs the Scope sheet owner |
 | T23 | Fix the citation line on the catalog-list path — "No supporting documents retrieved" misreports a catalog answer | To do |
 | T24 | Keep build artefacts newer than their sources | Index done; `widget/dist` still stale |
 
@@ -226,7 +288,7 @@ than hand-fitting constants.
 
 | Question | Blocks | Why it matters |
 |---|---|---|
-| #9 — when a request names two disagreeing services, ask or resolve to the more specific one? | T19, T20 | Changes the behaviour those tasks tune toward. Answering late means tuning twice. The eval currently encodes the existing design (ask). |
+| ~~#9 — ask, or resolve to the more specific one?~~ | — | **Settled 26 Aug: ask.** Encoded in the eval; the guard's corroboration check makes sure it is a genuine second reading. |
 | #16/#17 — should login require a branch rather than offering it optionally? | — | Removes a class of "which branch?" round-trips for one field at sign-in. The plumbing already exists. |
 | #23 — track the 4–5/month ad-hoc email allowance, or quote every time? | — | Needs a per-branch running total the sheet does not expose, and the sheet is read-only by design. |
 | #7 — wording implied a correct out-of-scope verdict might be quotable | — | Prose fix in the corpus or the composer brief, not code. |

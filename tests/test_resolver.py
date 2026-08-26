@@ -16,7 +16,12 @@ from app.core.types import Chunk, DocType, Status
 from app.knowledge.chunking import chunk_service_item
 from app.knowledge.index import KnowledgeIndex
 from app.knowledge.retriever import InMemoryRetriever, ScoredChunk
-from app.orchestrator.resolver import Outcome, ScopeResolver, _is_evidence
+from app.orchestrator.resolver import (
+    MAX_CANDIDATES,
+    Outcome,
+    ScopeResolver,
+    _is_evidence,
+)
 
 
 @pytest.fixture(scope="module")
@@ -265,3 +270,67 @@ def test_a_verdict_is_never_stated_for_disagreeing_candidates(corpus) -> None:
         if resolution.decided:
             verdicts = {candidate.item.status for candidate in resolution.candidates}
             assert len(verdicts) == 1, f"{item.item_id} produced a verdict from {verdicts}"
+
+
+class TestACrowdedFieldIsTrimmedNotDiscarded:
+    """More than ``MAX_CANDIDATES`` matches used to return UNKNOWN, on the
+    reasoning that a long menu is a wall rather than a question. True of what
+    gets shown, but it threw the leader away with the noise."""
+
+    def test_a_confident_leader_survives_a_crowd(self, resolver: ScopeResolver) -> None:
+        resolution = resolver.resolve("new graphics for our in-venue screens")
+        assert resolution.outcome is not Outcome.UNKNOWN
+        assert resolution.candidates[0].item.item_id == (
+            "renders-and-other-designs-for-venue-exteriors--graphics-for-screens"
+        )
+
+    def test_a_question_never_offers_more_than_max_candidates(
+        self, corpus, resolver: ScopeResolver
+    ) -> None:
+        """Trimming protects the reply, and must not be bypassable.
+
+        Only questions are capped. An AGREED outcome may rest on any number of
+        candidates because it shows none of them: they all carry the same
+        verdict, and that verdict is the whole answer.
+        """
+        for item in corpus.catalog:
+            resolution = resolver.resolve(item.display_name)
+            if resolution.outcome is not Outcome.AMBIGUOUS:
+                continue
+            assert len(resolution.candidates) <= MAX_CANDIDATES, item.item_id
+            question = resolution.question() or ""
+            assert question.count("\n") <= MAX_CANDIDATES, item.item_id
+
+
+class TestTheDisagreementGuardNeedsCorroboration:
+    """The guard promotes a rival the request named. Naming is necessary but
+    not sufficient: words appear in sentences for reasons of their own."""
+
+    def test_a_station_name_is_not_a_request_for_radio_ads(
+        self, resolver: ScopeResolver
+    ) -> None:
+        """"Heart Radio" is a station. Without embeddings this still asks -
+        keyword scoring cannot tell a second reading from a shared word, and
+        asking is the safe direction - but it must never state the wrong
+        verdict, and Campaign wrap-ups must remain the leading candidate."""
+        resolution = resolver.resolve(
+            "can we get a wrap-up on how the Heart Radio campaign performed"
+        )
+        assert resolution.candidates
+        assert resolution.candidates[0].item.item_id == (
+            "analytics-tracking-dashboards--campaign-wrap-ups"
+        )
+        assert resolution.status is not Status.QUOTE_REQUIRED
+
+    def test_two_services_that_are_both_named_still_ask(
+        self, resolver: ScopeResolver
+    ) -> None:
+        """The case the guard exists for, and the ruling it encodes: when a
+        request genuinely names two services that are handled differently, the
+        choice belongs to the user. Web pages is free of charge; Translation &
+        localisation belongs to the local team."""
+        resolution = resolver.resolve("do you handle translating our web pages")
+        assert resolution.outcome is Outcome.AMBIGUOUS
+        assert resolution.status is None
+        named = {candidate.item.item_id for candidate in resolution.candidates}
+        assert "copywriting--translation-localisation" in named
