@@ -17,7 +17,11 @@ secrets
 *-service-account.json
 credentials.json
 
-artifacts
+# The knowledge index is built by scripts/deploy_cloud_run.ps1 before the
+# upload, because embedding needs a Gemini key and Cloud Build has none.
+# Everything else under artifacts/ is local audit output and stays out.
+artifacts/*
+!artifacts/index.json
 graphify-out
 
 widget/node_modules

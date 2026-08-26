@@ -1,9 +1,15 @@
-# Cloud Run image: widget bundle + keyword index + FastAPI.
+# Cloud Run image: widget bundle + knowledge index + FastAPI.
 #
 # The catalog and index are baked in at build time so a cold start does not
 # rebuild them, and so a missing local artifacts/ folder cannot ship an empty
-# knowledge base. Embeddings are left off the image on purpose — they need a
-# Gemini key at build time, and keyword retrieval is a supported mode.
+# knowledge base.
+#
+# The index normally arrives already built, with embeddings, from
+# scripts/deploy_cloud_run.ps1 — Cloud Build has no Gemini key, and shipping a
+# keyword-only index while every local check ran against vectors is how the
+# deployed service ended up quietly weaker than the one being tested. Building
+# it here is the fallback for `docker build` by hand, and produces the
+# keyword-only index that mode has always produced.
 
 FROM node:22-bookworm-slim AS widget
 WORKDIR /src/widget
@@ -27,9 +33,17 @@ COPY documents ./documents
 COPY fixtures ./fixtures
 COPY prompts ./prompts
 
+# The bracket makes the source optional: with a shipped index it is copied, and
+# without one COPY matches nothing instead of failing the build.
+COPY artifacts/index.jso[n] ./artifacts/
+
 RUN pip install --no-cache-dir ".[cloud]" \
-    && mkdir -p artifacts \
-    && python -m scripts.build_index --out artifacts/index.json
+    && if [ -f artifacts/index.json ]; then \
+         echo "Using the index shipped with this build."; \
+       else \
+         echo "No index in the build context; building keyword-only."; \
+         mkdir -p artifacts && python -m scripts.build_index --out artifacts/index.json; \
+       fi
 
 COPY --from=widget /src/widget/dist ./widget/dist
 COPY widget/index.html ./widget/index.html

@@ -42,10 +42,11 @@ Handover and mail confirmation stay rules-only.
 | Whole-turn eval | **Ready** | `python -m scripts.eval_turns` — 74 cases asserting item and verdict; 64/74 with 10 recorded defects, see [REMEDIATION.md](./REMEDIATION.md) |
 | Semantic inventory intent | **Off by default** | Caused identical canned replies; see handoff §10.4 |
 | Docker / Cloud Run | **Live** | `acme-scoping` in `us-central1`; see [DEPLOY-STATUS.md](./DEPLOY-STATUS.md) |
-| Dense index in production | **Missing** | Image builds keyword-only; no build-time Gemini key. T15 |
-| Dense retrieval in the *verdict* path | **Missing** | The resolver passes no query vector in any environment. T14/T16 |
+| Dense index in production | **Ready** | Built by the deploy script and shipped in the image; takes effect on the next deploy |
+| Dense retrieval in the *verdict* path | **Ready** | Resolver embeds the phrase it resolves, on the keyword fallback path only |
 | CI | **Ready** | `.github/workflows/ci.yml` on push; nightly runs the deployed configuration |
-| IAP / GCS index at boot | **Missing** | `KNOWLEDGE_BUCKET` is declared and unread. T17 |
+| IAP | **Missing** | |
+| GCS index at boot | **Dropped** | Superseded by shipping the index in the image; dead config removed |
 
 ## Live Sheet tabs
 

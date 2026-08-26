@@ -118,25 +118,86 @@ the eleven gerund/verb pairs under the old stemmer, `scheduling`/`schedule` amon
 keeps its table in sync with the corpus, so a new gerund-named service fails the build until
 somebody writes down the verb people would use for it.
 
-## Phase 3 — connect the RAG to the decision
+## Phase 3 — connect the RAG to the decision · **done**
 
-| ID | Task | Root cause | Status |
-|---|---|---|---|
-| T14 | Calibrated 0–1 confidence on `ScoredChunk`; resolver thresholds re-expressed in it | — | To do |
-| T15 | Ship vectors to production: Cloud Build secret + `--embed` in the image | — | To do |
-| T16 | Pass the query vector into the resolver's retrieval | — | **Blocked on T14** |
-| T17 | Implement the GCS index-at-boot path, or delete the config that promises it | — | To do |
+| ID | Task | Status |
+|---|---|---|
+| T14 | Calibrated 0–1 confidence on `ScoredChunk`; the resolver's absolute threshold read off it | Done |
+| T15 | Ship vectors to production | Done — needs one deploy to take effect |
+| T16 | Pass the query vector into the resolver's retrieval | Done |
+| T17 | Resolve the GCS index-at-boot path | Done — deleted |
 
-**T16 must not land before T14.** Blended scoring is `0.75 × cosine + 0.25 × keyword` and cosine
-caps at 1.0, so a threshold of 1.6 needs the keyword half alone to reach 3.4. Measured on four
-probe questions, the number of hits clearing the resolver's floor goes 2→0, 4→0, 4→2 and 4→1 the
-moment vectors are switched on. Shipped as one change it reads as a catastrophic regression, and
-the conclusion drawn would be that embeddings made things worse — the opposite of what the
-ranking shows. Dense retrieval moves the correct item for #25 from rank 9 to rank 3.
+**The dense half of the RAG now has a vote on the verdict.** It never did before, in any
+environment: `ScopeResolver` called `retrieve()` without a query vector, so embeddings only ever
+shaped the evidence pack the composer saw.
 
-T17 is a live trap rather than a missing feature: `KNOWLEDGE_BUCKET` and `KNOWLEDGE_INDEX_OBJECT`
-sit in `.env` and `google-cloud-storage` sits in `pyproject.toml`, and **no code reads any of
-them**. Resolve it in one direction or the other.
+Measured with the rules planner and deterministic wording, so the numbers isolate retrieval:
+
+| | Keyword only | Keyword + dense |
+|---|---|---|
+| Resolver — **wrong verdicts** | 1/25 | **1/25** |
+| Resolver — answered well | 20/25 (80%) | **21/25 (84%)** |
+| Resolver — asked when it could have answered | 4/25 | **3/25** |
+| Turn eval | 66/74 | **68/74** |
+
+The two turn cases it fixes are `clarify-no-invented-price` — a vague pricing question that was
+being answered "included, free of charge" — and `golden-15-site-visit`, the case the stemmer had
+knocked from answering into asking. No case regressed.
+
+### T14 before T16, and why it was not optional
+
+Blended scoring is `0.75 × cosine + 0.25 × keyword`, and cosine cannot exceed 1. The resolver's
+old floor was a raw score of 1.6, which with vectors on would have required the keyword half
+alone to reach 3.4. Measured over the 25 retrieval prompts with vectors enabled, **3 of 25 would
+have had no hit clear that floor at all** — answered "I couldn't tell which service you mean" —
+and rival admission would have been distorted for the rest. Under the calibrated floor: 0 of 25.
+
+*(An earlier estimate in the audit put this at "nearly everything". That came from four
+hand-picked probes; the measured figure across the eval set is 12% of prompts going dead. Still a
+regression that would have been read as "embeddings made it worse", which is the opposite of what
+the ranking shows.)*
+
+Two properties make the calibration safe rather than merely plausible:
+
+- **Keyword confidence is `score / (score + 1.6)`**, so `confidence >= 0.5` accepts exactly the
+  hits `score >= 1.6` accepted. Introducing the scale changed no behaviour in keyword-only mode,
+  and a test asserts the two constants have not drifted apart.
+- **Dense confidence is calibrated on measurement, not on intuition.** Raw cosine is not a
+  confidence: over the eval prompts the *expected* item scores 0.650–0.794 while every other item
+  scores 0.479–0.740. An unrelated service sits at 0.57, which used directly would read as 57%
+  sure. The classes separate at about 0.657, and the anchors put that at 0.5.
+
+`RIVAL_FLOOR` deliberately still compares raw scores. It is a *relative* judgement between two
+hits scored the same way in one query, so it needs no absolute scale — only that both sides are
+measured alike. Its distribution does change when cosines compress the spread, which is a retune
+and belongs to T20.
+
+### A determinism bug this exposed
+
+Wiring the embedder into the resolver meant `eval_turns` embedded whenever a Gemini key happened
+to be configured — so a laptop and CI scored the same commit differently and neither knew. Dense
+retrieval is now a settings flag (`use_dense_retrieval`) tied to the eval mode rather than to
+whether a key is lying around. `rules` is offline for real; CI gates on it.
+
+### T15: the index is built where the key is
+
+`gcloud run deploy --source .` builds in Cloud Build, which has no Gemini key — the mechanical
+reason production shipped keyword-only while every local check ran against vectors. Rather than
+add a Cloud Build secret to a deploy that works, `deploy_cloud_run.ps1` now builds the index
+before uploading and ships it in the image, so what production runs is byte-identical to what the
+deployer tested. Without a key it falls back to keyword-only, and a hand-run `docker build` still
+builds its own.
+
+**Not yet in production.** It takes effect on the next deploy; `/api/health` should then report
+`embeddings: true`.
+
+### T17: deleted rather than built
+
+`KNOWLEDGE_BUCKET`, `KNOWLEDGE_INDEX_OBJECT` and `google-cloud-storage` described a
+load-the-index-from-a-bucket path that no code ever read. With T15 shipping vectors in the image,
+what the bucket would add is refreshing the corpus without a redeploy — and this corpus is a
+service catalogue that changes rarely. The dependency is gone; **delete the two `KNOWLEDGE_*`
+lines from your local `.env`**, which is the only place they still exist.
 
 ## Phase 4 — judgement
 

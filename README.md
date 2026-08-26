@@ -556,9 +556,10 @@ resolver returns a verdict, a clarifying question, or a handover. Gemini is wire
 `GEMINI_API_KEY` ([Google AI Studio](https://aistudio.google.com/apikey)). A GCP project is for
 Firestore / Sheets / GCS — **not** for the model (no Vertex AI).
 
-**Also live locally:** read-only Google Sheet (budget, pricing tiers, roster), Resend mail
-(short résumé body plus a PDF of the audit-log conversation; test from-address), Firestore
-audit dual-write, dense index when built with `--embed`.
+**Also live:** read-only Google Sheet (budget, pricing tiers, roster), Resend mail (short
+résumé body plus a PDF of the audit-log conversation; test from-address), Firestore audit
+dual-write, and hybrid retrieval — the deploy script builds the index with `--embed` and ships
+it in the image, because Cloud Build has no Gemini key of its own.
 
 The corpus itself is unusually clean: `report_corpus` finds no encoding damage, no stray escapes
 and only two non-ASCII characters across 136,000.

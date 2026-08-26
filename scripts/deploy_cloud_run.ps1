@@ -15,6 +15,10 @@ param(
 
 $ErrorActionPreference = "Stop"
 
+# The interpreter that builds the shipped index. Prefer the project venv, so a
+# deploy uses the same dependencies everything else was checked against.
+$Python = if (Test-Path ".venv\Scripts\python.exe") { ".venv\Scripts\python.exe" } else { "python" }
+
 function Read-DotEnv {
     param([string]$Path)
     $map = @{}
@@ -153,6 +157,29 @@ if (-not [string]::IsNullOrWhiteSpace($sheetId)) {
 }
 if (-not [string]::IsNullOrWhiteSpace($mailFrom)) {
     $envVars += "MAIL_FROM_ADDRESS=$mailFrom"
+}
+
+# Build the knowledge index here rather than inside the image.
+#
+# Embedding needs a Gemini key, and Cloud Build has none: that is the reason
+# the deployed service ran keyword-only while every local check ran against
+# vectors, which is exactly the kind of divergence that makes a green eval
+# meaningless. Building it on the machine that deploys also means the index
+# shipped is byte-identical to the one whoever ran this tested against.
+#
+# Without a key it falls back to keyword-only, which is a supported mode.
+$indexPath = "artifacts/index.json"
+if ([string]::IsNullOrWhiteSpace($gemini)) {
+    Write-Host "No GEMINI_API_KEY in .env; building a keyword-only index."
+    & $Python -m scripts.build_index --out $indexPath
+} else {
+    Write-Host "Building the knowledge index with embeddings..."
+    $env:GEMINI_API_KEY = $gemini
+    & $Python -m scripts.build_index --out $indexPath --embed
+}
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "Index build failed. Fix that before deploying: the image ships this file."
+    exit 1
 }
 
 Write-Host "Building and deploying (Cloud Build + Cloud Run). This takes a few minutes..."
