@@ -10,7 +10,14 @@ from __future__ import annotations
 from app.core.types import Chunk, DocType
 from app.knowledge.chunking import chunk_service_item
 from app.knowledge.index import KnowledgeIndex
-from app.knowledge.retriever import MIN_SCORE, InMemoryRetriever
+from app.knowledge.retriever import (
+    KEYWORD_HALF_CONFIDENCE,
+    MIN_SCORE,
+    InMemoryRetriever,
+    _dense_confidence,
+    _keyword_confidence,
+)
+from app.orchestrator.resolver import MIN_CONFIDENCE
 
 
 def build_retriever(corpus) -> InMemoryRetriever:
@@ -132,3 +139,52 @@ class TestFiltering:
 def test_item_ids_are_deduplicated_in_order(corpus) -> None:
     result = build_retriever(corpus).retrieve("video editing", limit=5)
     assert len(set(result.item_ids)) == len(result.item_ids)
+
+
+class TestConfidence:
+    """Confidence answers "is this worth acting on at all", and has to mean the
+    same thing whether or not embeddings are in the blend. The resolver's
+    absolute threshold is read off it, so a scale that drifted between modes
+    would silently move that threshold."""
+
+    def test_it_is_bounded(self, corpus) -> None:
+        retriever = build_retriever(corpus)
+        for query in ("merch", "billboards for the new branch", "xyzzy", ""):
+            for hit in retriever.retrieve(query, limit=5).hits:
+                assert 0.0 <= hit.confidence <= 1.0, (query, hit.confidence)
+
+    def test_it_rises_with_the_score(self, corpus) -> None:
+        """Ranking must survive the rescale: a confidence that reordered hits
+        would make the two numbers disagree about which item is best."""
+        hits = build_retriever(corpus).retrieve("photoshoot at the new site", limit=5).hits
+        by_score = sorted(hits, key=lambda hit: hit.score, reverse=True)
+        by_confidence = sorted(hits, key=lambda hit: hit.confidence, reverse=True)
+        assert [hit.chunk.item_id for hit in by_score] == [
+            hit.chunk.item_id for hit in by_confidence
+        ]
+
+    def test_the_half_point_matches_the_resolver_threshold(self) -> None:
+        """The guarantee that made this change safe to land.
+
+        ``confidence >= MIN_CONFIDENCE`` accepts exactly the hits the resolver's
+        previous raw floor of 1.6 accepted, so introducing the scale changed no
+        behaviour in keyword-only mode. Asserted rather than trusted, because
+        the two constants live in different modules and nothing else would
+        notice them drifting apart.
+        """
+        assert _keyword_confidence(KEYWORD_HALF_CONFIDENCE) == MIN_CONFIDENCE
+        assert _keyword_confidence(KEYWORD_HALF_CONFIDENCE - 0.01) < MIN_CONFIDENCE
+        assert _keyword_confidence(KEYWORD_HALF_CONFIDENCE + 0.01) > MIN_CONFIDENCE
+
+    def test_an_unrelated_cosine_is_not_confident(self) -> None:
+        """Raw cosine is not a confidence. Measured on this corpus, an item
+        with nothing to do with the query still scores about 0.57, which used
+        directly would read as 57% sure."""
+        assert _dense_confidence(0.57) < 0.2
+        assert _dense_confidence(0.641) < MIN_CONFIDENCE  # 95th percentile of irrelevant
+        assert _dense_confidence(0.673) > MIN_CONFIDENCE  # 5th percentile of relevant
+        assert _dense_confidence(0.730) > 0.75  # median relevant
+
+    def test_dense_confidence_is_clamped(self) -> None:
+        assert _dense_confidence(-1.0) == 0.0
+        assert _dense_confidence(1.0) == 1.0

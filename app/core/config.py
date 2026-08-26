@@ -56,6 +56,20 @@ class Settings(BaseSettings):
     fallback when the model fails or writes a figure the facts do not contain.
     """
 
+    use_dense_retrieval: bool = True
+    """Let retrieval blend embedding similarity with keyword scoring.
+
+    On is the intended configuration: dense search is what lets a request reach
+    a service it does not share words with. Off is not a degraded mode so much
+    as a narrower one — verdicts still resolve, from names and aliases — and it
+    is what the offline eval and CI run, so that a failing build always means a
+    change in behaviour rather than a model having a different day.
+
+    Needs both halves present to do anything: an index built with ``--embed``
+    and a configured key. Missing either, retrieval scores on words alone and
+    says so in the startup log.
+    """
+
     use_semantic_inventory: bool = False
     """Opt-in embedding classifier for “list the services” paraphrases.
 

@@ -187,7 +187,7 @@ class Pipeline:
         self.catalog = catalog
         self.index = index
         self.retriever = InMemoryRetriever(index)
-        self.resolver = ScopeResolver(catalog, self.retriever)
+        self.resolver = ScopeResolver(catalog, self.retriever, embedder)
         inventory_detector = (
             InventoryIntentDetector(embedder)
             if embedder is not None and use_semantic_inventory
@@ -231,7 +231,7 @@ class Pipeline:
         settings = settings or get_settings()
         catalog = load_catalog(Manifest.load(settings.documents_dir)).catalog
         index = KnowledgeIndex.load_local(settings.local_index_path)
-        embedder = build_embedder(settings)
+        embedder = build_embedder(settings) if settings.use_dense_retrieval else None
         budget_store = build_budget_store(
             xlsx_path=settings.budget_xlsx_path,
             spreadsheet_id=settings.budget_spreadsheet_id,

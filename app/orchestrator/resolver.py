@@ -43,6 +43,7 @@ import structlog
 from app.core.keys import content_tokens
 from app.core.types import ServiceItem, Status
 from app.knowledge.catalog import ServiceCatalog
+from app.knowledge.embeddings import Embedder
 from app.knowledge.retriever import Retriever, ScoredChunk
 
 __all__ = ["Candidate", "Outcome", "Resolution", "ScopeResolver"]
@@ -53,14 +54,32 @@ MAX_CANDIDATES = 4
 """More options than this is not a question, it is a wall. Past four the honest
 answer is that the request was too vague, which routes to a human."""
 
-MIN_CONFIDENT_SCORE = 1.6
-"""Keyword score below which a match is not worth acting on. Tuned against
-evals/retrieval.json, where genuine matches score above 3 and noise below 1.5.
-Prefer UNKNOWN over a weak guess: a wrong verdict costs more than a handover."""
+MIN_CONFIDENCE = 0.5
+"""Confidence below which a match is not worth acting on. Prefer UNKNOWN over
+a weak guess: a wrong verdict costs more than a handover.
+
+Expressed as confidence rather than as a raw score because this is an
+*absolute* judgement — is this good enough to act on at all — and a raw score
+does not mean the same thing from one retrieval mode to the next. Blended
+scoring is ``0.75 x cosine + 0.25 x keyword``; cosine cannot exceed 1, so the
+old floor of 1.6 would have required the keyword half alone to reach 3.4 the
+moment embeddings were switched on, and almost every correct answer would have
+fallen below it. A threshold that changes meaning when a flag changes is not a
+threshold.
+
+0.5 against :data:`~app.knowledge.retriever.KEYWORD_HALF_CONFIDENCE` accepts
+exactly the hits the old floor of 1.6 accepted in keyword-only mode."""
 
 RIVAL_FLOOR = 0.5
 """How close a runner-up must be, as a fraction of the leader's score, before
-it can be considered at all."""
+it can be considered at all.
+
+Compares raw scores rather than confidences, and unlike the floor above it is
+right to. This is a *relative* judgement between two hits scored the same way
+in the same query, so it needs no absolute scale — only that both sides are
+measured alike. The distribution it sees does change when embeddings join the
+blend, because cosines compress the spread between hits; that is a retune, not
+a change of meaning."""
 
 MIN_SINGLE_TERM_COVERAGE = 0.5
 """How much of an item's name a *lone* matched term must account for.
@@ -238,9 +257,15 @@ def _stems(tokens: tuple[str, ...]) -> frozenset[str]:
 class ScopeResolver:
     """Maps a request onto a catalog item and its verdict."""
 
-    def __init__(self, catalog: ServiceCatalog, retriever: Retriever | None = None) -> None:
+    def __init__(
+        self,
+        catalog: ServiceCatalog,
+        retriever: Retriever | None = None,
+        embedder: Embedder | None = None,
+    ) -> None:
         self._catalog = catalog
         self._retriever = retriever
+        self._embedder = embedder
         self._phrases = self._build_phrases(catalog)
         self._document_frequency = self._build_document_frequency(catalog)
         self._identities = self._build_identities(catalog)
@@ -296,6 +321,18 @@ class ScopeResolver:
         """Whether matching this phrase is enough to settle the request alone."""
         rarest = min(self._document_frequency[token] for token in tokens)
         return rarest <= MAX_DOCUMENTS_FOR_A_DECISIVE_WORD
+
+    def _query_vector(self, query: str) -> tuple[float, ...] | None:
+        """Embed the phrase being resolved, or ``None`` to score on words alone.
+
+        Failure is not an error here. An unreachable embedding backend returns
+        ``None`` and retrieval degrades to keyword within the same turn, which
+        is the behaviour the whole hybrid design is built around: dense search
+        improves the ranking, and nothing depends on it existing.
+        """
+        if self._embedder is None:
+            return None
+        return self._embedder.embed_query(query)
 
     def _frequency_of(self, hit: ScoredChunk) -> int:
         """How many documents this hit's lone matched term appears in.
@@ -436,11 +473,18 @@ class ScopeResolver:
         if self._retriever is None:
             return Resolution(Outcome.UNKNOWN, query, method="phrase")
 
+        # Embedded here rather than upstream, and only here. Phrase matching
+        # runs first and settles most requests outright, so the fast path never
+        # pays for a call; and the phrase this resolves is not always the
+        # question the rest of the turn retrieves on, so a vector computed
+        # upstream would be a vector for different words.
         hits = [
             hit
-            for hit in self._retriever.retrieve(query, limit=MAX_CANDIDATES + 1).hits
+            for hit in self._retriever.retrieve(
+                query, limit=MAX_CANDIDATES + 1, query_vector=self._query_vector(query)
+            ).hits
             if hit.chunk.item_id
-            and hit.score >= MIN_CONFIDENT_SCORE
+            and hit.confidence >= MIN_CONFIDENCE
             and _is_evidence(hit, self._frequency_of(hit))
         ]
         if not hits:

@@ -75,6 +75,34 @@ MIN_SCORE = 0.05
 """Below this a hit is noise. Returning nothing is better than returning
 something irrelevant, which is what pushes a model into inventing an answer."""
 
+KEYWORD_HALF_CONFIDENCE = 1.6
+"""The keyword score that reads as an even chance: ``score / (score + this)``
+is 0.5 here, rises towards 1 and never reaches it.
+
+Set to the value the resolver's old absolute floor used, so that in
+keyword-only mode ``confidence >= 0.5`` and ``score >= 1.6`` accept exactly the
+same hits. Introducing a scale is not an excuse to change behaviour while
+nobody is looking."""
+
+DENSE_FLOOR = 0.55
+DENSE_CEILING = 0.77
+"""Cosines that read as no evidence and as certainty.
+
+Raw cosine is not a confidence and using it as one would be badly wrong.
+Measured over the 25 retrieval prompts against all 89 items with
+``gemini-embedding-001`` at 768 dimensions, the expected item scores 0.650 to
+0.794 (median 0.730) while every other item scores 0.479 to 0.740 (median
+0.570, p95 0.641). An unrelated service sits at 0.57 — which as a "confidence"
+would read as 57% sure.
+
+The classes overlap only between 0.641 and 0.673, so the boundary is about
+0.657, and these anchors put that at roughly 0.5. Rescaling makes the dense and
+keyword halves comparable numbers, which is the whole point: blending two
+signals on different scales is how a threshold silently changes meaning.
+
+**These are specific to this model and this corpus.** The index records its
+embedding contract; re-derive them if either changes."""
+
 
 @dataclass(frozen=True, slots=True)
 class ScoredChunk:
@@ -87,6 +115,17 @@ class ScoredChunk:
 
     coverage: float = 0.0
     """How much of the item's own name the query accounted for."""
+
+    confidence: float = 0.0
+    """How much this hit is worth acting on, from 0 to 1.
+
+    Distinct from ``score``, and the distinction matters. ``score`` ranks hits
+    against each other within one query; it is a sum of weights whose size
+    depends on the query and on whether embeddings are in the blend, so the
+    same number means different things in different modes. ``confidence``
+    answers the other question - is this good enough to act on at all - and
+    means the same thing everywhere, which is what an absolute threshold needs
+    in order to keep its meaning when the retrieval mode changes."""
 
     forced: bool = False
     """True when the resolver required this slice rather than the score earning it."""
@@ -152,6 +191,27 @@ class Retriever(Protocol):
 
 def _bigrams(tokens: Sequence[str]) -> tuple[str, ...]:
     return tuple(f"{first} {second}" for first, second in pairwise(tokens))
+
+
+def _keyword_confidence(score: float) -> float:
+    """Squash an unbounded keyword score onto 0-1, monotonically.
+
+    Saturating rather than linear because the difference between a score of 6
+    and a score of 12 is not worth twice as much: both mean the request named
+    the item plainly. What the scale has to preserve is the ordering and the
+    position of the one threshold that matters.
+    """
+    return score / (score + KEYWORD_HALF_CONFIDENCE) if score > 0 else 0.0
+
+
+def _dense_confidence(cosine: float) -> float:
+    """Rescale a cosine onto 0-1 using the range this corpus actually produces.
+
+    See :data:`DENSE_FLOOR` for the measurements. Clamped at both ends: beyond
+    them the extra similarity carries no more information about whether this is
+    the right service.
+    """
+    return min(1.0, max(0.0, (cosine - DENSE_FLOOR) / (DENSE_CEILING - DENSE_FLOOR)))
 
 
 @dataclass(frozen=True, slots=True)
@@ -319,16 +379,26 @@ class InMemoryRetriever:
             else:
                 keyword, matched, coverage = 0.0, [], 0.0
 
+            # Ranking and confidence are blended separately, on purpose. The
+            # score keeps its existing shape so relative order is unchanged;
+            # the confidence blends two numbers that already mean the same
+            # thing, so it stays comparable whichever mode produced it.
             if use_dense and chunk.embedding is not None and query_vector is not None:
                 dense = self._cosine(query_vector, chunk.embedding)
                 score = DENSE_WEIGHT * dense + KEYWORD_WEIGHT * keyword
+                confidence = DENSE_WEIGHT * _dense_confidence(dense) + (
+                    KEYWORD_WEIGHT * _keyword_confidence(keyword)
+                )
             else:
                 score = keyword
+                confidence = _keyword_confidence(keyword)
 
             if chunk.item_id and chunk.item_id in forced_ids:
-                forced.append(ScoredChunk(chunk, score, tuple(matched), coverage, forced=True))
+                forced.append(
+                    ScoredChunk(chunk, score, tuple(matched), coverage, confidence, forced=True)
+                )
             elif score >= MIN_SCORE:
-                scored.append(ScoredChunk(chunk, score, tuple(matched), coverage))
+                scored.append(ScoredChunk(chunk, score, tuple(matched), coverage, confidence))
 
         scored.sort(key=lambda hit: hit.score, reverse=True)
         forced.sort(key=lambda hit: hit.score, reverse=True)

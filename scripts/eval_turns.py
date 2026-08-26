@@ -33,17 +33,23 @@ Modes exist because the deployed configuration and the deterministic one fail
 differently, and only one of them is cheap enough to run on every push:
 
 ``rules``
-    No model at all. Fast, free, repeatable, and the mode CI gates on. A
+    No network at all: no planner, no composer, and no embedder, so retrieval
+    scores on words alone. Fast, free, repeatable, and the mode CI gates on. A
     failure here is attributable to routing or lookup, never to phrasing.
 
 ``planner``
-    The model chooses capabilities and fills slots; wording stays
-    deterministic. Isolates planning defects from wording ones.
+    The model chooses capabilities and fills slots, and the resolver may embed
+    the phrase it is resolving; wording stays deterministic. Isolates planning
+    and retrieval defects from wording ones.
 
 ``deployed``
-    Planner and composer both live. This is what production runs, so it is
-    the only mode that can reproduce a defect in the seam between them. Costs
+    Everything live. This is what production runs, so it is the only mode that
+    can reproduce a defect in the seam between the model and the tools. Costs
     money and is not repeatable — run it nightly, not per-commit.
+
+The embedder is tied to the mode rather than to whether a key happens to be
+present. Otherwise the same command means different things on a laptop and in
+CI, which is the exact drift the verdict assertions above were added to close.
 """
 
 from __future__ import annotations
@@ -335,7 +341,10 @@ def main() -> int:
             return 1
 
     settings = get_settings().model_copy(
-        update={"use_llm_planner": args.mode in ("planner", "deployed")}
+        update={
+            "use_llm_planner": args.mode in ("planner", "deployed"),
+            "use_dense_retrieval": args.mode != "rules",
+        }
     )
     try:
         pipeline = Pipeline.load(settings)
