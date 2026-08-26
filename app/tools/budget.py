@@ -9,7 +9,13 @@ from datetime import date
 import structlog
 
 from app.core.keys import normalize_term
-from app.store.budget import BudgetSnapshot, BudgetStore, BranchRef, canonical_month
+from app.store.budget import (
+    MONTHS,
+    BudgetSnapshot,
+    BudgetStore,
+    BranchRef,
+    canonical_month,
+)
 
 __all__ = [
     "BudgetToolResult",
@@ -27,6 +33,20 @@ _MONTH_IN_MESSAGE = re.compile(
     r"nov(?:ember)?|dec(?:ember)?"
     r")\b",
     re.IGNORECASE,
+)
+
+# "last month", "next fiscal month" — a month named by its distance from the
+# one we are in rather than by name. Ordered because "the month" is generic and
+# would otherwise swallow the two directional phrases.
+#
+# These have to be understood rather than merely rejected. The planner emits
+# them constantly ("this month" was the slot behind the budget-cap failure),
+# and so do people: refusing the phrase would leave the question unanswered
+# just as surely as mis-resolving it, only more visibly.
+_RELATIVE_MONTHS: tuple[tuple[re.Pattern[str], int], ...] = (
+    (re.compile(r"\b(?:next|coming|following)\s+(?:fiscal\s+)?month\b", re.I), 1),
+    (re.compile(r"\b(?:last|previous|prior)\s+(?:fiscal\s+)?month\b", re.I), -1),
+    (re.compile(r"\b(?:this|current|the)\s+(?:fiscal\s+)?month\b", re.I), 0),
 )
 
 # Country / region names people use in chat → Branchescountries.country values.
@@ -109,11 +129,20 @@ def answer_budget(
         )
 
     when = today or date.today()
-    msg_month = _month_from_message(message)
     msg_branch = _resolve_branch(message, store, session_branch=None)
     msg_country = _country_from_message(message)
     wants_all = bool(_ALL_BRANCHES_RE.search(message))
-    month = msg_month or sticky_month or store.fiscal_month_for(when)
+
+    # Every month expression is funnelled through one resolver, and anything it
+    # cannot place falls back to the fiscal calendar. The sticky slot is the
+    # one that matters: it carries the planner's free text, and before this it
+    # reached the caps sheet unchecked. Resolving here rather than at each use
+    # also means an unusable month can never be written into session state and
+    # poison the rest of the conversation.
+    current = store.fiscal_month_for(when)
+    month = _month_in(message, current) or _month_in(sticky_month, current) or current
+    if sticky_month and _month_in(sticky_month, current) is None:
+        logger.info("budget.month_unrecognised", label=sticky_month, using=month)
 
     # 1) Explicit site this turn (unless they asked for every branch).
     if msg_branch is not None and not wants_all:
@@ -300,7 +329,47 @@ def _month_from_message(message: str) -> str | None:
     match = _MONTH_IN_MESSAGE.search(message)
     if not match:
         return None
-    return canonical_month(match.group(1))
+    return canonical_month(match.group(1)) or None
+
+
+def _relative_offset(label: str) -> int | None:
+    """How many months from the current one this phrase means, if any."""
+    for pattern, offset in _RELATIVE_MONTHS:
+        if pattern.search(label):
+            return offset
+    return None
+
+
+def _shift(month: str, offset: int) -> str:
+    """Step a fiscal month label, wrapping around the year.
+
+    The caps sheet is twelve columns with no year, so a month is a position in
+    a cycle rather than a date. December plus one is January, and that is the
+    correct answer for a sheet shaped this way.
+    """
+    return MONTHS[(MONTHS.index(month) + offset) % len(MONTHS)]
+
+
+def _month_in(text: str | None, current: str) -> str | None:
+    """Turn any month expression into a label the caps sheet actually has.
+
+    Takes either a slot value ("August", "this month") or a whole sentence
+    ("what was the london budget in august"), because the two arrive from the
+    planner and from the user in the same field and neither is trustworthy.
+
+    Returns ``None`` for anything unrecognisable, so the caller falls back to
+    the fiscal calendar rather than querying a column that does not exist.
+    This is the boundary the planner's free text crosses: past it, every value
+    is a real sheet key, and nothing a model writes can invent one.
+    """
+    if not text or not text.strip():
+        return None
+    if exact := canonical_month(text):
+        return exact  # the value is a month, exactly
+    if mentioned := _month_from_message(text):
+        return mentioned  # a month named somewhere inside a sentence
+    offset = _relative_offset(text)
+    return None if offset is None else _shift(current, offset)
 
 
 def _format_snapshot(snapshot: BudgetSnapshot) -> str:

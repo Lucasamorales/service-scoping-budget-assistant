@@ -58,6 +58,32 @@ MONTHS = (
     "Dec",
 )
 
+_FULL_MONTH_NAMES = (
+    "january",
+    "february",
+    "march",
+    "april",
+    "may",
+    "june",
+    "july",
+    "august",
+    "september",
+    "october",
+    "november",
+    "december",
+)
+
+_MONTH_BY_NAME: dict[str, str] = {
+    **{short.lower(): short for short in MONTHS},
+    **dict(zip(_FULL_MONTH_NAMES, MONTHS, strict=True)),
+    "sept": "Sep",
+}
+"""Every spelling a month is written in, on the sheet or by a person.
+
+An exact table rather than a prefix test: matching the first three characters
+would read "marketing" as March and "maybe" as May, and both of those words
+turn up constantly in the messages this assistant is sent."""
+
 # Country / region rollup rows on the caps sheet — not branches.
 _CAP_ROLLUPS = frozenset(
     normalize_term(name) for name in ("Australia", "Canada", "Paris", "United Kingdom", "France")
@@ -333,29 +359,19 @@ def build_budget_store(
 
 
 def canonical_month(label: str) -> str:
-    """Normalise a month token to the three-letter labels used on the sheet."""
-    raw = (label or "").strip()
-    if not raw:
-        return ""
-    title = raw[:3].title()
-    for month in MONTHS:
-        if month == title or month.lower() == raw.lower()[:3]:
-            return month
-    full = {
-        "january": "Jan",
-        "february": "Feb",
-        "march": "Mar",
-        "april": "Apr",
-        "may": "May",
-        "june": "Jun",
-        "july": "Jul",
-        "august": "Aug",
-        "september": "Sep",
-        "october": "Oct",
-        "november": "Nov",
-        "december": "Dec",
-    }
-    return full.get(raw.lower(), title)
+    """Normalise a month token to the three-letter labels used on the sheet.
+
+    Returns ``""`` for anything that is not one of the twelve months, and that
+    is the whole point of the function. It used to fall through to
+    ``raw[:3].title()``, which turned any string at all into something that
+    looked like a month label: the planner's free-text slot ``"this month"``
+    became ``"Thi"``, matched no column on the caps sheet, and the assistant
+    told an Account Manager there was no cap for any UK branch while the sheet
+    held one for every single site.
+
+    A month is a lookup key. Nothing that is not a month may become one.
+    """
+    return _MONTH_BY_NAME.get((label or "").strip().lower(), "")
 
 
 def _load_workbook(path: Path) -> _WorkbookData:
