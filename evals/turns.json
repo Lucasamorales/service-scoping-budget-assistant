@@ -1,328 +1,831 @@
 {
-  "description": "Whole-turn evaluation: did a message in the language Account Managers actually use reach the right capability, and did the reply carry the right facts? Unlike evals/routing.json this does not assert an internal intent name — it asserts which lookups ran and what the user ends up reading, so the rules can be replaced by a planner without rewriting the cases. 'expect' capabilities must all be planned; 'forbid' must not be. Cases marked 'critical' are ones where a wrong answer misleads someone about safety or about money: any failure there fails the run.",
-  "capabilities": ["scope", "budget", "quote", "list", "capabilities", "roster", "mail", "handover", "greeting", "clarify"],
+  "description": "Whole-turn evaluation: did a message in the language Account Managers actually use reach the right capability, identify the right service, and carry the right facts? 'expect' capabilities must all be planned and 'forbid' must not be — but capability assertions only prove the plumbing routes. 'expectItem', 'expectVerdict' and 'expectOutcome' are what test the product: they assert what the resolver actually decided, so a request cannot be answered from the wrong catalogue item and still score green. Assert the item where it is unambiguous, the verdict wherever one should be stated, and the outcome where the correct behaviour is to ask or to name no service at all. Cases marked 'critical' are ones where a wrong answer misleads someone about safety or about money: any failure there fails the run.",
+  "capabilities": [
+    "scope",
+    "budget",
+    "quote",
+    "list",
+    "capabilities",
+    "roster",
+    "mail",
+    "handover",
+    "greeting",
+    "clarify"
+  ],
   "cases": [
     {
       "id": "scope-merch",
       "message": "can we do merch for the london branch",
-      "expect": ["scope"],
-      "mustInclude": ["Merch"]
+      "expect": [
+        "scope"
+      ],
+      "expectItem": "renders-and-other-designs-for-venue-exteriors--merch",
+      "expectVerdict": "quote_required",
+      "mustInclude": [
+        "Merch"
+      ]
     },
     {
       "id": "scope-bare-service",
       "message": "billboards?",
-      "expect": ["scope"]
+      "expect": [
+        "scope"
+      ],
+      "expectItem": "photography--billboards",
+      "expectVerdict": "quote_required"
     },
     {
       "id": "scope-in-scope-foc",
       "message": "is audience segmentation included",
-      "expect": ["scope"],
-      "mustNotInclude": ["don't have that capability"]
+      "expect": [
+        "scope"
+      ],
+      "expectItem": "email-marketing-sms--audience-segmentation",
+      "expectVerdict": "in_scope",
+      "mustNotInclude": [
+        "don't have that capability"
+      ]
     },
     {
       "id": "scope-local-owner",
       "message": "who looks after our instagram posts",
-      "expect": ["scope"]
+      "expect": [
+        "scope"
+      ],
+      "expectVerdict": "local",
+      "critical": true,
+      "knownFailure": "RC-1/RC-3, fixed by T12 (stemmer) + T19 (rival gate). 'schedule' does not match the corpus token 'schedul', so Content scheduling scores below MIN_CONFIDENT_SCORE, and the disagreement guard cannot raise it because every word in its name is common.",
+      "note": "Every item in Organic social media is Local, so the verdict is certain even though the exact item is arguable. Answering in_scope tells an AM central marketing owns work the local team does."
     },
     {
       "id": "scope-out-of-scope",
       "message": "can central marketing run our local radio ads",
-      "expect": ["scope"]
+      "expect": [
+        "scope"
+      ],
+      "expectOutcome": "ambiguous",
+      "note": "Radio ads (quote) and Local opportunities (Local) are both genuinely named and disagree, so asking is correct. The case id predates that reading."
     },
     {
       "id": "scope-translation-disagreement",
       "message": "do you handle translating our web pages",
-      "expect": ["scope"],
+      "expect": [
+        "scope"
+      ],
+      "expectOutcome": "ambiguous",
+      "mustNotInclude": [
+        "free of charge"
+      ],
       "critical": true,
-      "mustNotInclude": ["free of charge"],
       "note": "F1. Translation & localisation is Local; Web pages is Y. Two named candidates that disagree must produce a question, never a free-of-charge promise."
     },
     {
       "id": "scope-photoshoot-quote",
       "message": "we want a photoshoot at the new site",
-      "expect": ["scope"],
-      "mustInclude": ["Photoshoots"]
+      "expect": [
+        "scope"
+      ],
+      "expectItem": "events--photoshoots",
+      "expectVerdict": "quote_required",
+      "mustInclude": [
+        "Photoshoots"
+      ]
     },
     {
       "id": "scope-valentines-video",
       "message": "I want to run a valentines campaign with video",
-      "expect": ["scope"]
+      "expect": [
+        "scope"
+      ],
+      "expectVerdict": "in_scope",
+      "note": "Two video-production items both apply and agree; which one is a detail."
     },
     {
       "id": "scope-signage-landlord",
       "message": "our landlord wants signage at the entrance, who pays",
-      "expect": ["scope"]
+      "expect": [
+        "scope"
+      ],
+      "expectOutcome": "ambiguous",
+      "note": "Signage is chargeable, Landlord relationship is Local. Who pays depends on which, so it must be asked."
     },
     {
       "id": "budget-left-for-london",
       "message": "what's left for london",
-      "expect": ["budget"],
-      "forbid": ["scope"],
-      "mustInclude": ["London"],
-      "mustNotInclude": ["don't have that capability"],
+      "expect": [
+        "budget"
+      ],
+      "forbid": [
+        "scope"
+      ],
+      "mustInclude": [
+        "London"
+      ],
+      "mustNotInclude": [
+        "don't have that capability"
+      ],
       "note": "F2. The canonical budget phrase from the README, previously answered with a capability denial."
     },
     {
       "id": "budget-explicit",
       "message": "how much budget does manchester have",
-      "expect": ["budget"],
-      "mustInclude": ["Manchester"]
+      "expect": [
+        "budget"
+      ],
+      "mustInclude": [
+        "Manchester"
+      ]
     },
     {
       "id": "budget-spend-country",
       "message": "how are we doing on spend in the uk",
-      "expect": ["budget"],
-      "mustInclude": ["United Kingdom"]
+      "expect": [
+        "budget"
+      ],
+      "mustInclude": [
+        "United Kingdom"
+      ]
     },
     {
       "id": "budget-anything-left",
       "message": "have we got anything left at basingstoke this month",
-      "expect": ["budget"],
-      "mustInclude": ["Basingstoke"]
+      "expect": [
+        "budget"
+      ],
+      "mustInclude": [
+        "Basingstoke"
+      ]
     },
     {
       "id": "budget-burned-through",
       "message": "how much have we burned through at milton keynes",
-      "expect": ["budget"]
+      "expect": [
+        "budget"
+      ]
     },
     {
       "id": "budget-all-branches",
       "message": "give me the remaining budget for all the branches",
-      "expect": ["budget"],
-      "forbid": ["list"]
+      "expect": [
+        "budget"
+      ],
+      "forbid": [
+        "list"
+      ]
     },
     {
       "id": "budget-month-named",
       "message": "what was the london budget in august",
-      "expect": ["budget"],
-      "mustInclude": ["Aug"]
+      "expect": [
+        "budget"
+      ],
+      "mustInclude": [
+        "Aug"
+      ]
     },
     {
       "id": "budget-sticky-followup",
       "message": "and manchester?",
-      "state": { "activeTool": "budget", "budgetBranch": "Acme London", "budgetCountry": "United Kingdom" },
-      "expect": ["budget"],
-      "mustInclude": ["Manchester"]
+      "state": {
+        "activeTool": "budget",
+        "budgetBranch": "Acme London",
+        "budgetCountry": "United Kingdom"
+      },
+      "expect": [
+        "budget"
+      ],
+      "mustInclude": [
+        "Manchester"
+      ]
     },
     {
       "id": "budget-sticky-month-only",
       "message": "what about july",
-      "state": { "activeTool": "budget", "budgetBranch": "Acme London" },
-      "expect": ["budget"],
-      "mustInclude": ["Jul"]
+      "state": {
+        "activeTool": "budget",
+        "budgetBranch": "Acme London"
+      },
+      "expect": [
+        "budget"
+      ],
+      "mustInclude": [
+        "Jul"
+      ]
     },
     {
       "id": "compound-price-and-budget",
       "message": "do we have money for a photoshoot in basingstoke",
-      "expect": ["quote", "budget"],
-      "mustInclude": ["Basingstoke"],
+      "expect": [
+        "quote",
+        "budget"
+      ],
+      "expectItem": "events--photoshoots",
+      "expectVerdict": "quote_required",
+      "mustInclude": [
+        "Basingstoke"
+      ],
       "note": "F6. Needs a price and a ledger. The old design could only answer one."
     },
     {
       "id": "quote-cost-of-billboard",
       "message": "how much would a billboard cost",
-      "expect": ["quote"],
-      "mustInclude": ["350"]
+      "expect": [
+        "quote"
+      ],
+      "expectItem": "photography--billboards",
+      "expectVerdict": "quote_required",
+      "mustInclude": [
+        "350"
+      ]
     },
     {
       "id": "quote-price-for-merch",
       "message": "what's the price for merch",
-      "expect": ["quote"],
-      "mustInclude": ["100"]
+      "expect": [
+        "quote"
+      ],
+      "expectItem": "renders-and-other-designs-for-venue-exteriors--merch",
+      "expectVerdict": "quote_required",
+      "mustInclude": [
+        "100"
+      ]
     },
     {
       "id": "quote-ballpark",
       "message": "ballpark for a set of venue photos",
-      "expect": ["quote"]
+      "expect": [
+        "quote"
+      ],
+      "expectVerdict": "quote_required",
+      "note": "Several photo items apply and agree on the verdict; the item is not determinable from 'venue photos'."
     },
     {
       "id": "quote-variable-travel",
       "message": "how much to send someone to the event with travel and hotel",
-      "expect": ["quote"],
+      "expect": [
+        "quote"
+      ],
+      "expectItem": "events--attendance-travel-accommodation-food",
+      "expectVerdict": "quote_required",
+      "mustNotInclude": [
+        "350.00 GBP"
+      ],
       "critical": true,
-      "mustNotInclude": ["350.00 GBP"],
       "note": "Variable tier must abort the automatic price, not print one."
     },
     {
       "id": "list-full",
       "message": "give me a list of services",
-      "expect": ["list"],
-      "mustInclude": ["Events"]
+      "expect": [
+        "list"
+      ],
+      "mustInclude": [
+        "Events"
+      ]
     },
     {
       "id": "list-what-services",
       "message": "what services do you offer",
-      "expect": ["list"]
+      "expect": [
+        "list"
+      ]
     },
     {
       "id": "list-on-demand-only",
       "message": "which services are on demand",
-      "expect": ["list"],
-      "mustNotInclude": ["in scope"]
+      "expect": [
+        "list"
+      ],
+      "mustNotInclude": [
+        "in scope"
+      ]
     },
     {
       "id": "list-free-things",
       "message": "what do I get for free",
-      "expect": ["list"],
-      "mustNotInclude": ["don't have that capability"],
+      "expect": [
+        "list"
+      ],
+      "mustNotInclude": [
+        "don't have that capability"
+      ],
       "note": "F4. Status-filtered list already implemented and previously unreachable."
     },
     {
       "id": "list-free-vs-paid",
       "message": "which things are free and which cost money",
-      "expect": ["list"],
-      "mustNotInclude": ["don't have that capability"]
+      "expect": [
+        "list"
+      ],
+      "mustNotInclude": [
+        "don't have that capability"
+      ]
     },
     {
       "id": "list-section-events",
       "message": "show me everything under events",
-      "expect": ["list"],
-      "mustInclude": ["Events"],
-      "mustNotInclude": ["don't have that capability"],
+      "expect": [
+        "list"
+      ],
+      "mustInclude": [
+        "Events"
+      ],
+      "mustNotInclude": [
+        "don't have that capability"
+      ],
       "note": "F5. Section listing was unreachable without the word 'services'."
     },
     {
       "id": "list-section-photography",
       "message": "what's in the photography section",
-      "expect": ["list"],
-      "mustInclude": ["Photography"]
+      "expect": [
+        "list"
+      ],
+      "mustInclude": [
+        "Photography"
+      ]
     },
     {
       "id": "capabilities-what-can-you-do",
       "message": "what can you help me with",
-      "expect": ["capabilities"],
-      "mustNotInclude": ["don't have that capability"]
+      "expect": [
+        "capabilities"
+      ],
+      "mustNotInclude": [
+        "don't have that capability"
+      ]
     },
     {
       "id": "capabilities-what-else",
       "message": "what else can you do for me",
-      "expect": ["capabilities"],
-      "mustNotInclude": ["don't have that capability"],
+      "expect": [
+        "capabilities"
+      ],
+      "mustNotInclude": [
+        "don't have that capability"
+      ],
       "note": "F4. Previously matched scoping framing on 'can you' and denied itself."
     },
     {
       "id": "capabilities-how-do-you-work",
       "message": "how do you work",
-      "expect": ["capabilities"]
+      "expect": [
+        "capabilities"
+      ]
     },
     {
       "id": "roster-who-is-my-am",
       "message": "who is my account manager",
-      "expect": ["roster"],
-      "forbid": ["scope"],
+      "expect": [
+        "roster"
+      ],
+      "forbid": [
+        "scope"
+      ],
+      "expectOutcome": "unknown",
+      "mustNotInclude": [
+        "Attendance",
+        "on demand"
+      ],
       "critical": true,
-      "mustNotInclude": ["Attendance", "on demand"],
-      "note": "F3. Previously answered with a priced on-demand service and a pending email."
+      "note": "F3: this once matched Attendance (travel, accommodation, food) and recorded a pending email. A directory question must name no service."
     },
     {
       "id": "roster-who-do-i-email",
       "message": "who do i email about a new campaign",
-      "expect": ["roster"],
-      "forbid": ["quote"]
+      "expect": [
+        "roster"
+      ],
+      "forbid": [
+        "quote"
+      ],
+      "expectOutcome": "unknown"
     },
     {
       "id": "roster-country-manager",
       "message": "who is our country manager",
-      "expect": ["roster"]
+      "expect": [
+        "roster"
+      ],
+      "expectOutcome": "unknown"
     },
     {
       "id": "mail-yes-after-cta",
       "message": "yes",
-      "state": { "pendingActionKind": "email_am", "pendingServiceId": "copywriting--emails", "pendingRecipientCountry": "United Kingdom" },
-      "expect": ["mail"],
-      "forbid": ["scope"]
+      "state": {
+        "pendingActionKind": "email_am",
+        "pendingServiceId": "copywriting--emails",
+        "pendingRecipientCountry": "United Kingdom"
+      },
+      "expect": [
+        "mail"
+      ],
+      "forbid": [
+        "scope"
+      ]
     },
     {
       "id": "mail-no-after-cta",
       "message": "no thanks",
-      "state": { "pendingActionKind": "email_am", "pendingServiceId": "copywriting--emails" },
-      "expect": ["mail"],
-      "mustInclude": ["won't send"],
-      "mustNotInclude": ["Sent to", "translating", "Spanish", "No supporting documents"],
+      "state": {
+        "pendingActionKind": "email_am",
+        "pendingServiceId": "copywriting--emails"
+      },
+      "expect": [
+        "mail"
+      ],
+      "mustInclude": [
+        "won't send"
+      ],
+      "mustNotInclude": [
+        "Sent to",
+        "translating",
+        "Spanish",
+        "No supporting documents"
+      ],
       "note": "Declining a ping must not re-open the previous scoping question."
     },
     {
       "id": "mail-country-after-yes",
       "message": "United Kingdom",
-      "state": { "pendingActionKind": "email_am", "pendingServiceId": "copywriting--emails", "pendingNeedsCountry": true },
-      "expect": ["mail"]
+      "state": {
+        "pendingActionKind": "email_am",
+        "pendingServiceId": "copywriting--emails",
+        "pendingNeedsCountry": true
+      },
+      "expect": [
+        "mail"
+      ]
     },
     {
       "id": "mail-bare-yes-no-pending",
       "message": "yes",
-      "expect": ["clarify"],
-      "mustNotInclude": ["don't have that capability"],
+      "expect": [
+        "clarify"
+      ],
+      "mustNotInclude": [
+        "don't have that capability"
+      ],
       "note": "F8. A stray confirmation should be benign, not a capability denial."
     },
     {
       "id": "mail-request-names-service",
       "message": "email my AM about the merch request",
-      "expect": ["scope"],
-      "mustInclude": ["Merch"],
+      "expect": [
+        "scope"
+      ],
+      "expectItem": "renders-and-other-designs-for-venue-exteriors--merch",
+      "expectVerdict": "quote_required",
+      "mustInclude": [
+        "Merch"
+      ],
       "note": "F7. Previously stubbed with 'tell me which service this is about' about a message naming the service."
     },
     {
       "id": "handover-injury",
       "message": "a customer got injured during a photoshoot, can we post about it",
-      "expect": ["handover"],
-      "forbid": ["scope", "quote"],
-      "critical": true,
-      "mustInclude": ["safety"]
+      "expect": [
+        "handover"
+      ],
+      "forbid": [
+        "scope",
+        "quote"
+      ],
+      "expectOutcome": "unknown",
+      "mustInclude": [
+        "safety"
+      ],
+      "critical": true
     },
     {
       "id": "handover-press",
       "message": "a journalist is asking about our new branch",
-      "expect": ["handover"],
+      "expect": [
+        "handover"
+      ],
+      "expectOutcome": "unknown",
       "critical": true
     },
     {
       "id": "handover-legal",
       "message": "a customer is threatening to sue us over a photo we posted",
-      "expect": ["handover"],
+      "expect": [
+        "handover"
+      ],
+      "expectOutcome": "unknown",
       "critical": true
     },
     {
       "id": "handover-gdpr",
       "message": "someone wants their personal data deleted from our mailing list",
-      "expect": ["handover"],
+      "expect": [
+        "handover"
+      ],
+      "expectOutcome": "unknown",
       "critical": true
     },
     {
       "id": "handover-discount",
       "message": "can we waive the fee for the billboard this once",
-      "expect": ["handover"],
-      "forbid": ["quote"],
+      "expect": [
+        "handover"
+      ],
+      "forbid": [
+        "quote"
+      ],
+      "expectOutcome": "unknown",
       "critical": true
     },
     {
       "id": "greeting-hi",
       "message": "hi",
-      "expect": ["greeting"]
+      "expect": [
+        "greeting"
+      ]
     },
     {
       "id": "greeting-thanks",
       "message": "thanks, that's great",
-      "expect": ["greeting"],
-      "mustNotInclude": ["don't have that capability"]
+      "expect": [
+        "greeting"
+      ],
+      "mustNotInclude": [
+        "don't have that capability"
+      ]
     },
     {
       "id": "clarify-off-topic",
       "message": "what's the weather like",
-      "expect": ["clarify"],
-      "forbid": ["quote", "budget"]
+      "expect": [
+        "clarify"
+      ],
+      "forbid": [
+        "quote",
+        "budget"
+      ],
+      "expectOutcome": "unknown"
     },
     {
       "id": "clarify-vague",
       "message": "we need some help with the thing we discussed",
-      "expect": ["clarify"],
-      "mustNotInclude": ["free of charge"]
+      "expect": [
+        "clarify"
+      ],
+      "expectOutcome": "unknown",
+      "mustNotInclude": [
+        "free of charge"
+      ]
     },
     {
       "id": "clarify-no-invented-price",
       "message": "roughly what does a big campaign cost these days",
+      "expectOutcome": "unknown",
+      "mustNotInclude": [
+        "£",
+        "GBP 1",
+        "approximately"
+      ],
       "critical": true,
-      "mustNotInclude": ["£", "GBP 1", "approximately"],
-      "note": "No figure may appear that did not come from the rate card."
+      "knownFailure": "RC-4, fixed by T20 (candidate admission). RIVAL_FLOOR=0.5 and MIN_RIVAL_COVERAGE=0.25 admit near-ties as genuine alternatives, and >MAX_CANDIDATES discards a correct rank-1 answer outright.",
+      "note": "A vague pricing question must not settle on a service. Agreeing on the video items answers 'included, free of charge' to a question about cost."
+    },
+    {
+      "id": "golden-01-marketing-calendar",
+      "message": "Can you send us this month's marketing calendar?",
+      "expect": [
+        "scope"
+      ],
+      "expectItem": "strategic-support--marketing-calendars",
+      "expectVerdict": "in_scope",
+      "knownFailure": "RC-4, fixed by T20 (candidate admission). RIVAL_FLOOR=0.5 and MIN_RIVAL_COVERAGE=0.25 admit near-ties as genuine alternatives, and >MAX_CANDIDATES discards a correct rank-1 answer outright."
+    },
+    {
+      "id": "golden-02-meta-ads-push",
+      "message": "We want to run a Meta ads push for the summer, can central team set it up?",
+      "expect": [
+        "scope"
+      ],
+      "expectVerdict": "in_scope"
+    },
+    {
+      "id": "golden-03-campaign-wrap-up",
+      "message": "Can we get a wrap-up on how the Heart Radio campaign performed?",
+      "expect": [
+        "scope"
+      ],
+      "expectItem": "analytics-tracking-dashboards--campaign-wrap-ups",
+      "expectVerdict": "in_scope",
+      "knownFailure": "RC-3, fixed by T19. The rival gate fires on any rare word, so the station name in 'Heart Radio' pulls in the unrelated Radio ads item and forces a clarification.",
+      "note": "'Heart Radio' is a station name. Treating 'radio' as a request for Radio ads turns a control question into a clarification."
+    },
+    {
+      "id": "golden-04-email-template",
+      "message": "Need a new email template for our autumn promo.",
+      "expect": [
+        "scope"
+      ],
+      "expectVerdict": "in_scope",
+      "note": "Two template items apply and agree; either is a correct answer."
+    },
+    {
+      "id": "golden-05-seo-report",
+      "message": "Can we see this month's SEO report?",
+      "expect": [
+        "scope"
+      ],
+      "expectVerdict": "in_scope"
+    },
+    {
+      "id": "golden-06-gm-121-call",
+      "message": "Can we set up a 1:1 monthly call between our GM and the marketing team?",
+      "expect": [
+        "scope"
+      ],
+      "expectItem": "strategic-support--marketing-gms-calls-121",
+      "expectVerdict": "out_of_scope",
+      "critical": true,
+      "knownFailure": "RC-4, fixed by T20 (candidate admission). RIVAL_FLOOR=0.5 and MIN_RIVAL_COVERAGE=0.25 admit near-ties as genuine alternatives, and >MAX_CANDIDATES discards a correct rank-1 answer outright.",
+      "note": "'GM' names this item outright. The rival call items are in scope, so a clarification here risks promising a call the retainer does not cover."
+    },
+    {
+      "id": "golden-07-qr-tracking",
+      "message": "Do you track QR code scan data for us?",
+      "expect": [
+        "scope"
+      ],
+      "expectItem": "analytics-tracking-dashboards--qr-code-reports",
+      "expectVerdict": "out_of_scope"
+    },
+    {
+      "id": "golden-08-local-influencer",
+      "message": "Can central team find us a local influencer?",
+      "expect": [
+        "scope"
+      ],
+      "expectItem": "strategic-support--influencer-sourcing",
+      "expectVerdict": "local"
+    },
+    {
+      "id": "golden-09-translate-to-french",
+      "message": "We need our web page copy translated to French, can you do it?",
+      "expect": [
+        "scope"
+      ],
+      "expectOutcome": "ambiguous",
+      "mustNotInclude": [
+        "free of charge"
+      ],
+      "critical": true,
+      "note": "Encodes the current design (ask, because Web pages and Translation disagree). The 26 Aug test expected Local. Pending the product ruling — see the remediation plan."
+    },
+    {
+      "id": "golden-10-facebook-inbox",
+      "message": "Can central team manage our Facebook inbox replies?",
+      "expect": [
+        "scope"
+      ],
+      "expectItem": "organic-social-media-and-community-management--inbox-management",
+      "expectVerdict": "local"
+    },
+    {
+      "id": "golden-11-leaflet",
+      "message": "We need a leaflet for our half-term promo, can you make one?",
+      "expect": [
+        "scope"
+      ],
+      "expectItem": "renders-and-other-designs-for-venue-exteriors--posters-leaflets-flyer-designs-in-and-out-of-venue",
+      "expectVerdict": "quote_required"
+    },
+    {
+      "id": "golden-12-billboard-design",
+      "message": "We want a billboard near the venue, can you design it?",
+      "expect": [
+        "scope"
+      ],
+      "expectItem": "photography--billboards",
+      "expectVerdict": "quote_required"
+    },
+    {
+      "id": "golden-13-business-cards",
+      "message": "Can you design new business cards for our sales team?",
+      "expect": [
+        "scope"
+      ],
+      "expectItem": "renders-and-other-designs-for-venue-exteriors--business-cards",
+      "expectVerdict": "quote_required"
+    },
+    {
+      "id": "golden-14-highlight-video",
+      "message": "We're doing a launch event, can you make a highlight video?",
+      "expect": [
+        "scope"
+      ],
+      "expectItem": "events--event-videos",
+      "expectVerdict": "quote_required"
+    },
+    {
+      "id": "golden-15-site-visit",
+      "message": "We'd like someone from the team to visit us on-site, is that possible?",
+      "expect": [
+        "scope"
+      ],
+      "expectItem": "strategic-support--site-visits-if-required-travel-accommodation-to-be-paid-for-by-acme",
+      "expectVerdict": "quote_required"
+    },
+    {
+      "id": "golden-16-budget-sticky-branch",
+      "message": "what's our remaining marketing budget for this month",
+      "state": {
+        "budgetBranch": "Acme Manchester"
+      },
+      "expect": [
+        "budget"
+      ],
+      "mustInclude": [
+        "Manchester"
+      ],
+      "note": "A relative month must resolve through the fiscal calendar. Passes under the rules planner and fails under the deployed one, which emits month='this month' — run --mode deployed."
+    },
+    {
+      "id": "golden-18-uk-total-budget",
+      "message": "What's the total UK marketing budget for this month?",
+      "expect": [
+        "budget"
+      ],
+      "mustInclude": [
+        "2,500"
+      ],
+      "critical": true,
+      "note": "P0 from the 26 Aug round. The caps are on the sheet; the deployed planner's free-text month turned the column key into 'Thi'. Deliberately unmarked: it passes under the rules planner that gates CI, and a red here in --mode deployed is the signal that T7 has not landed yet."
+    },
+    {
+      "id": "golden-19-council-sponsorship",
+      "message": "We want to sponsor a local council event, can you help and how much would it cost?",
+      "expect": [
+        "clarify"
+      ],
+      "expectOutcome": "unknown",
+      "note": "Sponsorship is not a catalogue service. Routing to a human is the correct answer; offering four near-tied items is not. Fixed by T10 as a side effect - the single-token floor removed enough weak candidates to leave nothing confident enough to name."
+    },
+    {
+      "id": "golden-21-build-a-website",
+      "message": "Can you build us a new website from scratch?",
+      "expect": [
+        "clarify"
+      ],
+      "expectOutcome": "unknown",
+      "mustNotInclude": [
+        "free of charge",
+        "included in our scope"
+      ],
+      "critical": true,
+      "note": "P0. Building a website is not in the corpus. The word 'website' alone must not carry an in-scope verdict via the Web pages alias."
+    },
+    {
+      "id": "golden-22-on-site-ad-creative",
+      "message": "We need creative assets for an on-site ad placement.",
+      "expect": [
+        "scope"
+      ],
+      "expectItem": "design-creative--design-for-paid-campaigns-across-all-platforms-inc-web-and-on-site-placements",
+      "expectVerdict": "in_scope",
+      "knownFailure": "RC-4, fixed by T20 (candidate admission). RIVAL_FLOOR=0.5 and MIN_RIVAL_COVERAGE=0.25 admit near-ties as genuine alternatives, and >MAX_CANDIDATES discards a correct rank-1 answer outright."
+    },
+    {
+      "id": "golden-23-adhoc-email-blast",
+      "message": "Can you send one more one-off email blast this month? We've already asked for a few.",
+      "expect": [
+        "scope"
+      ],
+      "expectItem": "email-marketing-sms--ad-hoc-email-requests-typically-4-5-per-month",
+      "expectVerdict": "quote_required"
+    },
+    {
+      "id": "golden-24-in-venue-screens",
+      "message": "Can you make new graphics for our in-venue screens?",
+      "expect": [
+        "scope"
+      ],
+      "expectItem": "renders-and-other-designs-for-venue-exteriors--graphics-for-screens",
+      "expectVerdict": "in_scope",
+      "knownFailure": "RC-4, fixed by T20 (candidate admission). RIVAL_FLOOR=0.5 and MIN_RIVAL_COVERAGE=0.25 admit near-ties as genuine alternatives, and >MAX_CANDIDATES discards a correct rank-1 answer outright.",
+      "note": "A clean rank-1 match. Returning UNKNOWN because the field is crowded discards a correct answer."
+    },
+    {
+      "id": "golden-25-instagram-scheduling",
+      "message": "Can central team schedule our Instagram posts for the week?",
+      "expect": [
+        "scope"
+      ],
+      "expectItem": "organic-social-media-and-community-management--content-scheduling",
+      "expectVerdict": "local",
+      "mustNotInclude": [
+        "free of charge",
+        "no extra cost"
+      ],
+      "critical": true,
+      "knownFailure": "RC-1/RC-3, fixed by T12 (stemmer) + T19 (rival gate). 'schedule' does not match the corpus token 'schedul', so Content scheduling scores below MIN_CONFIDENT_SCORE, and the disagreement guard cannot raise it because every word in its name is common.",
+      "note": "P0. 'schedule' must reach an item named 'Content scheduling'. Answering in_scope tells an AM central marketing owns work the DB marks Local."
     }
   ]
 }

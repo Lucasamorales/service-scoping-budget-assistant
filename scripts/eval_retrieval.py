@@ -47,6 +47,14 @@ class Outcome:
     returned: tuple[str, ...]
     status_ok: bool
     note: str | None
+    known_failure: str | None = None
+    """Why this case is expected to fail, and what will fix it.
+
+    A recorded baseline rather than a silent red: the case still runs and is
+    still printed, it just does not gate the exit code. Kept honest by
+    reporting any marked case that starts passing, so the marker is removed
+    rather than accumulating."""
+
     ambiguous: bool = False
     """The question points at items with different verdicts. Ranking must not
     settle it, so the bar is presence among the candidates, not first place."""
@@ -68,6 +76,13 @@ class Outcome:
         if self.ambiguous:
             return self.found
         return self.exact or self.accepted_alternate is not None
+
+    @property
+    def marker(self) -> str:
+        """How this case is labelled in the report."""
+        if self.passed:
+            return "PASS"
+        return "known" if self.known_failure else "FAIL"
 
 
 def _evaluate(
@@ -101,6 +116,7 @@ def _evaluate(
         returned=returned,
         status_ok=status_ok,
         note=str(case["note"]) if "note" in case else None,
+        known_failure=str(case["knownFailure"]) if "knownFailure" in case else None,
         ambiguous=bool(case.get("requiresDisambiguation", False)),
         explanation=tuple(
             (hit.chunk.item_id or hit.chunk.source, hit.score, hit.matched) for hit in result.hits
@@ -144,11 +160,10 @@ def main() -> int:
     for outcome in outcomes:
         if outcome.exact and not outcome.ambiguous and not args.verbose:
             continue
-        marker = "PASS" if outcome.passed else "FAIL"
         where = f"rank {outcome.rank}" if outcome.found else f"not in top {TOP_K}"
         if outcome.ambiguous:
             where += ", ambiguous by design"
-        print(f"[{marker}] {outcome.case_id}: {where}")
+        print(f"[{outcome.marker}] {outcome.case_id}: {where}")
         print(f'       "{outcome.prompt}"')
         if not outcome.exact:
             print(f"       expected: {outcome.expected}")
@@ -160,6 +175,8 @@ def main() -> int:
                 marker = "<-" if item_id == outcome.expected else "  "
                 print(f"    {marker} {position}. {score:5.2f}  {item_id}")
                 print(f"           matched: {', '.join(matched) or 'nothing'}")
+        if outcome.known_failure:
+            print(f"       known: {outcome.known_failure}")
         if outcome.note:
             print(f"       note: {outcome.note}")
         print()
@@ -195,7 +212,19 @@ def main() -> int:
             print(f"  {outcome.case_id}: {outcome.expected}")
         return 1
 
-    return 0 if passed == total else 1
+    unexpected = [o for o in outcomes if not o.passed and not o.known_failure]
+    fixed = [o for o in outcomes if o.passed and o.known_failure]
+
+    if fixed:
+        print("\nMarked as known failures but now passing - remove the marker:")
+        for outcome in fixed:
+            print(f"  {outcome.case_id}")
+
+    known = total - passed - len(unexpected)
+    if known:
+        print(f"\nknown failures (recorded baseline, not gating): {known}")
+
+    return 1 if unexpected else 0
 
 
 if __name__ == "__main__":

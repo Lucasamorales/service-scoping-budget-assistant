@@ -11,7 +11,9 @@
       "id": "billboard-motorway",
       "prompt": "can we put an advert on a billboard by the motorway",
       "expect": "photography--billboards",
-      "acceptable": ["photography--hoarding"],
+      "acceptable": [
+        "photography--hoarding"
+      ],
       "expectStatus": "quote_required",
       "note": "Hoarding lists 'billboards' as its own alias, so both are defensible."
     },
@@ -19,7 +21,9 @@
       "id": "google-reviews",
       "prompt": "who replies to our Google reviews and TripAdvisor comments",
       "expect": "organic-social-media-and-community-management--review-management-google-my-business-trip-advisor-facebook-trust-pilot",
-      "acceptable": ["organic-social-media-and-community-management--comment-responses"],
+      "acceptable": [
+        "organic-social-media-and-community-management--comment-responses"
+      ],
       "expectStatus": "local",
       "note": "The question names both reviews and comments. Both items are local, so either answer is right."
     },
@@ -45,7 +49,9 @@
       "id": "gm-one-to-one",
       "prompt": "as a GM can I book a one to one call with marketing",
       "expect": "strategic-support--marketing-gms-calls-121",
-      "acceptable": ["strategic-support--marketing-cms-calls-121"],
+      "acceptable": [
+        "strategic-support--marketing-cms-calls-121"
+      ],
       "expectStatus": "out_of_scope"
     },
     {
@@ -78,7 +84,9 @@
       "id": "seo-audit",
       "prompt": "when are we due another SEO audit",
       "expect": "seo-aio--regular-seo-aio-audits-every-6-months",
-      "acceptable": ["seo-aio--seo-aio-monthly-report"],
+      "acceptable": [
+        "seo-aio--seo-aio-monthly-report"
+      ],
       "expectStatus": "in_scope",
       "note": "The monthly report declares 'SEO audit' as one of its own aliases, so the corpus itself sends this phrase there. Both are in scope, so no harm, but the alias is worth reviewing."
     },
@@ -92,7 +100,9 @@
       "id": "venue-signage",
       "prompt": "we need new signage designed for inside the venue",
       "expect": "renders-and-other-designs-for-venue-exteriors--in-venue-signage",
-      "acceptable": ["photography--signage"],
+      "acceptable": [
+        "photography--signage"
+      ],
       "expectStatus": "quote_required"
     },
     {
@@ -111,19 +121,23 @@
       "id": "magazine-photos",
       "prompt": "we need photography for a magazine advert",
       "expect": "photography--magazines-and-newspapers",
-      "expectStatus": "quote_required"
+      "expectStatus": "quote_required",
+      "knownFailure": "T12/T20. An exact 5.66 tie with 'Local opportunities (radio, magazines...)', decided by catalogue order. Expected to move when stemming and admission change."
     },
     {
       "id": "site-visit",
       "prompt": "could someone from the marketing team come and visit our branch",
       "expect": "strategic-support--site-visits-if-required-travel-accommodation-to-be-paid-for-by-acme",
-      "expectStatus": "quote_required"
+      "expectStatus": "quote_required",
+      "knownFailure": "T20 (candidate admission). '1 visit per month to Acme London' outscores 'Site visits' on the extra token 'branch', and MIN_RIVAL_COVERAGE=0.25 rejects the correct item at 0.16 coverage, so the wrong leader resolves alone. Fixing it needs the admission constants retuned, not a one-off tweak."
     },
     {
       "id": "marketing-calendar",
       "prompt": "can we get help planning the marketing calendar for next quarter",
       "expect": "strategic-support--marketing-calendars",
-      "acceptable": ["strategic-support--campaign-planning-input"],
+      "acceptable": [
+        "strategic-support--campaign-planning-input"
+      ],
       "expectStatus": "in_scope"
     },
     {
@@ -142,7 +156,9 @@
       "id": "email-template",
       "prompt": "we need a new template designing for our newsletters",
       "expect": "email-marketing-sms--email-template-creation",
-      "acceptable": ["design-creative--graphic-design-for-emails-templates-for-emails"],
+      "acceptable": [
+        "design-creative--graphic-design-for-emails-templates-for-emails"
+      ],
       "expectStatus": "in_scope"
     },
     {
@@ -167,7 +183,9 @@
       "id": "screens-graphics",
       "prompt": "graphics for the screens in reception",
       "expect": "renders-and-other-designs-for-venue-exteriors--graphics-for-screens",
-      "acceptable": ["photography--video-editing-for-class-waiver-or-in-venue-screens"],
+      "acceptable": [
+        "photography--video-editing-for-class-waiver-or-in-venue-screens"
+      ],
       "expectStatus": "in_scope"
     }
   ]

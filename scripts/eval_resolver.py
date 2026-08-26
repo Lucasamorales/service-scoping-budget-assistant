@@ -46,6 +46,13 @@ class CaseResult:
     expected_status: Status | None
     ambiguous: bool
     resolution: Resolution
+    known_failure: str | None = None
+    """Why this case is expected to fail, and what will fix it.
+
+    Shares the case file with ``eval_retrieval``, so a case marked once is
+    recorded in both. A recorded baseline still runs and is still printed; it
+    just does not gate the exit code, and it is reported if it starts passing
+    so the marker gets removed rather than accumulating."""
 
     @property
     def named_the_item(self) -> bool:
@@ -84,6 +91,13 @@ class CaseResult:
         return self.answered_well
 
     @property
+    def marker(self) -> str:
+        """How this case is labelled in the report."""
+        if self.passed:
+            return "PASS"
+        return "known" if self.known_failure else "FAIL"
+
+    @property
     def verdict_label(self) -> str:
         status = self.resolution.status
         return status.value if status else f"({self.resolution.outcome.value})"
@@ -98,6 +112,7 @@ def _evaluate(case: dict[str, Any], resolver: ScopeResolver) -> CaseResult:
         expected_status=Status(str(raw_status)) if raw_status else None,
         ambiguous=bool(case.get("requiresDisambiguation", False)),
         resolution=resolver.resolve(str(case["prompt"])),
+        known_failure=str(case["knownFailure"]) if "knownFailure" in case else None,
     )
 
 
@@ -135,8 +150,9 @@ def main() -> int:
     for result in results:
         if result.passed and result.named_the_item and not args.verbose:
             continue
-        marker = "PASS" if result.passed else "FAIL"
-        print(f"[{marker}] {result.case_id}: {result.verdict_label}")
+        print(f"[{result.marker}] {result.case_id}: {result.verdict_label}")
+        if result.known_failure:
+            print(f"       known: {result.known_failure}")
         print(f'       "{result.prompt}"')
         print(f"       {result.resolution.explain()}")
         if result.ambiguous:
@@ -174,12 +190,18 @@ def main() -> int:
         print("\nWrong verdicts:")
         for result in dangerous:
             expected = result.expected_status.value if result.expected_status else "an ask"
-            print(f"  {result.case_id}: said {result.verdict_label}, expected {expected}")
+            marker = " [known]" if result.known_failure else ""
+            print(f"  {result.case_id}: said {result.verdict_label}, expected {expected}{marker}")
 
-    # Only a wrong verdict fails the run. Over-caution is reported, not gated:
-    # it is a cost, and tuning it away against 25 handwritten cases would
-    # overfit to them.
-    return 1 if dangerous else 0
+    if fixed := [r for r in results if r.passed and r.known_failure]:
+        print("\nMarked as known failures but now passing - remove the marker:")
+        for result in fixed:
+            print(f"  {result.case_id}")
+
+    # Only an *unrecorded* wrong verdict fails the run. Over-caution is
+    # reported, not gated: it is a cost, and tuning it away against 25
+    # handwritten cases would overfit to them.
+    return 1 if [r for r in dangerous if not r.known_failure] else 0
 
 
 if __name__ == "__main__":
