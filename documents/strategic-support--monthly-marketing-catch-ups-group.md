@@ -10,7 +10,7 @@
 Monthly marketing catch ups - group are part of the Strategic support category and are within our scope to provide.
 
 ## What This Item Covers
-Monthly marketing catch ups - group involve regular meetings where the central marketing team discusses ongoing marketing initiatives, shares updates, and coordinates efforts across different departments. These meetings ensure that all stakeholders are aligned on marketing strategies and objectives.
+Monthly marketing catch ups - group are group sessions: several attendees from different departments on the same call, where the central marketing team discusses ongoing initiatives, shares updates, and coordinates efforts. Attendance is open to the whole group of stakeholders rather than arranged between two named people. These meetings ensure that all stakeholders are aligned on marketing strategies and objectives.
 
 ## What the "Y" Status Means for This Item
 The central marketing team performs monthly marketing catch ups - group as part of their responsibilities. This item is included within our scope without any additional cost or need for a quote. Requesters should expect to be invited to these meetings and participate in discussions.
