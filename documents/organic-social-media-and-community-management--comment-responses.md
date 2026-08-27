@@ -4,7 +4,7 @@
 **Item:** Comment responses
 **Status code:** Local
 **Status meaning:** Taken by local or operation teams
-**Also known as:** social media replies, community engagement, online conversation management
+**Also known as:** social media replies, community engagement, online conversation management, instagram, twitter, youtube
 
 ## Summary
 Comment responses are part of organic social media and community management activities that are handled locally by the site and operations teams.

@@ -4,7 +4,7 @@
 **Item:** Content scheduling
 **Status code:** Local
 **Status meaning:** Taken by local or operation teams
-**Also known as:** posting calendar, content planning, social media scheduling, content deployment
+**Also known as:** posting calendar, content planning, social media scheduling, content deployment, instagram, twitter, youtube
 
 ## Summary
 Content scheduling is a part of organic social media and community management that involves organizing and planning the publication of content on social media platforms. It is managed locally by the site and operations teams.

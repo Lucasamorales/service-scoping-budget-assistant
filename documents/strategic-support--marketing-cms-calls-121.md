@@ -4,7 +4,7 @@
 **Item:** Marketing + CMs calls - 121
 **Status code:** N
 **Status meaning:** Can't include as it would require additional resources
-**Also known as:** marketing and customer management strategy calls, CMs and marketing discussions, strategic marketing meetings, marketing and CMs consultation
+**Also known as:** marketing and customer management strategy calls, CMs and marketing discussions, strategic marketing meetings, marketing and CMs consultation, 1:1 call, 121 call, CM catch-up
 
 ## Summary
 Marketing + CMs calls - 121 is a strategic support item that cannot be included due to the requirement for additional resources.

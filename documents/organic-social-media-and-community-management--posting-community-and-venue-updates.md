@@ -4,7 +4,7 @@
 **Item:** Posting community and venue updates
 **Status code:** Local
 **Status meaning:** Taken by local or operation teams
-**Also known as:** social media updates, venue news posts, community bulletin updates
+**Also known as:** social media updates, venue news posts, community bulletin updates, instagram, twitter, youtube
 
 ## Summary
 Posting community and venue updates is part of organic social media and community management that is handled locally by the site and operations teams.

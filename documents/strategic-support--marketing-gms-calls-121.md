@@ -4,7 +4,7 @@
 **Item:** Marketing + GMs calls - 121
 **Status code:** N
 **Status meaning:** Can't include as it would require additional resources
-**Also known as:** marketing and general manager calls, GM callouts, marketing outreach, strategic marketing meetings
+**Also known as:** marketing and general manager calls, GM callouts, marketing outreach, strategic marketing meetings, 1:1 call, 121 call, GM catch-up
 
 ## Summary
 Marketing + GMs calls - 121 is a strategic support item that cannot be included due to the need for additional resources.

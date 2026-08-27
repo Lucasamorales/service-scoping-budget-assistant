@@ -86,21 +86,69 @@ def test_every_item_is_reachable_by_at_least_one_alias(corpus: CatalogLoadResult
         assert item.aliases, f"{item.source} has no aliases"
 
 
-def test_the_known_ambiguous_phrases(corpus: CatalogLoadResult) -> None:
-    """Genuine domain overlaps the resolver has to disambiguate rather than guess.
+def _shared_aliases(corpus: CatalogLoadResult) -> dict[str, set[str]]:
+    """Aliases more than one item declares, mapped to the verdicts they span."""
+    return {
+        term: {corpus.catalog.require(item_id).status.value for item_id in ids}
+        for term, ids in corpus.catalog.alias_index.items()
+        if len(ids) > 1
+    }
 
-    'video post production' spanning three items across two sections is the
-    clearest example of why a similarity score must not pick the verdict.
+
+def test_the_known_ambiguous_phrases(corpus: CatalogLoadResult) -> None:
+    """Aliases that span *disagreeing* verdicts, pinned deliberately.
+
+    These are the genuine domain overlaps the resolver has to put to the user
+    rather than guess at, and adding one is a corpus authoring decision that
+    deserves a second pair of eyes: "video post production" spanning three
+    items across two sections is the clearest example of why a similarity
+    score must not pick the verdict.
+
+    An alias shared by items that *agree* is harmless and deliberately not
+    listed — whichever one a request means, the answer is the same. That is
+    what lets the platform names be declared on every Organic social item
+    without turning each of them into a question.
     """
-    ambiguous = {
-        term: len(ids) for term, ids in corpus.catalog.alias_index.items() if len(ids) > 1
+    disagreeing = {
+        term: sorted(verdicts)
+        for term, verdicts in _shared_aliases(corpus).items()
+        if len(verdicts) > 1
     }
-    assert ambiguous == {
-        "billboards": 2,
-        "content planning": 3,
-        "editorial calendar": 2,
-        "outdoor advertising": 2,
-        "strategic marketing meetings": 2,
-        "video post production": 3,
-        "visual content": 2,
+    assert disagreeing == {
+        "content planning": ["in_scope", "local"],
+        "editorial calendar": ["in_scope", "local"],
+        "video post production": ["in_scope", "quote_required"],
     }
+
+
+_KNOWN_FREE_VERSUS_CHARGEABLE = {
+    # Editing footage the venue already has is in scope; producing a video for
+    # a campaign is quoted. The phrase honestly covers both, which is why the
+    # resolver's job here is to ask rather than to rank.
+    "video post production",
+}
+
+
+def test_no_new_alias_spans_a_free_and_a_chargeable_item(
+    corpus: CatalogLoadResult,
+) -> None:
+    """The overlap that costs money, kept separate from the ones that do not.
+
+    Two items disagreeing about *who does it* costs a clarifying question. Two
+    disagreeing about whether it is free is the error this product exists to
+    prevent, and an alias is how they get quietly connected — it is a phrase
+    somebody wrote in a document, not something anybody reviewed against the
+    rest of the corpus.
+
+    One such alias exists and is handled. This fails on a second, so adding it
+    is a decision rather than an accident.
+    """
+    offenders = {
+        term
+        for term, verdicts in _shared_aliases(corpus).items()
+        if {"in_scope", "quote_required"} <= verdicts
+    }
+    assert offenders <= _KNOWN_FREE_VERSUS_CHARGEABLE, (
+        "new alias(es) spanning free and chargeable items: "
+        f"{sorted(offenders - _KNOWN_FREE_VERSUS_CHARGEABLE)}"
+    )

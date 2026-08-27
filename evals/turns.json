@@ -51,8 +51,7 @@
       ],
       "expectVerdict": "local",
       "critical": true,
-      "knownFailure": "Corpus gap, not a ranking defect. 'Instagram' appears in zero documents, as do Twitter and YouTube; the organic social items never name the platforms they cover, so the request has no distinctive word to match and the resolver correctly declines. Fixed by naming the platforms as aliases - see T26.",
-      "note": "Every item in Organic social media is Local, so the verdict is certain even though the exact item is arguable. Answering in_scope tells an AM central marketing owns work the local team does."
+      "note": "Fixed by T26. The Organic social items now name the platforms they cover; 'Instagram' previously appeared in no document at all."
     },
     {
       "id": "scope-out-of-scope",
@@ -634,8 +633,7 @@
       "expectItem": "strategic-support--marketing-gms-calls-121",
       "expectVerdict": "out_of_scope",
       "critical": true,
-      "knownFailure": "Corpus gap, not a ranking defect. The item is named 'Marketing + GMs calls - 121', and no phrasing a person uses reaches it: '1:1' tokenises to ('1','1') and 'one to one' to nothing at all, because 'one' is a stopword. Fixed by declaring '1:1', 'one to one' and 'one-to-one' as aliases on the Scope sheet - see T25.",
-      "note": "'GM' names this item outright. The rival call items are in scope, so a clarification here risks promising a call the retainer does not cover."
+      "note": "Fixed by T25. '1:1 call' and '121 call' are declared on the two -121 items. 'one to one' would not have worked: 'one', 'to' and 'on' are all stopwords, so that phrasing tokenises to nothing."
     },
     {
       "id": "golden-07-qr-tracking",
@@ -816,7 +814,6 @@
         "no extra cost"
       ],
       "critical": true,
-      "knownFailure": "Passes in the deployed configuration and fails offline. Telling a genuine second reading of a request from a coincidental shared word is a question about meaning, and keyword scoring cannot answer it: across these cases genuine disagreement measures 0.77-0.99 of the leader's confidence and a pure coincidence 0.79, which no threshold separates. With embeddings the same cases measure 0.88-1.00 against 0.69. Recorded rather than tuned away, because the offline mode is a fallback and asking too often is its safe failure direction.",
       "note": "P0. 'schedule' must reach an item named 'Content scheduling'. Answering in_scope tells an AM central marketing owns work the DB marks Local."
     }
   ]

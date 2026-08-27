@@ -4,7 +4,7 @@
 **Item:** Inbox management
 **Status code:** Local
 **Status meaning:** Taken by local or operation teams
-**Also known as:** inbox handling, message management, customer interaction management
+**Also known as:** inbox handling, message management, customer interaction management, instagram, twitter, youtube
 
 ## Summary
 Inbox management is a part of organic social media and community management that is handled by the local site and operations teams.
