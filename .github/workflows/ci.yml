@@ -68,6 +68,24 @@ jobs:
         # scored against keyword retrieval anyway.
         run: python -m scripts.build_index
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: widget/package-lock.json
+
+      - name: Widget bundle is current
+        # dist/ is committed because the image copies it, so it can drift from
+        # src/ without anything noticing — and it had, by six days. Rebuilding
+        # and diffing is the only way a committed build artefact stays honest.
+        run: |
+          cd widget
+          npm ci
+          npm run build
+          cd ..
+          git diff --exit-code -- widget/dist \
+            || { echo "::error::widget/dist is stale. Run 'npm run build' in widget/ and commit."; exit 1; }
+
       - name: Tests
         run: python -m pytest -q
 

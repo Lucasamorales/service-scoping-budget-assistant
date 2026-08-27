@@ -206,7 +206,7 @@ lines from your local `.env`**, which is the only place they still exist.
 | T18 | One notion of "close enough to be a real alternative", used by retrieval and the guard | RC-3 | Done |
 | T19 | The disagreement guard requires corroboration, not just a shared word | RC-3 | Done |
 | T20 | Retune admission; stop discarding a correct rank-1 | RC-4 | Done |
-| T21 | Composer returns a structured verdict claim; code compares it to the fact pack | RC-6 | To do |
+| T21 | Composer returns a structured verdict claim; code compares it to the fact pack | RC-6 | Done |
 
 **In the deployed configuration the turn eval goes 68/74 → 72/74.** #03, #22, #24 and **#25**
 are fixed. #25 — the worst defect of the golden round — now resolves outright to Content
@@ -274,15 +274,71 @@ Product ruling, 26 Aug: ask. Worst case the user reiterates. The eval encodes it
 corroboration check above exists to make sure it is a *genuine* second reading being put to them
 rather than a word that happened to appear twice in the corpus.
 
+## T21 — the guard stopped being a phrasebook
+
+`guard.py` read replies for wordings that *sound like* a verdict, so it could only recognise the
+ones somebody thought of in advance. A model that paraphrases eventually finds one nobody did —
+it already had. "Building a new website from scratch isn't something the central marketing team
+handles" flipped an in-scope verdict into a refusal and shipped, because that phrasing is not on
+the list.
+
+A turn carrying a verdict now returns `{"verdict": ..., "reply": ...}` and declares which verdict
+its prose conveys. Code compares that to the fact pack. A flip is caught however it is worded,
+and the regex checks stay as a backstop for what a correct declaration says nothing about — an
+invented figure, the wrong country, a claim that an email was sent.
+
+Two details make it work rather than merely sound good:
+
+- **The briefing states the token to copy.** It used to say `Status: Local — Taken by local or
+  operation teams`, leaving the model to translate that into an internal name it had never been
+  shown. It now also states `Status code: local`. Asking a model to guess your enum is a way to
+  manufacture violations.
+- **A malformed reply is unusable, not an offence.** It falls back to deterministic wording
+  rather than being treated as a lie. Losing a turn's phrasing costs far less than trusting prose
+  nobody checked.
+
+**Measured against the live model over all 74 cases: 31 verdict-carrying turns, 31 written by the
+model, zero fallbacks.** The contract holds in practice, which was the risk worth checking — a
+format the model routinely failed would have turned every scope answer deterministic.
+
+Only turns that carry a verdict are asked for JSON. Streaming is unaffected: those turns were
+already buffered, because a guard cannot un-send a fragment.
+
 ## Phase 5 — data and honesty
 
 | ID | Task | Status |
 |---|---|---|
 | T22 | Rename the Copywriting item "Paid ads" so it stops colliding with the Paid ads section | Needs the Scope sheet owner |
+| T23 | Fix the citation line on the catalog-list path | Done |
+| T24 | Keep build artefacts newer than their sources | Done |
 | T25 | Declare `1:1`, `one to one`, `one-to-one` as aliases on the two `- 121` call items | Needs the Scope sheet owner |
 | T26 | Name the platforms — Instagram, Twitter/X, YouTube, Facebook, TikTok — as aliases on the Organic social items | Needs the Scope sheet owner |
-| T23 | Fix the citation line on the catalog-list path — "No supporting documents retrieved" misreports a catalog answer | To do |
-| T24 | Keep build artefacts newer than their sources | Index done; `widget/dist` still stale |
+
+**T23** — "No supporting documents retrieved" was reported for turns that never searched, because
+they are answered from the catalogue outright. That is the best-grounded kind of answer this
+system produces, and the line made it read as an invented one during review. A skipped search and
+a search that found nothing now say different things.
+
+**T24** — the committed widget bundle was six days behind its source. Rebuilt, and CI now
+rebuilds and diffs it, because a committed build artefact drifts silently otherwise.
+
+## Found late: the deployed planner is weaker than the rules planner
+
+| ID | Issue | Status |
+|---|---|---|
+| T27 | Gemini's planner misroutes cases the pattern router gets right | To do |
+
+Running the full suite in the deployed configuration surfaced something the per-case runs had
+not. Two turns route correctly under the rules planner and incorrectly under Gemini's:
+
+- `"and manchester?"` after a budget question is planned as **scope** rather than **budget**. The
+  rules planner reads it from sticky state; the model does not.
+- `"who do i email about a new campaign"` is planned as **scope** rather than **roster**, and
+  resolves to a promotional-campaign item — the F3 shape the roster capability exists to prevent.
+
+Neither is a safety failure — no wrong verdict is stated — but both are worse answers in the
+configuration users actually get. Not a regression from this work: it is what the deployed mode
+has always done, and it was invisible until there was a harness that ran it.
 
 ## Waiting on a product ruling
 
