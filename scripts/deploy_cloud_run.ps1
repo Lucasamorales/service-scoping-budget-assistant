@@ -121,6 +121,7 @@ $mailKey = $envMap["MAIL_API_KEY"]
 $mailFrom = $envMap["MAIL_FROM_ADDRESS"]
 $sessionSecret = $envMap["SESSION_TOKEN_SECRET"]
 $password = $envMap["INTERNAL_ACCESS_PASSWORD"]
+$allowedOrigins = $envMap["ALLOWED_ORIGINS"]
 
 # The HMAC that signs session tokens. Every deploy used to mint a fresh one
 # when .env had none, which silently logged out everyone still using the app.
@@ -203,6 +204,14 @@ if (-not [string]::IsNullOrWhiteSpace($sheetId)) {
 if (-not [string]::IsNullOrWhiteSpace($mailFrom)) {
     $envVars += "MAIL_FROM_ADDRESS=$mailFrom"
 }
+# Without this the CORS middleware is never installed, so the service answers
+# only same-origin callers and a widget embedded on another domain fails in the
+# browser before it reaches any of our code. Empty stays empty on purpose:
+# that is the correct setting while the only page is the one this service
+# serves itself.
+if (-not [string]::IsNullOrWhiteSpace($allowedOrigins)) {
+    $envVars += "ALLOWED_ORIGINS=$allowedOrigins"
+}
 
 # Build the knowledge index here rather than inside the image.
 #
@@ -245,7 +254,7 @@ gcloud run deploy $Service `
     --min-instances 0 `
     --max-instances 3 `
     --cpu-boost `
-    --set-env-vars ($envVars -join ",") `
+    --set-env-vars ("^@^" + ($envVars -join "@")) `
     --set-secrets ($secretFlags -join ",") `
     --quiet
 $deployCode = $LASTEXITCODE
