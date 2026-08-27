@@ -48,11 +48,11 @@ citations, and preferring "I don't know" over a guess. These are the gaps.
 
 | ID | Item | Notes |
 |---|---|---|
-| O1 | No alerting or uptime check | Nothing watches the service. If it dies, or Gemini starts refusing, nobody learns until someone tries to use it. The signals already exist and are unwatched: every degraded turn sets `degraded` and logs `wording.guard_violation`. Highest value, ~1 hour |
-| O2 | Token usage is never captured | `usage_metadata` appears nowhere in the codebase, so "what did last month cost" is unanswerable and a cost spike is undetectable. Prerequisite for the cost half of O1 |
+| O1 | ~~No alerting or uptime check~~ | **Done.** `scripts/setup_monitoring.py` — three uptime checks with content matchers on the health body, four alert policies, two log metrics. Idempotent, so it doubles as the record of what exists |
+| O2 | ~~Token usage is never captured~~ | **Done.** Per turn, planning plus wording, in the logs and the audit record. Measured live: ~600 tokens to plan, 2,100–3,700 to word |
 | O3 | No latency SLA, and the obvious one is unreachable | Measured live: health 0.25s, chat 2.8–6.0s. P95 < 2s is impossible while a turn calls Gemini twice. Split it: verdict path < 500ms (already met), whole turn P95 < 8s |
 | O4 | ~~No re-ranking stage~~ | **Measured 27 Aug, not worth building.** See below |
-| O5 | No semantic cache | Deliberately not done. Traffic is a handful of AMs, and budget/quote answers are live figures — caching those would serve stale money. Only ever cache scope verdicts, never budget, quote or mail turns |
+| O5 | No semantic cache (rejected) | Deliberately not done. Traffic is a handful of AMs, and budget/quote answers are live figures — caching those would serve stale money. Only ever cache scope verdicts, never budget, quote or mail turns |
 | O6 | No trace id correlating one request across log lines | Structured logging and a per-turn decision trace exist; joining them for one request is manual. Retrieval scores are not logged either, only matched terms |
 
 ### O4 — why re-ranking was rejected
@@ -85,3 +85,22 @@ with a good candidate list, or in corpus naming — see `docs/REMEDIATION.md`.
 ## Done when cleared
 
 Move rows out of this file into git history / PR notes when shipped; do not leave “done” rows rotting here.
+
+### O1 — what is watched, and what each alert means
+
+Run `python -m scripts.setup_monitoring` to reconcile; `--dry-run` to see without changing.
+
+| Alert | Fires when | Why it matters |
+|---|---|---|
+| Service answering | `"status":"ok"` missing from the health body | Down, or up but unable to serve. A content match, not just a 200 |
+| **Budget sheet readable** | `"budget":true` disappears | Someone unshares the Sheet. The service stays up, returns 200, and silently cannot answer any budget question |
+| **Embeddings present** | `"embeddings":true` disappears | A deploy shipped a keyword-only index. Retrieval quietly narrows — exactly what was live and undetected until 27 Aug |
+| Model contradicting the facts | more than 5 `wording.guard_violation` in an hour | The composer disagreeing with its own verdict. Users see the deterministic wording so nothing wrong is shown, but a run of these means drift |
+
+`acme_turn_tokens` is recorded but **not** alerted on. A threshold chosen before
+there is any data is a guess, and a guessed threshold is how alerting gets muted.
+Set one once there is a week of baseline.
+
+Alerts go to a single email notification channel. Uptime checks run every five
+minutes from four regions, and need two consecutive failures — one missed probe
+from one region is internet weather, and an alert that cries wolf gets ignored.
