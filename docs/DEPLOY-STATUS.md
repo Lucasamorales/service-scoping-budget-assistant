@@ -4,6 +4,7 @@
 **Repo:** https://github.com/your-org/service-scoping-budget-assistant  
 **GCP project:** `your-gcp-project`  
 **Live URL:** https://your-service-url.a.run.app  
+**Current revision:** `acme-scoping-00005-z4v` (27 Aug 2026) — first revision with embeddings  
 **Health:** https://your-service-url.a.run.app/api/health
 
 This file is the session log. Clone/run details that have not changed still live in [`HOSTING.md`](HOSTING.md).
@@ -45,12 +46,12 @@ Log in with `INTERNAL_ACCESS_PASSWORD` from `secrets/cloud-run-password.txt` (or
 | Project number | `000000000000` |
 | Region | `us-central1` |
 | Service | `acme-scoping` |
-| Revision | `acme-scoping-00004-x5t` |
+| Revision | `acme-scoping-00005-z4v` |
 | Image digest | `sha256:63e1570013ab4e751d13efd1a74eb58dc9ba964342921e491215162b1a2528aa` |
 | URLs | `https://your-service-url.a.run.app` and `https://acme-scoping-000000000000.us-central1.run.app` (same service) |
 | Runtime SA | `000000000000-compute@developer.gserviceaccount.com` |
 | Firestore | `(default)` in **`europe-west2`** (cross-region from the service; latency only) |
-| Secret Manager | `acme-session-token-secret`, `acme-internal-access-password`, `acme-gemini-api-key`, `acme-mail-api-key` (currently version 3) |
+| Secret Manager | `acme-session-token-secret`, `acme-internal-access-password`, `acme-gemini-api-key`, `acme-mail-api-key` |
 
 ---
 
@@ -94,3 +95,32 @@ Safe to re-run. If `.env` has the two secrets, they will not be regenerated.
 - Dense embeddings in the image
 - CI on push to `main`
 - Moving service→tier from JSON onto the Sheet
+
+---
+
+## 27 Aug 2026 — embeddings live, and two deploy traps closed
+
+`/api/health` now reports `embeddings: true`. The index is built on the deploying machine
+(Cloud Build has no Gemini key) and shipped inside the image; `deploy_cloud_run.ps1` does it
+automatically, so nothing extra to remember.
+
+Two failures hit on the way, both worth knowing about because they will not recur:
+
+- **PowerShell treated gcloud's stderr as fatal.** gcloud writes advisories and *success* lines
+  to stderr as a matter of course — the ADC quota notice, "Created version [4] of the secret".
+  With `$ErrorActionPreference = "Stop"` each of those aborted the deploy before any exit code
+  was read. The 24 Aug session fixed this for one call; every gcloud call now goes through
+  `Invoke-GCloud`, which tolerates stderr and raises only on a non-zero exit.
+- **Every deploy minted a fresh session HMAC.** With no `SESSION_TOKEN_SECRET` in `.env` the
+  script generated one, used it, and threw it away — silently logging out everyone still in the
+  app, once per deploy. It is now written to `secrets/session-token-secret.txt` (gitignored) and
+  reused, exactly as the login password already was. **Logins issued before 27 Aug are invalid;
+  from here they survive redeploys.**
+
+Verified live after the deploy — the three defects from the 26 Aug golden round:
+
+| Question | Answer now |
+|---|---|
+| Schedule our Instagram posts | handled by your local site and operations teams |
+| Total UK marketing budget this month | £2,500 across all of them |
+| Build us a new website from scratch | not one of our standard central marketing services |

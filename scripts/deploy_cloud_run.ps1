@@ -4,8 +4,9 @@
 #   .\scripts\deploy_cloud_run.ps1
 #
 # Reads non-empty values from .env and stores secrets in Secret Manager.
-# Does not print secret values. The login password is written to
-# secrets/cloud-run-password.txt (gitignored) if it had to be generated.
+# Does not print secret values. Generated credentials are written to
+# gitignored files under secrets/ and reused on later runs, so redeploying
+# neither rotates the session HMAC nor changes the login password.
 
 param(
     [string]$ProjectId = "your-gcp-project",
@@ -18,6 +19,34 @@ $ErrorActionPreference = "Stop"
 # The interpreter that builds the shipped index. Prefer the project venv, so a
 # deploy uses the same dependencies everything else was checked against.
 $Python = if (Test-Path ".venv\Scripts\python.exe") { ".venv\Scripts\python.exe" } else { "python" }
+
+function Invoke-GCloud {
+    # gcloud writes progress and advisories to stderr as a matter of course:
+    # "Updated property [core/project]", API-enablement progress, and the ADC
+    # quota-project notice. With $ErrorActionPreference = "Stop" PowerShell
+    # treats any of that as a terminating error, so a cosmetic warning aborts
+    # the deploy before the exit code is ever looked at. That is what happened
+    # on 27 Aug, and it is the same trap that stopped the first-ever run on a
+    # NOT_FOUND from `gcloud secrets describe`.
+    #
+    # Only the exit code says whether gcloud actually failed. Output is passed
+    # through so callers can capture a --format value.
+    param([Parameter(ValueFromRemainingArguments = $true)][string[]]$GcloudArgs)
+
+    $previous = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    try {
+        $output = & gcloud @GcloudArgs 2>&1
+        $code = $LASTEXITCODE
+    } finally {
+        $ErrorActionPreference = $previous
+    }
+    if ($code -ne 0) {
+        $output | ForEach-Object { Write-Host $_ }
+        throw "gcloud $($GcloudArgs -join ' ') failed (exit $code)."
+    }
+    return $output
+}
 
 function Read-DotEnv {
     param([string]$Path)
@@ -41,21 +70,22 @@ function Ensure-Secret {
     $tmp = [System.IO.Path]::GetTempFileName()
     try {
         [System.IO.File]::WriteAllText($tmp, $Value)
-        # First deploy: secret does not exist yet. gcloud writes NOT_FOUND to
-        # stderr and PowerShell treats that as a terminating error unless we
-        # suppress it and rely on exit code instead of output.
+        # A NOT_FOUND here is the expected first-run answer rather than a
+        # failure, so this one call is checked by exit code directly instead of
+        # going through Invoke-GCloud, which would raise on it.
         $prevEap = $ErrorActionPreference
         $ErrorActionPreference = "Continue"
         gcloud secrets describe $Name --project $ProjectId --format="value(name)" 2>$null | Out-Null
         $exists = ($LASTEXITCODE -eq 0)
         $ErrorActionPreference = $prevEap
+
+        # Both of these announce success on stderr - "Created version [4] of
+        # the secret [...]" - so they need the same tolerance as everything
+        # else. gcloud's idea of stderr is "anything that is not data".
         if ($exists) {
-            gcloud secrets versions add $Name --project $ProjectId --data-file $tmp --quiet | Out-Null
+            Invoke-GCloud secrets versions add $Name --project $ProjectId --data-file $tmp --quiet | Out-Null
         } else {
-            gcloud secrets create $Name --project $ProjectId --data-file $tmp --replication-policy automatic --quiet | Out-Null
-        }
-        if ($LASTEXITCODE -ne 0) {
-            throw "Failed to write secret '$Name' (gcloud exit $LASTEXITCODE)."
+            Invoke-GCloud secrets create $Name --project $ProjectId --data-file $tmp --replication-policy automatic --quiet | Out-Null
         }
     } finally {
         Remove-Item $tmp -ErrorAction SilentlyContinue
@@ -66,18 +96,19 @@ function Ensure-Secret {
 Write-Host "Project: $ProjectId"
 Write-Host "Region:  $Region"
 Write-Host "Service: $Service"
-gcloud config set project $ProjectId --quiet
+Invoke-GCloud config set project $ProjectId --quiet | Out-Null
 
 Write-Host "Enabling APIs..."
-gcloud services enable `
-    run.googleapis.com `
-    artifactregistry.googleapis.com `
-    cloudbuild.googleapis.com `
-    secretmanager.googleapis.com `
-    firestore.googleapis.com `
-    sheets.googleapis.com `
-    --project $ProjectId
-if ($LASTEXITCODE -ne 0) {
+try {
+    Invoke-GCloud services enable `
+        run.googleapis.com `
+        artifactregistry.googleapis.com `
+        cloudbuild.googleapis.com `
+        secretmanager.googleapis.com `
+        firestore.googleapis.com `
+        sheets.googleapis.com `
+        --project $ProjectId | Out-Null
+} catch {
     Write-Host "API enable failed. Cloud Run needs billing on this project:"
     Write-Host "  https://console.cloud.google.com/billing/linkedaccount?project=$ProjectId"
     exit 1
@@ -91,11 +122,25 @@ $mailFrom = $envMap["MAIL_FROM_ADDRESS"]
 $sessionSecret = $envMap["SESSION_TOKEN_SECRET"]
 $password = $envMap["INTERNAL_ACCESS_PASSWORD"]
 
+# The HMAC that signs session tokens. Every deploy used to mint a fresh one
+# when .env had none, which silently logged out everyone still using the app.
+# Reused from a gitignored file the same way the login password is, so it is
+# generated once and then stays put.
+$sessionFile = "secrets/session-token-secret.txt"
+if ([string]::IsNullOrWhiteSpace($sessionSecret) -and (Test-Path $sessionFile)) {
+    $sessionSecret = (Get-Content $sessionFile -Raw).Trim()
+    Write-Host "Reusing SESSION_TOKEN_SECRET from $sessionFile (existing logins survive)."
+}
 if ([string]::IsNullOrWhiteSpace($sessionSecret)) {
     $bytes = New-Object byte[] 32
     [System.Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($bytes)
     $sessionSecret = -join ($bytes | ForEach-Object { $_.ToString("x2") })
-    Write-Host "Generated SESSION_TOKEN_SECRET (stored in Secret Manager, not printed)."
+    if (-not (Test-Path "secrets")) {
+        New-Item -ItemType Directory -Path "secrets" | Out-Null
+    }
+    Set-Content -Path $sessionFile -Value $sessionSecret -NoNewline
+    Write-Host "Generated SESSION_TOKEN_SECRET -> $sessionFile (not printed)."
+    Write-Host "  Anyone currently logged in will need to sign in again after this deploy."
 }
 
 if ([string]::IsNullOrWhiteSpace($password)) {
@@ -131,16 +176,16 @@ if (Ensure-Secret "acme-mail-api-key" $mailKey) {
     $secretFlags += "MAIL_API_KEY=acme-mail-api-key:latest"
 }
 
-$projectNumber = gcloud projects describe $ProjectId --format="value(projectNumber)"
+$projectNumber = (Invoke-GCloud projects describe $ProjectId --format="value(projectNumber)") | Select-Object -Last 1
 $runtimeSa = "$projectNumber-compute@developer.gserviceaccount.com"
 Write-Host "Runtime service account: $runtimeSa"
 
-gcloud projects add-iam-policy-binding $ProjectId `
+Invoke-GCloud projects add-iam-policy-binding $ProjectId `
     --member "serviceAccount:$runtimeSa" `
     --role "roles/secretmanager.secretAccessor" `
     --quiet | Out-Null
 
-gcloud projects add-iam-policy-binding $ProjectId `
+Invoke-GCloud projects add-iam-policy-binding $ProjectId `
     --member "serviceAccount:$runtimeSa" `
     --role "roles/datastore.user" `
     --quiet | Out-Null
@@ -183,6 +228,11 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 Write-Host "Building and deploying (Cloud Build + Cloud Run). This takes a few minutes..."
+# Left as a direct call so Cloud Build progress streams to the console as it
+# happens rather than being buffered until the end. It writes that progress to
+# stderr, so the trap has to be lifted around it and the exit code checked.
+$previousEap = $ErrorActionPreference
+$ErrorActionPreference = "Continue"
 gcloud run deploy $Service `
     --project $ProjectId `
     --region $Region `
@@ -198,8 +248,15 @@ gcloud run deploy $Service `
     --set-env-vars ($envVars -join ",") `
     --set-secrets ($secretFlags -join ",") `
     --quiet
+$deployCode = $LASTEXITCODE
+$ErrorActionPreference = $previousEap
+if ($deployCode -ne 0) {
+    Write-Host ""
+    Write-Host "Deploy failed (gcloud exit $deployCode). The previous revision is still serving."
+    exit 1
+}
 
-$url = gcloud run services describe $Service --project $ProjectId --region $Region --format="value(status.url)"
+$url = (Invoke-GCloud run services describe $Service --project $ProjectId --region $Region --format="value(status.url)") | Select-Object -Last 1
 Write-Host ""
 Write-Host "Deployed: $url"
 Write-Host "Health:   $url/api/health"
