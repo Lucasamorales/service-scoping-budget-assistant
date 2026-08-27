@@ -15,6 +15,55 @@ Active plan: [docs/PLAN-business-flows.md](docs/PLAN-business-flows.md).
 | P5 | ~~Form field entry-ID map~~ | **Killed** — Form is accounts-only; RAG never opens it |
 | P6 | ~~App writes to `DB`~~ | **Killed** — spreadsheet is read-only context |
 | P7 | Country-total budget questions | Caps sheet has rollups; chat defaults to branch only |
+| P8 | Out-of-scope answers offer no next step | The verdict and its wording are right; what is missing is a CTA after the No offering to email Sammy, as `IN_SCOPE` and `QUOTE_REQUIRED` already do for the AM and CM. Needs her address and a fourth pending kind alongside `email_am` / `email_cm_po` / `email_am_variable`. See below |
+| P9 | Real recipients replace the testing placeholders | Robin (AM) and Charlie (CM) in `fixtures/contacts/country_ams.json` are the agency stand-ins covering every country. Sammy is one of the real people, on the PO/AM side as well as owning out-of-scope. **Production blocker** — every CTA emails a placeholder until this lands |
+
+### P8 / P9 — where the routing decisions actually live
+
+Recorded now because the shape is known even though the addresses are not, and
+because these two are one change wearing two hats: both are about who receives
+a turn, and doing them separately means touching the same three places twice.
+
+**Today.** `enrich_scope_flow` in `app/tools/flows.py` overlays a CTA for two of
+the four verdicts — `IN_SCOPE` offers the AM, `QUOTE_REQUIRED` offers the CM for
+a purchase order or the AM when the price is manual. `OUT_OF_SCOPE` and `LOCAL`
+fall through and return `None`.
+
+That is not an oversight. `docs/PLAN-business-flows.md` specifies "Local / No —
+advice from docs; stop" with no action, and the code implements exactly that.
+P8 revises the decision rather than fixing a defect — worth stating plainly,
+because the next person to read that plan will otherwise think the code drifted
+from it.
+
+**The scope is narrow: the answer itself does not change.** The out-of-scope
+verdict is correct and its wording stays exactly as it is. What is added is a
+CTA *after* the No — an offer to email Sammy — in the same shape as the AM and
+CM offers already appended to the other two verdicts. Nothing about how the
+verdict is reached, worded or guarded is in play.
+
+`LOCAL` is untouched and keeps its no-action design: the answer there is "your
+own team already does this", which names the owner in the text itself.
+
+**What P8 needs.** A fourth pending kind and a role to resolve it against.
+`PendingAction.kind` is documented in `app/tools/flows.py` as the three existing
+values, `confirm_pending` maps kind to role at line 184, and `ContactDirectory`
+already resolves by country *and* role — so a new role slots in without new
+machinery. The open question is whether the out-of-scope owner is per-country
+like the AM and CM, or one person globally; Sammy being named without a country
+suggests global, which the directory does not currently model.
+
+**What P9 needs.** The real matrix: who is AM and who is CM in each of the four
+countries, and where Sammy sits. She is described as taking part of the PO/AM
+traffic as well as owning out-of-scope, so she is not simply a fifth row — the
+same person appears in more than one role, which the current one-contact-per-
+country-per-role index allows but the fixture has never exercised.
+
+Related: P2 (international / high-hierarchy bucket) and P3 (CM ≠ AM split) are
+the same conversation. Answer all four together with the business rather than
+patching the fixture piecemeal.
+
+**Until then** the placeholders are correct for testing and must not ship. The
+`notes` field in the contacts fixture says so; keep it accurate.
 
 ## Corpus
 
