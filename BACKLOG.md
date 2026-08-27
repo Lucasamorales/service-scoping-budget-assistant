@@ -82,10 +82,6 @@ a re-ranker would have.
 The bottleneck is no longer retrieval. All four remaining failures are in what the resolver does
 with a good candidate list, or in corpus naming — see `docs/REMEDIATION.md`.
 
-## Done when cleared
-
-Move rows out of this file into git history / PR notes when shipped; do not leave “done” rows rotting here.
-
 ### O1 — what is watched, and what each alert means
 
 Run `python -m scripts.setup_monitoring` to reconcile; `--dry-run` to see without changing.
@@ -104,3 +100,7 @@ Set one once there is a week of baseline.
 Alerts go to a single email notification channel. Uptime checks run every five
 minutes from four regions, and need two consecutive failures — one missed probe
 from one region is internet weather, and an alert that cries wolf gets ignored.
+
+## Done when cleared
+
+Move rows out of this file into git history / PR notes when shipped; do not leave “done” rows rotting here.
