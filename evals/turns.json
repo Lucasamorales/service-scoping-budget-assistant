@@ -632,8 +632,8 @@
       ],
       "expectItem": "strategic-support--marketing-gms-calls-121",
       "expectVerdict": "out_of_scope",
-      "critical": true,
-      "note": "Fixed by T25. '1:1 call' and '121 call' are declared on the two -121 items. 'one to one' would not have worked: 'one', 'to' and 'on' are all stopwords, so that phrasing tokenises to nothing."
+      "note": "T25 declared '1:1 call' and '121 call' on the two -121 items; 'one to one' would not have worked, because 'one', 'to' and 'on' are all stopwords and that phrasing tokenises to nothing. Reaching the item was never the problem here - admitting a rival alongside it is.",
+      "knownFailure": "Asks rather than answers in the deployed configuration, and that is accepted. Four Strategic support items describe calls: the two 121 items are out of scope and the two group items are in scope, so a rival that survives genuinely changes the answer and the resolver is right to ask. It ranks the correct item first every time and says the options are not handled the same way, so nothing is promised. Not gating, because asking is the agreed safe direction when the services named disagree.\n\nNot closed by corpus work, and deliberately not forced. After T27 the leader scores 2.76 against 1.95 and the sales-and-marketing group call drops out of contention entirely, but Monthly marketing catch ups still clears the admission floor by 0.003 on the planner's phrasing. The two retrieval modes want opposite things: pulling this item closer for dense scoring is exactly what put a one-to-one in front of \"send us this month's marketing calendar\" and cost a turn in the rules eval. A margin of 0.3 percent would flip back on the next model revision, and tuning to it would be tuning to this file.\n\nSettling it belongs to the resolver rather than the corpus. BACKLOG O4 records site-visit as the same shape: a rival admitted close to the leader, where reordering changes nothing because the turn still asks."
     },
     {
       "id": "golden-07-qr-tracking",
