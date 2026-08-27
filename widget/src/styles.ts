@@ -116,11 +116,13 @@ header {
   color: var(--header-text);
 }
 
+/* Deliberately no text-transform. The wordmark is "Acme" — a lowercase i and
+   three capitals — and uppercasing it renders the brand wrong. The letter
+   spacing is what carries the wordmark look, not the case. */
 .brand {
   font-size: 13px;
   font-weight: 700;
   letter-spacing: 0.14em;
-  text-transform: uppercase;
   white-space: nowrap;
 }
 
@@ -128,7 +130,6 @@ header {
   font-weight: 400;
   opacity: 0.6;
   letter-spacing: 0.04em;
-  text-transform: none;
 }
 
 .header-actions {
