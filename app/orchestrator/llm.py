@@ -25,6 +25,7 @@ application stays importable without the ``cloud`` extra installed.
 
 from __future__ import annotations
 
+import json
 from collections.abc import Iterator
 from dataclasses import dataclass
 from typing import Any, Protocol
@@ -55,6 +56,31 @@ class ModelUnavailableError(RuntimeError):
 class ModelReply:
     text: str
     model: str
+
+
+def json_object(raw: str) -> dict[str, Any] | None:
+    """Read the JSON object out of a reply, fenced or not.
+
+    Lenient on purpose. Models wrap JSON in code fences, prefix it with a
+    sentence, or add a trailing note, and none of that is a reason to throw a
+    turn away. What it will not do is guess: anything that does not parse
+    returns ``None``, and the caller falls back to wording it did not have to
+    trust.
+    """
+    text = raw.strip()
+    if not text:
+        return None
+    if text.startswith("```"):
+        text = text.strip("`")
+        text = text.removeprefix("json").strip()
+    start, end = text.find("{"), text.rfind("}")
+    if start == -1 or end <= start:
+        return None
+    try:
+        parsed = json.loads(text[start : end + 1])
+    except json.JSONDecodeError:
+        return None
+    return parsed if isinstance(parsed, dict) else None
 
 
 class LanguageModel(Protocol):

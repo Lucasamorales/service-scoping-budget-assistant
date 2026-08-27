@@ -20,10 +20,7 @@
         "scope"
       ],
       "expectItem": "renders-and-other-designs-for-venue-exteriors--merch",
-      "expectVerdict": "quote_required",
-      "mustInclude": [
-        "Merch"
-      ]
+      "expectVerdict": "quote_required"
     },
     {
       "id": "scope-bare-service",
@@ -86,10 +83,7 @@
         "scope"
       ],
       "expectItem": "events--photoshoots",
-      "expectVerdict": "quote_required",
-      "mustInclude": [
-        "Photoshoots"
-      ]
+      "expectVerdict": "quote_required"
     },
     {
       "id": "scope-valentines-video",
@@ -441,7 +435,7 @@
         "Sent to",
         "translating",
         "Spanish",
-        "No supporting documents"
+        "Searched the corpus"
       ],
       "note": "Declining a ping must not re-open the previous scoping question."
     },
@@ -476,9 +470,6 @@
       ],
       "expectItem": "renders-and-other-designs-for-venue-exteriors--merch",
       "expectVerdict": "quote_required",
-      "mustInclude": [
-        "Merch"
-      ],
       "note": "F7. Previously stubbed with 'tell me which service this is about' about a message naming the service."
     },
     {

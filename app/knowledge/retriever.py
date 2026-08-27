@@ -180,9 +180,19 @@ class RetrievalResult:
         return tuple(seen)
 
     def citation_line(self) -> str:
-        """One line naming what was read, for the UI and for debugging."""
+        """One line naming what was read, for the UI and for debugging.
+
+        Distinguishes a turn that searched and found nothing from one that
+        never needed to search. Listing a service catalogue, answering "what
+        can you help with", or checking a budget are all answered from
+        structured data the backend holds outright — retrieval is skipped by
+        design, and reporting that as "no supporting documents" made a correct,
+        fully-grounded answer read like an invented one during a review.
+        """
+        if self.mode == "skipped":
+            return "Answered from the service catalog, not from retrieved prose."
         if not self.hits:
-            return "No supporting documents retrieved."
+            return "Searched the corpus; nothing matched closely enough to cite."
         names = []
         for hit in self.hits:
             label = hit.chunk.section_title or hit.chunk.source

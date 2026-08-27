@@ -289,6 +289,10 @@ class FactPack:
             "## Verdict (looked up — this is fact, not a suggestion)\n\n"
             f"Service: {item.display_name}\n"
             f"Status: {item.status_raw.strip()} — {item.status_meaning}\n"
+            # The internal name, stated so that a reply required to declare the
+            # verdict can copy it rather than translate the prose above into a
+            # token it was never shown.
+            f"Status code: {status.value}\n"
             f"In plain terms: {_STATUS_SENTENCE[status]}\n"
         )
         if scope.outcome is Outcome.AGREED and len(scope.items) > 1:

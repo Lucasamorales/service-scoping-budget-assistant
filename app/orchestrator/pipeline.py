@@ -66,9 +66,17 @@ logger = structlog.get_logger(__name__)
 
 EVIDENCE_LIMIT = 4
 
-NO_CITATIONS = ("No supporting documents retrieved.",)
+NO_CITATIONS = ("Searched the corpus; nothing matched closely enough to cite.",)
 """Even "nothing was retrieved" is a citation: the alternative is an answer
 whose basis nobody can check."""
+
+CATALOG_CITATION = ("Answered from the service catalog, not from retrieved prose.",)
+"""For turns answered from structured data rather than from prose.
+
+Listing the catalogue does not search it, and saying "no supporting documents"
+about an answer read straight out of the registry describes a failure that did
+not happen. During review that line was read as a hallucination risk on an
+answer which was, in fact, the best-grounded kind this system produces."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -635,10 +643,12 @@ class _Turn:
     def citations(self) -> tuple[str, ...]:
         if self.facts.citations:
             return self.facts.citations
-        # A Yes/No on a pending email looked nothing up. The placeholder
-        # "No supporting documents retrieved" reads like a failed search.
+        # A Yes/No on a pending email looked nothing up, so it cites nothing.
         if Capability.MAIL in self.facts.satisfied:
             return ()
+        # The catalogue answers these outright; no search was involved.
+        if {Capability.LIST, Capability.CAPABILITIES} & set(self.facts.satisfied):
+            return CATALOG_CITATION
         return NO_CITATIONS
 
     def briefing(self) -> str:

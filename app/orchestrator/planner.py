@@ -22,7 +22,6 @@ Two decisions are never delegated:
 
 from __future__ import annotations
 
-import json
 import re
 from dataclasses import dataclass
 from typing import Any, Protocol
@@ -31,7 +30,7 @@ import structlog
 
 from app.core.types import Status
 from app.knowledge.catalog import ServiceCatalog
-from app.orchestrator.llm import LanguageModel, ModelUnavailableError
+from app.orchestrator.llm import LanguageModel, ModelUnavailableError, json_object
 from app.orchestrator.plan import Capability, Plan, Slots
 from app.orchestrator.router import ConversationState, Intent, Route
 from app.tools.budget import country_in_message, month_in_message
@@ -356,22 +355,8 @@ class ModelPlanner:
         return f"Recent turns (oldest first):\n{thread}\n\nLatest message:\n{message}"
 
 
-def _parse(raw: str) -> dict[str, Any] | None:
-    """Read the JSON object out of a reply, fenced or not."""
-    text = raw.strip()
-    if not text:
-        return None
-    if text.startswith("```"):
-        text = text.strip("`")
-        text = text.removeprefix("json").strip()
-    start, end = text.find("{"), text.rfind("}")
-    if start == -1 or end <= start:
-        return None
-    try:
-        parsed = json.loads(text[start : end + 1])
-    except json.JSONDecodeError:
-        return None
-    return parsed if isinstance(parsed, dict) else None
+_parse = json_object
+"""Kept as a local name; the reader itself is shared with the composer."""
 
 
 def _capabilities_from(raw: Any) -> tuple[Capability, ...]:

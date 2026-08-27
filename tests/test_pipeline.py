@@ -8,6 +8,8 @@ broken.
 
 from __future__ import annotations
 
+import json
+
 import pytest
 
 from app.core.types import Status
@@ -21,10 +23,18 @@ from app.orchestrator.router import ConversationState, Intent
 
 
 class RecordingModel:
-    """A model that always answers, and remembers what it was asked."""
+    """A model that always answers, and remembers what it was asked.
 
-    def __init__(self, text: str = "A polished reply.") -> None:
+    Honours the reply contract the briefing asks for. A turn carrying a verdict
+    asks for a JSON object declaring it, so that the backend can check the
+    words and the verdict still agree; a fake that ignored that would be
+    testing a model nobody deploys, and every verdict turn would silently fall
+    back to deterministic wording.
+    """
+
+    def __init__(self, text: str = "A polished reply.", verdict: str | None = None) -> None:
         self.text = text
+        self.verdict = verdict
         self.prompts: list[str] = []
         self.system_instructions: list[str | None] = []
 
@@ -32,15 +42,30 @@ class RecordingModel:
     def name(self) -> str:
         return "recording-model"
 
+    def _reply_to(self, prompt: str) -> str:
+        """What a compliant model would return for this briefing."""
+        if "Return one JSON object" not in prompt:
+            return self.text
+        verdict = self.verdict or _verdict_in(prompt)
+        return json.dumps({"verdict": verdict, "reply": self.text})
+
     def generate(self, prompt: str, *, system_instruction: str | None = None) -> ModelReply:
         self.prompts.append(prompt)
         self.system_instructions.append(system_instruction)
-        return ModelReply(self.text, self.name)
+        return ModelReply(self._reply_to(prompt), self.name)
 
     def stream(self, prompt: str, *, system_instruction: str | None = None):
         self.prompts.append(prompt)
         for word in self.text.split(" "):
             yield f"{word} "
+
+
+def _verdict_in(briefing: str) -> str:
+    """Read the status code the briefing states, as a compliant model would."""
+    for line in briefing.splitlines():
+        if line.startswith("Status code:"):
+            return line.removeprefix("Status code:").strip()
+    return ""
 
 
 class BrokenModel:
@@ -456,3 +481,68 @@ def test_no_answer_ever_mentions_a_price(pipeline: Pipeline) -> None:
     for question in questions:
         text = pipeline.answer(question).text.lower()
         assert not any(token in text for token in forbidden), question
+
+
+class TestTheModelDeclaresTheVerdictItStates:
+    """The check that replaced a phrasebook.
+
+    ``guard.py`` reads a reply for wordings that sound like a verdict, and can
+    only recognise the ones somebody thought of in advance. A model that
+    paraphrases eventually finds one nobody did: "Building a new website from
+    scratch isn't something the central marketing team handles" turned an
+    in-scope verdict into a refusal and passed, because that phrasing is not in
+    the list. Asking the model which verdict it just conveyed catches the flip
+    however it is worded.
+    """
+
+    _QUESTION = "who handles landlord relationship"
+
+    def test_a_compliant_reply_is_used(self, corpus, index) -> None:
+        model = RecordingModel("That's a local one — your site team owns it.")
+        answer = with_model(corpus, index, model).answer(self._QUESTION)
+        assert answer.text == "That's a local one — your site team owns it."
+        assert answer.source == "recording-model"
+        assert not answer.degraded
+
+    def test_a_flipped_verdict_is_discarded_however_it_is_phrased(
+        self, corpus, index
+    ) -> None:
+        """The reply reads plausibly and trips no regex. It still must not ship."""
+        model = RecordingModel(
+            "That isn't something the central marketing team handles.",
+            verdict="out_of_scope",
+        )
+        answer = with_model(corpus, index, model).answer(self._QUESTION)
+        assert answer.source == DETERMINISTIC
+        assert answer.degraded
+        assert "central marketing team handles" not in answer.text
+
+    def test_the_briefing_states_the_token_to_declare(self, corpus, index) -> None:
+        """The model is told which word to copy rather than left to translate
+        "Local — Taken by local or operation teams" into an internal name it
+        has never been shown."""
+        model = RecordingModel()
+        with_model(corpus, index, model).answer(self._QUESTION)
+        briefing = next(p for p in model.prompts if p.startswith("# Briefing"))
+        assert f"Status code: {Status.LOCAL.value}" in briefing
+
+    def test_a_reply_that_ignores_the_format_falls_back_quietly(
+        self, corpus, index
+    ) -> None:
+        """Not an offence, just unusable. Losing a turn's phrasing costs far
+        less than shipping prose nobody checked."""
+
+        class PlainProseModel(RecordingModel):
+            def _reply_to(self, prompt: str) -> str:
+                return self.text
+
+        model = PlainProseModel("Local team owns it.")
+        answer = with_model(corpus, index, model).answer(self._QUESTION)
+        assert answer.source == DETERMINISTIC
+        assert answer.degraded
+
+    def test_a_turn_with_no_verdict_is_not_asked_for_one(self, corpus, index) -> None:
+        """The contract applies only where there is a verdict to contradict."""
+        model = RecordingModel()
+        with_model(corpus, index, model).answer("hello")
+        assert all("Return one JSON object" not in p for p in model.prompts)

@@ -14,6 +14,7 @@ from app.knowledge.retriever import (
     KEYWORD_HALF_CONFIDENCE,
     MIN_SCORE,
     InMemoryRetriever,
+    RetrievalResult,
     _dense_confidence,
     _keyword_confidence,
 )
@@ -114,10 +115,15 @@ class TestProvenance:
         assert "Read from" in line
         assert "keyword" in line
 
-    def test_the_citation_line_handles_an_empty_result(self, corpus) -> None:
-        assert "No supporting documents" in InMemoryRetriever(
-            KnowledgeIndex()
-        ).retrieve("anything").citation_line()
+    def test_an_empty_result_says_it_searched_and_found_nothing(self, corpus) -> None:
+        """Distinct from having skipped the search. Conflating the two made a
+        catalogue answer read like an invented one."""
+        line = InMemoryRetriever(KnowledgeIndex()).retrieve("anything").citation_line()
+        assert "nothing matched" in line
+        assert "Searched" in line
+
+    def test_a_skipped_search_says_so(self) -> None:
+        assert "service catalog" in RetrievalResult(mode="skipped").citation_line()
 
 
 class TestFiltering:

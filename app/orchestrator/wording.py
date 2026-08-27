@@ -27,9 +27,14 @@ from dataclasses import dataclass
 import structlog
 
 from app.orchestrator.facts import FactPack
-from app.orchestrator.guard import inspect
+from app.orchestrator.guard import Violation, inspect
 from app.orchestrator.history import HistoryTurn, format_history
-from app.orchestrator.llm import DETERMINISTIC, LanguageModel, ModelUnavailableError
+from app.orchestrator.llm import (
+    DETERMINISTIC,
+    LanguageModel,
+    ModelUnavailableError,
+    json_object,
+)
 
 __all__ = ["Worded", "build_briefing", "stream_wording", "word_answer"]
 
@@ -47,6 +52,23 @@ class Worded:
     truncated: bool = False
     """Text was already on the wire when the model died. The caller must keep
     what arrived; it cannot be replaced with the fallback."""
+
+
+_DECLARE_VERDICT = """\
+## How to reply
+
+Return one JSON object and nothing else:
+
+  {"verdict": "<one of: in_scope, out_of_scope, local, quote_required>",
+   "reply": "<what to say to the person, in your own words>"}
+
+``verdict`` is the "Status code" from the verdict block above, copied exactly.
+It is not yours to choose, and a reply carrying a different one is discarded
+unread. Declaring it is how the backend checks that the words you wrote and the
+verdict you were given still agree.
+
+``reply`` is normal prose for the user. No JSON inside it, no headings from
+this briefing, no figures that are not in the facts."""
 
 
 def build_briefing(
@@ -69,7 +91,43 @@ def build_briefing(
             + format_history(history)
         )
     sections.append(f"## Their message\n\n{question}")
+    if facts.verdict is not None:
+        sections.append(_DECLARE_VERDICT)
     return "\n\n".join(sections)
+
+
+def _declared_reply(raw: str, facts: FactPack) -> tuple[str, Violation | None]:
+    """Split a verdict-carrying reply into its prose and its own verdict claim.
+
+    Asking the model to say which verdict it just conveyed, and comparing that
+    to the one it was given, is a far stronger check than reading the prose for
+    phrases that sound like a verdict. The regex checks in
+    :mod:`app.orchestrator.guard` can only catch wordings somebody thought of
+    in advance, and a model that paraphrases will eventually find one nobody
+    did - it already has. "Building a new website from scratch isn't something
+    the central marketing team handles" flipped an in-scope verdict into a
+    refusal and passed, because that is not one of the phrases the guard knows.
+
+    A reply that does not parse is not treated as an offence, only as
+    unusable: the deterministic wording goes out instead. The model is being
+    asked for a format, and losing a turn's phrasing is a much smaller cost
+    than trusting prose nobody checked.
+    """
+    parsed = json_object(raw)
+    if parsed is None:
+        return "", Violation("format", "the reply was not the JSON object asked for")
+
+    reply = str(parsed.get("reply", "")).strip()
+    if not reply:
+        return "", Violation("format", "the reply carried no text for the user")
+
+    declared = str(parsed.get("verdict", "")).strip().lower()
+    if declared != facts.verdict:
+        return reply, Violation(
+            "verdict",
+            f"the reply states {declared or 'no verdict'} where the facts say {facts.verdict}",
+        )
+    return reply, None
 
 
 def word_answer(
@@ -95,6 +153,21 @@ def word_answer(
     if not text:
         logger.warning("wording.empty", model=reply.model)
         return Worded(facts.fallback_text, DETERMINISTIC, degraded=True)
+
+    # A turn carrying a verdict has to declare it. The prose is then checked as
+    # well: the declaration catches a flipped verdict however it is phrased,
+    # and the checks below still catch an invented figure or the wrong country,
+    # which a correct declaration says nothing about.
+    if facts.verdict is not None:
+        text, declared = _declared_reply(text, facts)
+        if declared is not None:
+            logger.error(
+                "wording.guard_violation",
+                model=reply.model,
+                kind=declared.kind,
+                detail=declared.detail,
+            )
+            return Worded(facts.fallback_text, DETERMINISTIC, degraded=True)
 
     if violation := inspect(text, facts):
         logger.error(
