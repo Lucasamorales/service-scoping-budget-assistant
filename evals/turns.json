@@ -809,12 +809,11 @@
       ],
       "expectItem": "organic-social-media-and-community-management--content-scheduling",
       "expectVerdict": "local",
-      "mustNotInclude": [
-        "free of charge",
-        "no extra cost"
+      "mustInclude": [
+        "local"
       ],
       "critical": true,
-      "note": "P0. 'schedule' must reach an item named 'Content scheduling'. Answering in_scope tells an AM central marketing owns work the DB marks Local."
+      "note": "P0. 'schedule' must reach an item named 'Content scheduling'. The risk is telling an AM that central marketing owns work the DB marks Local, so the reply has to name the local team. It previously banned the substrings 'free of charge' and 'no extra cost' instead, which was wrong: the document says 'Extra cost or quote required: No' and answers its own question with 'No extra cost is required as it is included in the local scope'. A grounded reply quoting its source was failing the assertion. It only ever passed because the deterministic wording is terse; the live composer echoes the document and tripped it on the first nightly run."
     }
   ]
 }
