@@ -53,6 +53,15 @@ class Worded:
     """Text was already on the wire when the model died. The caller must keep
     what arrived; it cannot be replaced with the fallback."""
 
+    tokens: int = 0
+    """What wording this turn cost.
+
+    Charged whenever a call was made, including the turns where a guard
+    rejected the answer and the deterministic wording went out instead. Those
+    are the expensive failures; billing them to nobody would hide a model
+    misbehaving behind a flat cost line. Zero means no call happened.
+    """
+
 
 _DECLARE_VERDICT = """\
 ## How to reply
@@ -149,10 +158,11 @@ def word_answer(
         logger.warning("wording.model_unavailable", error=str(exc))
         return Worded(facts.fallback_text, DETERMINISTIC, degraded=True)
 
+    spent = reply.total_tokens
     text = reply.text.strip()
     if not text:
         logger.warning("wording.empty", model=reply.model)
-        return Worded(facts.fallback_text, DETERMINISTIC, degraded=True)
+        return Worded(facts.fallback_text, DETERMINISTIC, degraded=True, tokens=spent)
 
     # A turn carrying a verdict has to declare it. The prose is then checked as
     # well: the declaration catches a flipped verdict however it is phrased,
@@ -167,7 +177,7 @@ def word_answer(
                 kind=declared.kind,
                 detail=declared.detail,
             )
-            return Worded(facts.fallback_text, DETERMINISTIC, degraded=True)
+            return Worded(facts.fallback_text, DETERMINISTIC, degraded=True, tokens=spent)
 
     if violation := inspect(text, facts):
         logger.error(
@@ -176,9 +186,9 @@ def word_answer(
             kind=violation.kind,
             detail=violation.detail,
         )
-        return Worded(facts.fallback_text, DETERMINISTIC, degraded=True)
+        return Worded(facts.fallback_text, DETERMINISTIC, degraded=True, tokens=spent)
 
-    return Worded(text, reply.model)
+    return Worded(text, reply.model, tokens=spent)
 
 
 def stream_wording(

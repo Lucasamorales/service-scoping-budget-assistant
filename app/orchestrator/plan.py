@@ -143,6 +143,10 @@ class Plan:
     reply when a service was inferred, so a misread is visible rather than
     silently authoritative."""
 
+    tokens: int = 0
+    """What planning this turn cost. Zero for the rule planner, which is free
+    and is the point of having it."""
+
     def __post_init__(self) -> None:
         if not self.capabilities:
             object.__setattr__(self, "capabilities", (Capability.CLARIFY,))

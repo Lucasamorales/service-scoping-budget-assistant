@@ -57,6 +57,48 @@ class ModelReply:
     text: str
     model: str
 
+    prompt_tokens: int = 0
+    output_tokens: int = 0
+    """What this call cost, as the provider counted it.
+
+    Zero means "not reported", not "free". The streaming path cannot always
+    know: usage arrives with the final chunk, so a stream cut short carries
+    none. Treating the two as the same is deliberate — the alternative is an
+    optional type threaded through every caller to express a distinction
+    nobody acts on differently.
+    """
+
+    @property
+    def total_tokens(self) -> int:
+        return self.prompt_tokens + self.output_tokens
+
+
+def _usage_of(response: Any) -> tuple[int, int]:
+    """Prompt and output token counts from a provider response.
+
+    Read defensively, for the reason the client's own docstring gives: a new
+    SDK version must not be able to crash a turn that otherwise worked. Usage
+    is accounting, and accounting is never worth an answer — anything missing
+    or oddly shaped counts as zero.
+    """
+    usage = getattr(response, "usage_metadata", None)
+    if usage is None:
+        return 0, 0
+
+    def count(*names: str) -> int:
+        for name in names:
+            value = getattr(usage, name, None)
+            if isinstance(value, int):
+                return value
+        return 0
+
+    # The field spelling has moved between SDK generations; both are accepted
+    # rather than pinning to whichever one is current today.
+    return (
+        count("prompt_token_count", "input_token_count"),
+        count("candidates_token_count", "output_token_count"),
+    )
+
 
 def json_object(raw: str) -> dict[str, Any] | None:
     """Read the JSON object out of a reply, fenced or not.
@@ -166,7 +208,13 @@ class GeminiClient:
             logger.error("llm.generate_failed", model=self.name, error=str(exc))
             raise ModelUnavailableError(str(exc)) from exc
 
-        return ModelReply(getattr(response, "text", "") or "", self.name)
+        prompt_tokens, output_tokens = _usage_of(response)
+        return ModelReply(
+            getattr(response, "text", "") or "",
+            self.name,
+            prompt_tokens=prompt_tokens,
+            output_tokens=output_tokens,
+        )
 
     def stream(self, prompt: str, *, system_instruction: str | None = None) -> Iterator[str]:
         client = self._connect()

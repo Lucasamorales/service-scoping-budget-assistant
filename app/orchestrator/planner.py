@@ -23,7 +23,7 @@ Two decisions are never delegated:
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any, Protocol
 
 import structlog
@@ -310,15 +310,20 @@ class ModelPlanner:
             logger.warning("planner.model_unavailable", error=str(exc))
             return rules
 
+        # The call was made and billed, so its cost rides on whichever plan is
+        # returned from here — including the fallbacks that throw the model's
+        # answer away. Charging only successful plans would understate cost
+        # exactly when the model is misbehaving.
+        tokens = reply.total_tokens
         parsed = _parse(reply.text)
         if parsed is None:
             logger.warning("planner.unparsable", raw=reply.text[:200])
-            return rules
+            return replace(rules, tokens=tokens)
 
         capabilities = _capabilities_from(parsed.get("capabilities"))
         if not capabilities:
             logger.warning("planner.no_capabilities", raw=reply.text[:200])
-            return rules
+            return replace(rules, tokens=tokens)
 
         # "email my AM about the merch request" is a service lookup that
         # happens to mention a person. The model hears the person and plans
@@ -330,13 +335,14 @@ class ModelPlanner:
                 model=[c.value for c in capabilities],
                 rules=rules.explain(),
             )
-            return rules
+            return replace(rules, tokens=tokens)
 
         plan = Plan(
             capabilities=capabilities,
             slots=_slots_from(parsed, message, rules),
             source=self._model.name,
             reading=_clean(parsed.get("reading")),
+            tokens=tokens,
         )
         logger.info(
             "planner.planned",

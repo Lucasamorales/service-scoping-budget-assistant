@@ -60,6 +60,25 @@ class RecordingModel:
             yield f"{word} "
 
 
+class CountingModel(RecordingModel):
+    """A compliant model that also reports what it charged."""
+
+    def __init__(self, *, prompt_tokens: int, output_tokens: int, **kwargs: object) -> None:
+        super().__init__(**kwargs)  # type: ignore[arg-type]
+        self._prompt_tokens = prompt_tokens
+        self._output_tokens = output_tokens
+
+    def generate(self, prompt: str, *, system_instruction: str | None = None) -> ModelReply:
+        self.prompts.append(prompt)
+        self.system_instructions.append(system_instruction)
+        return ModelReply(
+            self._reply_to(prompt),
+            self.name,
+            prompt_tokens=self._prompt_tokens,
+            output_tokens=self._output_tokens,
+        )
+
+
 def _verdict_in(briefing: str) -> str:
     """Read the status code the briefing states, as a compliant model would."""
     for line in briefing.splitlines():
@@ -546,3 +565,31 @@ class TestTheModelDeclaresTheVerdictItStates:
         model = RecordingModel()
         with_model(corpus, index, model).answer("hello")
         assert all("Return one JSON object" not in p for p in model.prompts)
+
+
+class TestTurnCost:
+    """A turn calls the model twice. The useful question is always what the
+    *question* cost, so the two are summed before anyone sees them."""
+
+    def test_a_turn_sums_planning_and_wording(self, corpus, index) -> None:
+        """Two calls at 125 each. The planner's answer is discarded here - a
+        wording model does not emit a valid plan - and it is billed anyway,
+        which is the point: the cost is incurred whatever is done with it."""
+        model = CountingModel(prompt_tokens=100, output_tokens=25)
+        answer = with_model(corpus, index, model).answer("who handles landlord relationship")
+        assert answer.plan is not None
+        assert answer.plan.tokens == 125
+        assert answer.tokens == 250
+
+    def test_the_deterministic_path_costs_nothing(self, pipeline: Pipeline) -> None:
+        assert pipeline.answer("who handles landlord relationship").tokens == 0
+
+    def test_a_rejected_reply_is_still_billed(self, corpus, index) -> None:
+        """The expensive failures are the ones a guard throws away. Charging
+        them to nobody would hide a misbehaving model behind a flat cost."""
+        model = CountingModel(prompt_tokens=100, output_tokens=25, verdict="out_of_scope")
+        answer = with_model(corpus, index, model).answer("who handles landlord relationship")
+        assert answer.source == DETERMINISTIC
+        assert answer.degraded
+        # Planner call plus the rejected wording call: both were paid for.
+        assert answer.tokens == 250

@@ -149,6 +149,15 @@ class Answer:
     nothing is absent here, which is the difference between an answer and a
     question."""
 
+    tokens: int = 0
+    """What this turn cost, planning and wording together.
+
+    A turn calls the model twice, and the interesting question is always "what
+    did this question cost", never "what did the composer cost" — so the two
+    are summed here rather than left for whoever reads the logs to join.
+    Zero when neither call happened, which is every turn on the rules path.
+    """
+
     @property
     def status(self) -> Status | None:
         return self.resolution.status
@@ -436,7 +445,12 @@ class Pipeline:
             email=turn.facts.email,
             facts=turn.facts,
         )
-        logger.info("pipeline.answered", question=question, detail=answer.explain())
+        logger.info(
+            "pipeline.answered",
+            question=question,
+            detail=answer.explain(),
+            tokens=answer.tokens,
+        )
         return answer
 
     def stream(
@@ -556,6 +570,7 @@ class Pipeline:
             actions=turn.facts.actions,
             plan=turn.plan,
             satisfied=turn.facts.satisfied,
+            tokens=(turn.plan.tokens if turn.plan else 0) + worded.tokens,
         )
 
     def _audit(
@@ -587,6 +602,7 @@ class Pipeline:
                     "intent": answer.route.intent.value,
                     "status": answer.status.value if answer.status else None,
                     "source": answer.source,
+                    "tokens": answer.tokens,
                     "outcome": resolved_outcome,
                     "email": email,
                     "actions": [action.id for action in answer.actions],
