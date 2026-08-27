@@ -8,7 +8,7 @@ Active plan: [docs/PLAN-business-flows.md](docs/PLAN-business-flows.md).
 
 | ID | Item | Why deferred |
 |---|---|---|
-| P1 | Production tier↔item and tier↔price tables | Fixture rate card ships; Charlie delivers real numbers |
+| P1 | ~~Production tier↔item and tier↔price tables~~ | **Done.** Both come from the sheet: `Pricing_tiers` for tier→price, `Scope` for service→tier. The numbers were already there; the app was reading a hand-maintained fixture that had drifted |
 | P2 | International / high-hierarchy contact bucket | Awaiting Charlie (e.g. Manú-class); v1 does not auto-route |
 | P3 | Country Manager ≠ Account Manager split | v1 uses one country AM matrix for both CTAs until clarified |
 | P4 | Live Google Sheets on Cloud Run (Viewer) | Needs SA email + sheet share; local xlsx until then |
@@ -21,7 +21,7 @@ Active plan: [docs/PLAN-business-flows.md](docs/PLAN-business-flows.md).
 | ID | Item | Why deferred |
 |---|---|---|
 | C1 | Richer prose for Events / Video production | **Scaffolded (8 docs)**; deepen Q&A over time |
-| C2 | One-way Scope→catalog status audit script | Useful CI check; not required for first flow ship |
+| C2 | One-way Scope→catalog status audit script | Partly covered: loading the rate card now warns when a `Scope` row names a service no document answers to, and `scripts/refresh_rate_card.py --check` fails on drift. Statuses themselves are still uncompared |
 | C3 | Glossary as `docType` corpus files | Types exist; content not authored yet |
 
 ## Engineering debt (fix when touching the area)

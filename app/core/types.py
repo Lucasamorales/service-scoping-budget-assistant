@@ -96,16 +96,29 @@ _RAW_STATUS_CODES: Mapping[str, Status] = {
 
 @dataclass(frozen=True, slots=True)
 class AtAGlance:
-    """The four bullets every document carries under ``## At a Glance``.
+    """The bullets a document carries under ``## At a Glance``.
 
-    Every field is optional. A missing bullet is reported by the validator and
-    left as ``None`` here rather than being invented.
+    Every field is optional. A missing bullet among the four required ones is
+    reported by the validator and left as ``None`` here rather than invented.
     """
 
     in_scope: str | None = None
     delivered_by: str | None = None
     extra_cost_or_quote: str | None = None
     how_to_get_it: str | None = None
+
+    automatic_price: str | None = None
+    """Optional fifth bullet: whether a tier price may be quoted automatically.
+
+    Some services carry a tier for the design work while the real cost is
+    dominated by third-party spend the tier does not cover — event attendance
+    is billed as travel, hotels and food, not as a design fee. Quoting the tier
+    alone would understate it, so a document can opt out by answering ``No``.
+
+    Absent means yes. The default has to be "quote it": the tier exists to be
+    used, and a service that silently refused to price would be indistinguishable
+    from one missing from the rate card.
+    """
 
 
 @dataclass(frozen=True, slots=True)

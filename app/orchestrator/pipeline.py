@@ -260,6 +260,9 @@ class Pipeline:
             settings.quote_rate_card_path,
             spreadsheet_id=settings.budget_spreadsheet_id,
             credentials_path=settings.google_application_credentials,
+            # Lets a sheet row naming a service the corpus has no document for
+            # be reported at startup rather than silently priced into nothing.
+            known_items=catalog.item_ids,
         )
         contacts = load_contacts(settings.contacts_path)
         roster = load_roster(

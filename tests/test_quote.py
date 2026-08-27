@@ -1,10 +1,19 @@
-"""Quote rate card parsing — tiers 1/2/3 only; optional Sheets overlay."""
+"""Quote rate card: tier parsing, the Scope service-to-tier map, drift, and
+the per-document opt-out from automatic pricing."""
 
 from __future__ import annotations
 
 from pathlib import Path
 
-from app.store.quote import _parse_pricing_tier_rows, load_quote_store
+from app.core.keys import service_key
+from app.core.types import AtAGlance, ServiceItem, Status
+from app.store.quote import (
+    QuoteStore,
+    _parse_pricing_tier_rows,
+    _parse_scope_rows,
+    load_quote_store,
+)
+from app.tools.quote import quote_for
 
 
 def test_fixture_rate_card_has_three_numeric_tiers() -> None:
@@ -27,10 +36,97 @@ def test_pricing_tier_sheet_rows_parse() -> None:
     assert _parse_pricing_tier_rows(rows) == {"1": 100.0, "2": 200.0, "3": 350.0}
 
 
-def test_merch_maps_to_tier_one() -> None:
+def test_merch_prices_at_the_tier_the_sheet_says() -> None:
+    """Regression guard on the drift bug.
+
+    The fixture used to map Merch to Tier 1 and quote £100 for a £350 service,
+    because the mapping was maintained by hand while the sheet moved on. The
+    number below is the sheet's; refresh with ``scripts/refresh_rate_card.py``
+    rather than editing it here.
+    """
     store = load_quote_store(Path("fixtures/quote/rate_card.json"))
     assert store is not None
-    looked = store.lookup(
-        "renders-and-other-designs-for-venue-exteriors--merch"
+    assert store.lookup("renders-and-other-designs-for-venue-exteriors--merch") == ("3", 350.0)
+
+
+def test_every_priced_service_is_a_real_catalog_item(corpus) -> None:
+    """A tier for a service no document answers to prices nothing.
+
+    This is the general form of the bug above: the sheet and the corpus can
+    each be internally consistent and still disagree about what a service is
+    called, and the symptom is a silent absence rather than an error.
+    """
+    store = load_quote_store(Path("fixtures/quote/rate_card.json"))
+    assert store is not None
+    unknown = sorted(set(store.services) - corpus.catalog.item_ids)
+    assert not unknown, f"rate card prices items the corpus does not have: {unknown}"
+
+
+def test_scope_rows_read_only_on_demand_items() -> None:
+    """Yes and Local services are free; carrying a tier for one would price it."""
+    rows: list[list[object]] = [
+        ["section", "item", "status", "Tier"],
+        ["Events", "Videos", "On demand", "Tier 3"],
+        ["Events", "Planning", "Y", ""],
+        ["Design & creative", "Logos", "Local", "Tier 2"],
+    ]
+    assert _parse_scope_rows(rows) == {service_key("Events", "Videos"): "3"}
+
+
+def test_scope_rows_drop_an_unusable_tier() -> None:
+    """Tier 4 was removed from the business's pricing. A leftover row naming it
+    must not be guessed into a neighbouring tier."""
+    rows: list[list[object]] = [
+        ["Events", "Videos", "On demand", "Tier 4"],
+        ["Events", "Photoshoots", "On demand", "Tier 2"],
+    ]
+    assert _parse_scope_rows(rows) == {service_key("Events", "Photoshoots"): "2"}
+
+
+def _item(automatic_price: str | None) -> ServiceItem:
+    return ServiceItem(
+        item_id="events--attendance-travel-accommodation-food",
+        section="Events",
+        item="Attendance (travel, accommodation, food)",
+        status=Status.QUOTE_REQUIRED,
+        status_raw="On demand",
+        status_meaning="This is something we need to quote",
+        aliases=(),
+        at_a_glance=AtAGlance(automatic_price=automatic_price),
+        summary="",
+        sections={},
+        body="",
+        source="events--attendance-travel-accommodation-food.md",
     )
-    assert looked == ("1", 100.0)
+
+
+def _store() -> QuoteStore:
+    return QuoteStore(
+        currency="GBP",
+        tiers={"3": 350.0, "Variable": "Variable"},
+        services={"events--attendance-travel-accommodation-food": "3"},
+    )
+
+
+def test_a_document_can_refuse_an_automatic_price() -> None:
+    """The Scope tab tiers attendance at 3, but the bill is travel and hotels.
+
+    Quoting £350 would understate it without bound, so the document opts out
+    and the turn routes to a human instead.
+    """
+    outcome = quote_for(_item("No — travel and hotel costs dominate"), _store(), None)
+    assert outcome.kind == "variable"
+    assert "350" not in outcome.text
+
+
+def test_a_tier_is_quoted_when_the_document_stays_silent() -> None:
+    """Absence of the bullet means consent; the tier exists to be used."""
+    outcome = quote_for(_item(None), _store(), None)
+    assert outcome.kind != "variable"
+    assert "350" in outcome.text
+
+
+def test_an_affirmative_automatic_price_still_quotes() -> None:
+    outcome = quote_for(_item("Yes"), _store(), None)
+    assert outcome.kind != "variable"
+    assert "350" in outcome.text

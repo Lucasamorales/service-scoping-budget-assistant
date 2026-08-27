@@ -22,6 +22,7 @@ __all__ = [
     "TAB_FISCAL",
     "TAB_PRICING",
     "TAB_ROSTER",
+    "TAB_SCOPE",
     "TAB_BRANCHES",
     "SheetsError",
     "fetch_sheet_values",
@@ -41,6 +42,11 @@ TAB_FISCAL = "Fiscal_calendar"
 TAB_DB = "DB"
 TAB_ROSTER = "Roster"
 TAB_PRICING = "Pricing_tiers"
+TAB_SCOPE = "Scope"
+"""Section / item / status / Tier. The business's own view of the
+catalogue, and the only place the service-to-tier mapping is written
+down. The verdicts on it are *not* read: those come from documents/,
+which carry the reasoning a reply needs as well as the code."""
 
 
 class SheetsError(RuntimeError):

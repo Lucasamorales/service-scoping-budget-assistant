@@ -1,10 +1,10 @@
-# Event videos — Events
+# Videos — Events
 
 **Section:** Events
-**Item:** Event videos
+**Item:** Videos
 **Status code:** On demand
 **Status meaning:** This is something we need to quote
-**Also known as:** event film, event highlight reel, videos for events
+**Also known as:** event videos, event film, event highlight reel, videos for events
 
 ## Summary
 Video work for events is available on demand and requires a custom quote. Distinct from routine video production for social campaigns.

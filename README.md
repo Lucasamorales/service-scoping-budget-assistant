@@ -615,12 +615,12 @@ To force the old rule-only path while testing: `USE_LLM_PLANNER=false` and/or
 `GCP_PROJECT_ID` is for Firestore / Sheets (and later GCS). Gemini does not use Vertex.
 
 **Built and wired locally:** budget tracker (live Sheet when configured), quoting
-(tier prices from Sheet + service→tier JSON), roster, Resend mail, Firestore audit.
+(both tier prices and the service→tier map from the Sheet), roster, Resend mail,
+Firestore audit.
 **Docker image and Cloud Run script are in the repo.** Hosting is blocked until billing
 is linked on `your-gcp-project`. New machine, secrets, and GCP steps:
 [`docs/HOSTING.md`](docs/HOSTING.md).
-**Still later:** GCS index download at boot, IAP, production Resend DNS, moving
-service→tier onto the Sheet.
+**Still later:** GCS index download at boot, IAP, production Resend DNS.
 
 Architecture write-up: [`docs/ASSESSMENT-AND-PLAN.md`](docs/ASSESSMENT-AND-PLAN.md).
 Status board: [`docs/ARCHITECTURE-AUDIT.md`](docs/ARCHITECTURE-AUDIT.md).
@@ -634,9 +634,9 @@ Four documents were originally listed as missing. Two of them now live on the Sh
 | Branch list (13 branches, 4 countries) | **Live** — Sheet tab `Branches/countries` |
 | Budget caps, spend, fiscal calendar | **Live** — Sheet tabs `Budget caps`, `DB`, `Fiscal_calendar` |
 | Directory of AM / CM per country | **Live** — Sheet tab `Roster` (plus `fixtures/contacts/country_ams.json`) |
-| Pricing tiers | **Live** — Sheet tab `Pricing_tiers`. Service→tier map is still JSON |
+| Pricing tiers | **Live** — Sheet tabs `Pricing_tiers` (tier→price) and `Scope` (service→tier) |
 | Business logic: FOC modifiers, thresholds, routing rules | **Not in corpus** — see below |
-| Quoting: confirm merch tier with the business | Open |
+| Quoting: confirm merch tier with the business | **Answered** — the `Scope` tab says Tier 3 |
 
 The business logic document is the one that still shapes the conversation. The 81 documents give
 one flat verdict per item, but a leaflet that already exists and needs resizing is free while the

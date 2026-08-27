@@ -54,7 +54,13 @@ def quote_for(
         )
 
     tier, price = looked
-    if price == "Variable":
+    # Two routes to the same answer. A ``Variable`` tier is the rate card
+    # declining to name a number; an ``Automatic price: No`` bullet is the
+    # document declining on behalf of a service whose tier covers only part of
+    # the cost. Event attendance is the case that matters: the Scope tab tiers
+    # the coordination work, but the bill is travel, hotels and food, and
+    # quoting the tier alone would understate it by an unbounded amount.
+    if price == "Variable" or _refuses_automatic_price(item):
         return QuoteOutcome(
             kind="variable",
             tier=tier,
@@ -113,3 +119,16 @@ def quote_for(
         remaining=remaining,
         budget=snapshot,
     )
+
+
+def _refuses_automatic_price(item: ServiceItem) -> bool:
+    """Whether the document opted out of automatic tier pricing.
+
+    Read permissively: the bullet is prose written by whoever maintains the
+    corpus, so "No", "no - travel varies" and "No — costs are variable" must
+    all count. Anything that does not start with a no is treated as consent,
+    because the failure of a false negative here is a missing price and the
+    failure of a false positive is a wrong one.
+    """
+    declared = (item.at_a_glance.automatic_price or "").strip().lower()
+    return declared.startswith("no")

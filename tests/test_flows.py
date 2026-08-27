@@ -15,7 +15,7 @@ from app.store.audit import JsonlAuditStore
 from app.store.budget import XlsxBudgetStore
 from app.store.contacts import load_contacts
 from app.store.mail import NullMailer
-from app.store.quote import load_quote_store
+from app.store.quote import QuoteStore, load_quote_store
 from app.store.roster import load_roster
 from app.tools.flows import SessionIdentity
 from tests.test_pipeline import RecordingModel
@@ -25,21 +25,26 @@ CONTACTS = Path("fixtures/contacts/country_ams.json")
 RATE_CARD = Path("fixtures/quote/rate_card.json")
 
 
-@pytest.fixture(scope="module")
-def flow_pipeline(corpus, tmp_path_factory) -> Pipeline:
+def build_pipeline(corpus, audit_dir: Path, quote_store: QuoteStore | None) -> Pipeline:
     chunks = [chunk for item in corpus.catalog for chunk in chunk_service_item(item)]
-    audit_dir = tmp_path_factory.mktemp("audit")
     return Pipeline(
         corpus.catalog,
         KnowledgeIndex.build(chunks),
         model=RecordingModel("I invented a price of 99999."),
         budget_store=XlsxBudgetStore(BUDGET_XLSX),
-        quote_store=load_quote_store(RATE_CARD),
+        quote_store=quote_store,
         contacts=load_contacts(CONTACTS),
         roster=load_roster(BUDGET_XLSX),
         mailer=NullMailer(),
         audit_log=JsonlAuditStore(audit_dir),
         branches=tuple(t.name for t in XlsxBudgetStore(BUDGET_XLSX).branches()),
+    )
+
+
+@pytest.fixture(scope="module")
+def flow_pipeline(corpus, tmp_path_factory) -> Pipeline:
+    return build_pipeline(
+        corpus, tmp_path_factory.mktemp("audit"), load_quote_store(RATE_CARD)
     )
 
 
@@ -91,12 +96,34 @@ class TestQuoteFlow:
         assert "99999" not in answer.text
         assert answer.actions
         assert answer.next_state.pending_action_kind in {"email_cm_po", "email_am_variable"}
-        # Merch is on the rate card as Tier 1 (£100).
+        # The Scope tab puts Merch at Tier 3 (£350). The fixture used to say
+        # Tier 1, and this assertion used to agree with it.
         if answer.next_state.pending_action_kind == "email_cm_po":
-            assert answer.next_state.pending_quote_amount == 100.0
+            assert answer.next_state.pending_quote_amount == 350.0
 
-    def test_variable_tier_routes_to_am(self, flow_pipeline: Pipeline) -> None:
-        answer = flow_pipeline.answer(
+    def test_variable_tier_routes_to_am(self, corpus, tmp_path) -> None:
+        """A service priced ``Variable`` has no number, so it goes to a human.
+
+        The store is built here rather than loaded, because which services are
+        Variable is a business decision that changes: every row on the Scope
+        tab currently carries a numeric tier, so loading the real card would
+        leave this rule untested and look like it still passed. The rule is
+        what matters, not the roster of services it happens to apply to.
+        """
+        item = (
+            "strategic-support--site-visits-if-required"
+            "-travel-accommodation-to-be-paid-for-by-acme"
+        )
+        pipeline = build_pipeline(
+            corpus,
+            tmp_path,
+            QuoteStore(
+                currency="GBP",
+                tiers={"1": 100.0, "2": 200.0, "3": 350.0, "Variable": "Variable"},
+                services={item: "Variable"},
+            ),
+        )
+        answer = pipeline.answer(
             "site visits travel accommodation",
             identity=SessionIdentity(country="United Kingdom"),
         )

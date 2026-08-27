@@ -20,6 +20,7 @@ Quoted case by case. Automatic tier pricing does not apply when costs are variab
 - **Delivered by:** the central marketing team, subject to quotation
 - **Extra cost or quote required:** Yes
 - **What to do to get it:** Ask for a manual quote via your Account Manager
+- **Automatic price:** No — the tier covers coordination, not the travel, hotel and food costs that make up the bill
 
 ## Likely Questions
 - Q: Can the bot price this automatically? — A: No — travel costs are variable.

@@ -55,6 +55,8 @@ _AT_A_GLANCE_FIELDS = {
     "delivered by": "delivered_by",
     "extra cost or quote required": "extra_cost_or_quote",
     "what to do to get it": "how_to_get_it",
+    # Optional. Only the four above are required of every document.
+    "automatic price": "automatic_price",
 }
 
 
@@ -118,7 +120,7 @@ def _parse_aliases(raw: str) -> tuple[str, ...]:
 
 
 def _parse_at_a_glance(body: str) -> AtAGlance:
-    """Read the four bullets, leaving any that are absent as ``None``."""
+    """Read the recognised bullets, leaving any that are absent as ``None``."""
     found: dict[str, str] = {}
     for match in _BULLET_RE.finditer(body):
         key = _AT_A_GLANCE_FIELDS.get(normalize_term(match.group("name")))

@@ -53,6 +53,21 @@ def test_parses_a_well_formed_document_without_complaint() -> None:
     assert item.at_a_glance.extra_cost_or_quote == "Yes"
     assert item.summary == "Billboards need a quote."
     assert set(item.sections) >= {"Summary", "At a Glance", "Likely Questions"}
+    # The fifth bullet is optional, and its absence must not be reported as a
+    # defect the way a missing required bullet is.
+    assert item.at_a_glance.automatic_price is None
+
+
+def test_the_optional_automatic_price_bullet_is_read_when_present() -> None:
+    text = WELL_FORMED.replace(
+        "- **What to do to get it:** Submit specifications",
+        "- **What to do to get it:** Submit specifications\n"
+        "- **Automatic price:** No — third-party costs dominate",
+    )
+    item, issues = parse_service_document(text, "photography--billboards.md")
+
+    assert issues == []
+    assert item.at_a_glance.automatic_price == "No — third-party costs dominate"
 
 
 @pytest.mark.parametrize("raw", ["Y", "y", " Y ", "Y  "])

@@ -240,7 +240,7 @@
       "expectItem": "renders-and-other-designs-for-venue-exteriors--merch",
       "expectVerdict": "quote_required",
       "mustInclude": [
-        "100"
+        "350"
       ]
     },
     {
@@ -708,7 +708,7 @@
       "expect": [
         "scope"
       ],
-      "expectItem": "events--event-videos",
+      "expectItem": "events--videos",
       "expectVerdict": "quote_required"
     },
     {
