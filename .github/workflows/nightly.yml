@@ -43,8 +43,16 @@ jobs:
       - name: Install
         run: pip install -e ".[dev,cloud]"
 
+      # --embed matters. `--mode deployed` turns on dense retrieval, and
+      # without vectors in the index it asks for a comparison there is nothing
+      # to compare against — so the run silently measured keyword-only
+      # retrieval while calling itself the deployed configuration. That is the
+      # same class of defect as the keyword-only index that was live in
+      # production until 27 Aug, reproduced in the job built to catch it.
       - name: Build index
-        run: python -m scripts.build_index
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: python -m scripts.build_index --embed
 
       - name: Eval — whole turns, planner and composer live
         env:
