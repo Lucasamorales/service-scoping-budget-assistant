@@ -340,6 +340,11 @@ Neither is a safety failure — no wrong verdict is stated — but both are wors
 configuration users actually get. Not a regression from this work: it is what the deployed mode
 has always done, and it was invisible until there was a harness that ran it.
 
+Two further cases (`budget-spend-country`, `scope-signage-landlord`) move between runs, which is
+the nature of a non-deterministic planner and the reason this mode runs nightly rather than
+gating merges. Final measured state: **66/74 in the deployed configuration, 0 of 15 critical
+failures**, against 65/74 offline.
+
 ## Waiting on a product ruling
 
 | Question | Blocks | Why it matters |
