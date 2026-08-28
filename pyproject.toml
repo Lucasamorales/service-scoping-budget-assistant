@@ -79,6 +79,13 @@ pythonpath = ["."]
 # both — they were flagged as unused whenever the extra happened to be
 # installed, which is why they kept drifting.
 [[tool.mypy.overrides]]
-module = ["google.*", "googleapiclient.*", "openpyxl.*", "snowballstemmer.*"]
+module = [
+    "google.*",
+    "google_auth_httplib2.*",
+    "googleapiclient.*",
+    "httplib2.*",
+    "openpyxl.*",
+    "snowballstemmer.*",
+]
 follow_imports = "skip"
 ignore_missing_imports = true

@@ -32,6 +32,14 @@ __all__ = [
 
 logger = structlog.get_logger(__name__)
 
+SHEETS_TIMEOUT_SECONDS = 20
+"""How long a single spreadsheet read may take before it is abandoned.
+
+The reads are small — a handful of tabs — so anything approaching this is a
+network or auth problem rather than a big payload, and waiting longer only
+delays finding that out. Sized well under the Cloud Run request timeout so a
+slow sheet degrades the answer instead of killing the turn."""
+
 # Spreadsheet body read only — no drive.file write scopes.
 _READONLY_SCOPES = ("https://www.googleapis.com/auth/spreadsheets.readonly",)
 
@@ -63,6 +71,8 @@ def sheets_service(*, credentials_path: str = "") -> Any:
     """Build a Sheets API v4 client from ADC or an explicit key file."""
     try:
         import google.auth
+        import google_auth_httplib2
+        import httplib2
         from google.auth.transport.requests import Request
         from google.oauth2 import service_account
         from googleapiclient.discovery import build
@@ -94,7 +104,14 @@ def sheets_service(*, credentials_path: str = "") -> Any:
                     detail="continuing; the client will retry on first use",
                 )
 
-    return build("sheets", "v4", credentials=creds, cache_discovery=False)
+    # A bounded socket, because the default is unbounded. A hung read used to
+    # sit in the request path until Cloud Run killed the whole turn at 60s, and
+    # the user saw the assistant stop mid-answer with nothing explaining it.
+    # Failing in twenty seconds is worth far more than succeeding in ninety.
+    http = google_auth_httplib2.AuthorizedHttp(
+        creds, http=httplib2.Http(timeout=SHEETS_TIMEOUT_SECONDS)
+    )
+    return build("sheets", "v4", http=http, cache_discovery=False)
 
 
 def fetch_sheet_values(

@@ -3,6 +3,8 @@ the per-document opt-out from automatic pricing."""
 
 from __future__ import annotations
 
+import threading
+import time
 from pathlib import Path
 
 from app.core.keys import service_key
@@ -150,27 +152,71 @@ class TestCachedRateCard:
         )
 
     def test_a_reprice_is_picked_up_without_a_restart(self) -> None:
-        cards = [self._card(350.0), self._card(400.0)]
+        cards = [self._card(400.0)]
         store = CachedQuoteStore(
             lambda: cards.pop(0) if cards else None,
             ttl_seconds=300,
-            initial=cards.pop(0),
+            initial=self._card(350.0),
         )
         assert store.lookup("events--photoshoots") == ("3", 350.0)
 
-        store._tried_at -= 301  # the TTL elapsing, without waiting for it
+        # The worker directly. Going through lookup() starts a thread and
+        # returns the card already in hand, so asserting on the new price
+        # straight after would be racing the refresh rather than testing it.
+        store._refresh()
+
         assert store.lookup("events--photoshoots") == ("3", 400.0)
 
+    def test_a_slow_sheet_does_not_block_the_answer(self) -> None:
+        """The regression that took a live turn down.
+
+        A billboard question arrived just as the TTL expired, the refresh ran
+        inside the request, the Sheets read hung, and Cloud Run killed the turn
+        at sixty seconds — the user watched it stop after "Looking that up...".
+        """
+        release = threading.Event()
+
+        def slow() -> QuoteStore | None:
+            release.wait(10)
+            return self._card(400.0)
+
+        store = CachedQuoteStore(slow, ttl_seconds=1, initial=self._card(350.0))
+        store._tried_at -= 5
+
+        started = time.monotonic()
+        answer = store.lookup("events--photoshoots")
+        elapsed = time.monotonic() - started
+        release.set()
+
+        assert elapsed < 0.5, "the quote waited on the spreadsheet"
+        assert answer == ("3", 350.0), "the card already in hand is served meanwhile"
+
     def test_a_failed_refresh_keeps_the_last_good_card(self) -> None:
-        """No price is worse than a five-minute-old price, so the last good
-        card is served and the staleness reported instead."""
+        """A five-minute-old price beats no price, and beats a wrong one."""
 
         def explode() -> QuoteStore | None:
             raise RuntimeError("sheet unreachable")
 
         store = CachedQuoteStore(explode, ttl_seconds=300, initial=self._card(350.0))
-        store._tried_at -= 301
+        store._refresh()
         assert store.lookup("events--photoshoots") == ("3", 350.0)
+
+    def test_an_unreadable_sheet_does_not_wipe_the_prices(self) -> None:
+        """The loader returns None when the sheet cannot be read, and that must
+        leave the card alone.
+
+        This is what actually happened in production: the read timed out, the
+        old code answered with a card carrying no numeric tiers, and the cache
+        accepted it — so a transient timeout turned every priceable service
+        into one the assistant could not price.
+        """
+        store = CachedQuoteStore(
+            lambda: None, ttl_seconds=300, initial=self._card(350.0)
+        )
+        store._refresh()
+
+        assert store.lookup("events--photoshoots") == ("3", 350.0)
+        assert store.tiers["3"] == 350.0
 
     def test_age_keeps_growing_while_refreshes_fail(self) -> None:
         """The bug this guards: one clock for both 'when did we last read' and
@@ -182,8 +228,7 @@ class TestCachedRateCard:
 
         store = CachedQuoteStore(explode, ttl_seconds=300, initial=self._card(350.0))
         store._read_at -= 900
-        store._tried_at -= 301
-        store.lookup("events--photoshoots")
+        store._refresh()
 
         assert store.cache_age_seconds >= 900
 

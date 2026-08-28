@@ -460,7 +460,41 @@ class TestCacheAge:
 
         cache = _CachedWorkbook(lambda: _load_workbook(FIXTURE), ttl_seconds=300)
         cache._read_at -= 900
-        cache._tried_at -= 301
 
-        assert cache.data.branches
+        # The worker directly, not through `data`: reading the property starts
+        # a thread and returns at once, so asserting on the result afterwards
+        # would be racing it.
+        cache._refresh()
+
         assert cache.age_seconds < 5
+
+    def test_a_slow_sheet_does_not_block_the_answer(self) -> None:
+        """The regression that took production down for a turn.
+
+        Refreshing inside the request meant a hung Sheets read held both the
+        answer and the lock until Cloud Run killed the turn at sixty seconds.
+        The user saw the assistant stop after "Looking that up...".
+        """
+        import threading
+        import time as timing
+
+        from app.store.budget import _CachedWorkbook, _load_workbook
+
+        good = _load_workbook(FIXTURE)
+        release = threading.Event()
+
+        def slow() -> object:
+            release.wait(10)
+            return good
+
+        cache = _CachedWorkbook(lambda: good, ttl_seconds=1)
+        cache._loader = slow  # type: ignore[assignment]
+        cache._tried_at -= 5
+
+        started = timing.monotonic()
+        served = cache.data
+        elapsed = timing.monotonic() - started
+        release.set()
+
+        assert elapsed < 0.5, "the answer waited on the spreadsheet"
+        assert served is good, "the figures already in hand are served meanwhile"

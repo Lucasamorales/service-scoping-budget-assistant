@@ -182,6 +182,7 @@ class _CachedWorkbook:
         self._loader = loader
         self._ttl = max(int(ttl_seconds), 0)
         self._lock = threading.Lock()
+        self._refreshing = False
         self._data = loader()
         now = time.monotonic()
         # Two clocks, deliberately. ``_read_at`` is when the figures being
@@ -195,7 +196,7 @@ class _CachedWorkbook:
     @property
     def data(self) -> _WorkbookData:
         if self._ttl and time.monotonic() - self._tried_at >= self._ttl:
-            self._refresh()
+            self._start_refresh()
         return self._data
 
     @property
@@ -208,26 +209,50 @@ class _CachedWorkbook:
         """
         return int(time.monotonic() - self._read_at)
 
-    def _refresh(self) -> None:
+    def _start_refresh(self) -> None:
+        """Kick off a re-read and return immediately.
+
+        A budget question must not wait on the spreadsheet. Refreshing inside
+        the request meant a slow sheet blocked the answer until Cloud Run
+        killed the turn at sixty seconds, and because the refresh held the
+        lock, one slow read stalled every other question on that instance too.
+
+        The figures in hand are minutes old at worst, and :attr:`age_seconds`
+        says exactly how old, so serving them and catching up behind beats
+        making somebody wait to find out the sheet is unreachable.
+        """
         with self._lock:
-            # Another thread may have refreshed while this one waited.
+            if self._refreshing:
+                return
             if time.monotonic() - self._tried_at < self._ttl:
                 return
-            try:
-                self._data = self._loader()
-            except Exception as exc:  # noqa: BLE001 - any load failure keeps the last good data
-                logger.warning(
-                    "budget.refresh_failed",
-                    error=str(exc),
-                    age_seconds=self.age_seconds,
-                    detail="serving the previously loaded figures",
-                )
-            else:
-                self._read_at = time.monotonic()
-                logger.info("budget.refreshed", branches=len(self._data.branches))
-            # Stamped either way, so a persistent failure retries on the TTL
-            # rather than on every single question.
+            self._refreshing = True
+            # Stamped before the work, so a persistent failure retries on the
+            # TTL rather than on every single question.
             self._tried_at = time.monotonic()
+
+        threading.Thread(
+            target=self._refresh, name="acme-budget-refresh", daemon=True
+        ).start()
+
+    def _refresh(self) -> None:
+        try:
+            fresh = self._loader()
+        except Exception as exc:  # noqa: BLE001 - any load failure keeps the last good data
+            logger.warning(
+                "budget.refresh_failed",
+                error=str(exc),
+                age_seconds=self.age_seconds,
+                detail="serving the previously loaded figures",
+            )
+        else:
+            with self._lock:
+                self._data = fresh
+                self._read_at = time.monotonic()
+            logger.info("budget.refreshed", branches=len(fresh.branches))
+        finally:
+            with self._lock:
+                self._refreshing = False
 
 
 class _WorkbookBackedStore:

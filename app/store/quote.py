@@ -133,96 +133,101 @@ def load_quote_store(
     if not spreadsheet_id.strip():
         return fixture
 
+    currency = fixture.currency if fixture is not None else "GBP"
+
     def loader() -> QuoteStore | None:
-        return _load_from_sheets(
-            fixture,
+        return _read_card_from_sheets(
             spreadsheet_id.strip(),
             credentials_path=credentials_path,
             known_items=known_items,
+            currency=currency,
         )
 
     initial = loader()
-    if initial is None or ttl_seconds <= 0:
+    if initial is None:
+        return _cannot_price(fixture)
+    if ttl_seconds <= 0:
         return initial
     return CachedQuoteStore(loader, ttl_seconds=ttl_seconds, initial=initial)
 
 
-def _load_from_sheets(
-    store: QuoteStore | None,
+def _read_card_from_sheets(
     spreadsheet_id: str,
     *,
     credentials_path: str,
     known_items: frozenset[str] | None,
+    currency: str,
 ) -> QuoteStore | None:
-    """One read of both tabs, assembled into a card. Safe to call repeatedly."""
+    """One complete read of both tabs, or ``None`` if the sheet was unreadable.
+
+    Returning ``None`` rather than a partial card is the point. The caller
+    knows something this function cannot: a refresh already holds a good card
+    minutes old and should keep it, while a first load holds nothing and has to
+    degrade. Deciding here meant a transient timeout replaced live prices with
+    a card that could not price anything — strictly worse than the prices it
+    threw away.
+    """
     try:
         sheet_tiers = _load_pricing_tiers_from_sheets(
             spreadsheet_id,
             credentials_path=credentials_path,
         )
-    except Exception as exc:  # noqa: BLE001 - never quote stale JSON prices as live
-        logger.error(
-            "quote.sheets_tiers_failed",
-            error=str(exc),
-            detail="spreadsheet is source of truth; not using JSON tier prices",
-        )
-        # Keep service→tier map from JSON if present, but clear numeric prices
-        # so we cannot quote stale fixture numbers as if they were live.
-        if store is None:
-            return None
-        return QuoteStore(
-            currency=store.currency,
-            tiers={"Variable": "Variable"},
-            services=store.services,
-        )
+    except Exception as exc:  # noqa: BLE001 - any read failure is a failed read
+        logger.error("quote.sheets_tiers_failed", error=str(exc))
+        return None
 
     if not sheet_tiers:
         logger.error(
             "quote.sheets_tiers_empty",
-            detail="Pricing tier tab missing or empty; refusing JSON price fallback",
+            detail="Pricing_tiers tab missing or empty",
         )
-        if store is None:
-            return None
-        return QuoteStore(
-            currency=store.currency,
-            tiers={"Variable": "Variable"},
-            services=store.services,
-        )
+        return None
 
-    currency = store.currency if store is not None else "GBP"
-
-    # The mapping comes from the sheet too. Falling back to the fixture here
-    # is what let the two drift: the file said Merch was Tier 1 while the
-    # sheet said Tier 3, and nothing compared them.
     try:
         services = _load_service_tiers_from_sheets(
             spreadsheet_id,
             credentials_path=credentials_path,
             known_items=known_items,
         )
-    except Exception as exc:  # noqa: BLE001 - any read failure falls back, loudly
-        logger.error(
-            "quote.sheets_scope_failed",
-            error=str(exc),
-            detail="falling back to the fixture service-to-tier map, which may be stale",
-        )
-        services = store.services if store is not None else {}
-    else:
-        if services:
-            logger.info("quote.sheets_services_loaded", services=len(services))
-        else:
-            logger.error(
-                "quote.sheets_scope_empty",
-                detail="Scope tab had no on-demand rows with a tier; using the fixture",
-            )
-            services = store.services if store is not None else {}
+    except Exception as exc:  # noqa: BLE001 - any read failure is a failed read
+        logger.error("quote.sheets_scope_failed", error=str(exc))
+        return None
 
-    # Sheet prices win; keep Variable from JSON if the tab only lists 1/2/3.
+    if not services:
+        logger.error(
+            "quote.sheets_scope_empty",
+            detail="Scope tab had no on-demand rows carrying a tier",
+        )
+        return None
+
+    # Sheet prices win; Variable is a price by being the absence of one, and
+    # the Pricing_tiers tab only lists 1/2/3.
     tiers: dict[str, TierPrice] = dict(sheet_tiers)
     if "Variable" not in tiers:
         tiers["Variable"] = "Variable"
-    logger.info("quote.sheets_tiers_loaded", tiers=sorted(str(k) for k in tiers))
+    logger.info(
+        "quote.sheets_loaded",
+        tiers=sorted(str(key) for key in tiers),
+        services=len(services),
+    )
     return QuoteStore(currency=currency, tiers=tiers, services=services)
+
+
+def _cannot_price(fixture: QuoteStore | None) -> QuoteStore | None:
+    """The card to serve when the sheet was unreadable at startup.
+
+    Keeps the service list, so the assistant still knows what exists and can
+    say a thing needs quoting, but drops every numeric price. Quoting a fixture
+    figure as though it were live is the failure this module exists to prevent,
+    and "I cannot price this" is an honest answer where a stale number is not.
+    """
+    if fixture is None:
+        return None
+    return QuoteStore(
+        currency=fixture.currency,
+        tiers={"Variable": "Variable"},
+        services=fixture.services,
+    )
 
 
 class CachedQuoteStore:
@@ -254,6 +259,7 @@ class CachedQuoteStore:
         self._loader = loader
         self._ttl = max(int(ttl_seconds), 0)
         self._lock = threading.Lock()
+        self._refreshing = False
         self._data = initial
         now = time.monotonic()
         self._read_at = now
@@ -265,37 +271,61 @@ class CachedQuoteStore:
 
     def _current(self) -> QuoteStore:
         if self._ttl and time.monotonic() - self._tried_at >= self._ttl:
-            self._refresh()
+            self._start_refresh()
         return self._data
 
-    def _refresh(self) -> None:
+    def _start_refresh(self) -> None:
+        """Kick off a re-read and return immediately.
+
+        Never make a person wait on a spreadsheet. Refreshing inside the
+        request is what turned a slow sheet into a dead turn: the read blocked,
+        Cloud Run killed the request at sixty seconds, and the user watched the
+        assistant stop after "Looking that up...". Worse, the lock meant one
+        slow read stalled every other question arriving at that instance.
+
+        The card in hand is minutes old at most, so serving it and catching up
+        behind is strictly better than making somebody wait to discover the
+        sheet is unreachable.
+        """
         with self._lock:
-            # Another thread may have refreshed while this one waited.
+            if self._refreshing:
+                return
             if time.monotonic() - self._tried_at < self._ttl:
                 return
-            try:
-                fresh = self._loader()
-            except Exception as exc:  # noqa: BLE001 - keep the last good card
+            self._refreshing = True
+            # Stamped before the work, so a persistent failure retries on the
+            # TTL rather than on every single question.
+            self._tried_at = time.monotonic()
+
+        threading.Thread(
+            target=self._refresh, name="acme-quote-refresh", daemon=True
+        ).start()
+
+    def _refresh(self) -> None:
+        try:
+            fresh = self._loader()
+        except Exception as exc:  # noqa: BLE001 - keep the last good card
+            logger.warning(
+                "quote.refresh_failed",
+                error=str(exc),
+                age_seconds=self.cache_age_seconds,
+                detail="serving the previously loaded rate card",
+            )
+        else:
+            if fresh is None:
                 logger.warning(
                     "quote.refresh_failed",
-                    error=str(exc),
                     age_seconds=self.cache_age_seconds,
-                    detail="serving the previously loaded rate card",
+                    detail="sheet unreadable; keeping the last good rate card",
                 )
             else:
-                if fresh is None:
-                    logger.warning(
-                        "quote.refresh_empty",
-                        age_seconds=self.cache_age_seconds,
-                        detail="sheet read returned nothing; keeping the last card",
-                    )
-                else:
+                with self._lock:
                     self._data = fresh
                     self._read_at = time.monotonic()
-                    logger.info("quote.refreshed", services=len(fresh.services))
-            # Stamped either way, so a persistent failure retries on the TTL
-            # rather than on every single question.
-            self._tried_at = time.monotonic()
+                logger.info("quote.refreshed", services=len(fresh.services))
+        finally:
+            with self._lock:
+                self._refreshing = False
 
     @property
     def currency(self) -> str:
