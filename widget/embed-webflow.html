@@ -1,0 +1,138 @@
+<!--
+  Acme Scoping Assistant — Webflow embed.
+
+  Paste the whole of this into a Webflow Embed element. It reproduces the
+  backdrop the widget is designed to sit on: the assistant renders a dark
+  rounded shell about 760px tall inside a shadow root, so on a page that gives
+  it nothing it looks like a cut-out floating on white. The panel below is the
+  environment, not decoration.
+
+  Two things worth knowing before editing it:
+
+  * Every rule is scoped under .acme-q. Webflow pages carry their own global
+    styles, and a bare `body`/`h1`/`p`/`a` rule in an embed will fight them —
+    or quietly restyle the rest of the page.
+  * Nothing here can reach the widget itself. It is a shadow root, so its own
+    styling is sealed. That also means the fonts have to be loaded by the
+    page: font loading is document-scoped, which is why the <link> below
+    matters. Without it the assistant silently falls back to Segoe UI.
+-->
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link
+  href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&family=Caveat+Brush&display=swap"
+  rel="stylesheet">
+
+<style>
+  .acme-q {
+    /* The widget's own canvas colour, so the panel and the shell read as one
+       object rather than a dark box sitting on a slightly different dark box. */
+    --acme-canvas: #101A33;
+    --acme-accent: #6BB0E0;
+    --acme-text: #FFFFFF;
+
+    position: relative;
+    padding: 48px 24px 56px;
+    border-radius: 18px;
+    background:
+      radial-gradient(900px 420px at 85% -10%, rgba(107, 176, 224, 0.18), transparent 55%),
+      var(--acme-canvas);
+    font-family: "Archivo", "Segoe UI", system-ui, sans-serif;
+    /* Belt and braces: the widget sets its own colours inside the shadow root,
+       but anything in the header below inherits from here. */
+    color: var(--acme-text);
+    box-sizing: border-box;
+  }
+
+  .acme-q *,
+  .acme-q *::before,
+  .acme-q *::after {
+    box-sizing: border-box;
+  }
+
+  /* Full-bleed variant. Add the class in Webflow — <div class="acme-q acme-q--bleed">
+     — when the embed sits in a full-width section and you want the navy to run
+     edge to edge. Left off by default because 100vw includes the scrollbar,
+     which on a page that scrolls produces a few pixels of horizontal drift. */
+  .acme-q--bleed {
+    margin-left: 50%;
+    transform: translateX(-50%);
+    width: 100vw;
+    max-width: 100vw;
+    border-radius: 0;
+  }
+
+  .acme-q__inner {
+    width: min(760px, 100%);
+    margin: 0 auto;
+    display: flex;
+    flex-direction: column;
+    gap: 22px;
+  }
+
+  .acme-q__head {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    text-align: center;
+  }
+
+  /* No text-transform. The wordmark is "Acme" — a lowercase i and three
+     capitals — and uppercasing it renders the brand wrong. The spacing is what
+     carries the wordmark look, not the case. */
+  .acme-q__brand {
+    margin: 0;
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 0.16em;
+    color: var(--acme-text);
+  }
+
+  .acme-q__brand span {
+    font-weight: 400;
+    letter-spacing: 0.06em;
+    opacity: 0.55;
+  }
+
+  .acme-q__note {
+    margin: 0;
+    font-size: 14px;
+    line-height: 1.5;
+    color: rgba(255, 255, 255, 0.6);
+  }
+
+  .acme-q acme-chat {
+    display: block;
+    width: 100%;
+  }
+
+  @media (max-width: 640px) {
+    .acme-q {
+      padding: 28px 14px 34px;
+      border-radius: 12px;
+    }
+  }
+</style>
+
+<div class="acme-q">
+  <div class="acme-q__inner">
+
+    <div class="acme-q__head">
+      <p class="acme-q__brand">Acme <span>Scoping Assistant</span></p>
+      <p class="acme-q__note">
+        Ask whether a marketing request is in scope, what it costs, and who to send it to.
+      </p>
+    </div>
+
+    <acme-chat api-base="https://your-service-url.a.run.app"></acme-chat>
+
+  </div>
+</div>
+
+<!--
+  Bump ?v= after any deploy that changes how the assistant looks. Browsers
+  cache modules hard, and without it people keep being served the old bundle.
+-->
+<script type="module"
+        src="https://your-service-url.a.run.app/widget/acme-chat.js?v=1"></script>
