@@ -248,6 +248,16 @@ if ($LASTEXITCODE -ne 0) {
     exit 1
 }
 
+# The env vars go through gcloud's ^delimiter^ escaping rather than a plain
+# comma-joined list, because ALLOWED_ORIGINS is itself comma-separated and
+# would otherwise truncate at the first origin.
+#
+# The delimiter is a pipe, not an @. MAIL_FROM_ADDRESS carries an email
+# address, and @ split it mid-value into "Acme Scoping <onboarding" and
+# "resend.dev>" — gcloud rejected the result and the deploy failed on 28 Aug.
+# The separator has to be a character none of these values can hold: origins
+# carry : and /, the sender carries @ < > and a space, spreadsheet ids carry
+# - and _.
 Write-Host "Building and deploying (Cloud Build + Cloud Run). This takes a few minutes..."
 # Left as a direct call so Cloud Build progress streams to the console as it
 # happens rather than being buffered until the end. It writes that progress to
@@ -266,7 +276,7 @@ gcloud run deploy $Service `
     --min-instances 0 `
     --max-instances 3 `
     --cpu-boost `
-    --set-env-vars ("^@^" + ($envVars -join "@")) `
+    --set-env-vars ("^|^" + ($envVars -join "|")) `
     --set-secrets ($secretFlags -join ",") `
     --quiet
 $deployCode = $LASTEXITCODE
