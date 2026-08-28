@@ -1,21 +1,28 @@
 <!--
   Acme Scoping Assistant — Webflow embed.
 
-  Paste the whole of this into a Webflow Embed element. It reproduces the
-  backdrop the widget is designed to sit on: the assistant renders a dark
-  rounded shell about 760px tall inside a shadow root, so on a page that gives
-  it nothing it looks like a cut-out floating on white. The panel below is the
-  environment, not decoration.
+  Paste the whole of this into a Webflow Embed element on a page of its own.
+  It reproduces the standalone page: navy filling the window, the assistant
+  centred in it, nothing else.
 
-  Two things worth knowing before editing it:
+  Three things worth knowing before editing it:
 
-  * Every rule is scoped under .acme-q. Webflow pages carry their own global
-    styles, and a bare `body`/`h1`/`p`/`a` rule in an embed will fight them —
-    or quietly restyle the rest of the page.
-  * Nothing here can reach the widget itself. It is a shadow root, so its own
-    styling is sealed. That also means the fonts have to be loaded by the
-    page: font loading is document-scoped, which is why the <link> below
-    matters. Without it the assistant silently falls back to Segoe UI.
+  * The background is set on html and body, not on a wrapper. A wrapper can
+    only ever be as wide as the section Webflow puts it in, which is what left
+    white down the sides and underneath. This is the one case where an embed
+    should reach outside itself, because the request is precisely that the page
+    stop being white.
+  * !important is there to beat Webflow's own body styling, which is set from
+    the Designer and would otherwise win. Only the background is touched — no
+    fonts, no typography, nothing that could disturb another page.
+  * Nothing here can reach the assistant itself. It is a shadow root, so its
+    styling is sealed. That also means the page has to load the fonts: font
+    loading is document-scoped, and without the <link> below the assistant
+    silently falls back to Segoe UI while otherwise looking fine.
+
+  For no white at all, give this page a blank Webflow layout — no nav, no
+  footer. Anything else Webflow renders sits above or below this section and
+  will show.
 -->
 
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -25,119 +32,44 @@
   rel="stylesheet">
 
 <style>
-  .acme-q {
-    /* The widget's own canvas colour, so the panel and the shell read as one
-       object rather than a dark box sitting on a slightly different dark box. */
-    --acme-canvas: #101A33;
-    --acme-accent: #6BB0E0;
-    --acme-text: #FFFFFF;
-
-    position: relative;
-    /* The panel has to hug the widget. Left to fill its container it becomes a
-       wide navy band with a 760px column adrift in the middle, which is what
-       made it read as unfinished — the emptiness either side, not the widget.
-       760 for the column plus 44 of breathing room each side. */
-    max-width: 848px;
-    margin-left: auto;
-    margin-right: auto;
-    padding: 34px 44px 40px;
-    border-radius: 18px;
+  html,
+  body {
+    /* The wash sits at the top right exactly as it does on the standalone
+       page. Painting it here rather than on the wrapper is what lets it run to
+       the edges of the window instead of to the edges of a Webflow section. */
     background:
       radial-gradient(900px 420px at 85% -10%, rgba(107, 176, 224, 0.18), transparent 55%),
-      var(--acme-canvas);
+      #101A33 !important;
+    margin: 0 !important;
+  }
+
+  .acme-q {
+    display: grid;
+    place-items: center;
+    /* dvh first so mobile browser chrome does not leave a navy-less strip when
+       the address bar collapses; vh is the fallback for anything older. */
+    min-height: 100vh;
+    min-height: 100dvh;
+    padding: 40px 24px;
+    box-sizing: border-box;
     font-family: "Archivo", "Segoe UI", system-ui, sans-serif;
-    /* Belt and braces: the widget sets its own colours inside the shadow root,
-       but anything in the header below inherits from here. */
-    color: var(--acme-text);
-    box-sizing: border-box;
-  }
-
-  .acme-q *,
-  .acme-q *::before,
-  .acme-q *::after {
-    box-sizing: border-box;
-  }
-
-  /* Full-bleed variant. Add the class in Webflow — <div class="acme-q acme-q--bleed">
-     — when the embed sits in a full-width section and you want the navy to run
-     edge to edge like the standalone page does. Only worth it if the section is
-     tall enough to read as a band rather than a stripe; otherwise the tight
-     panel above looks more deliberate. */
-  .acme-q--bleed {
-    margin-left: 50%;
-    transform: translateX(-50%);
-    width: 100vw;
-    max-width: 100vw;
-    border-radius: 0;
-    padding-left: 24px;
-    padding-right: 24px;
-  }
-
-  .acme-q__inner {
-    width: min(760px, 100%);
-    margin: 0 auto;
-    display: flex;
-    flex-direction: column;
-    gap: 22px;
-  }
-
-  .acme-q__head {
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-    text-align: center;
-  }
-
-  /* No text-transform. The wordmark is "Acme" — a lowercase i and three
-     capitals — and uppercasing it renders the brand wrong. The spacing is what
-     carries the wordmark look, not the case. */
-  .acme-q__brand {
-    margin: 0;
-    font-size: 13px;
-    font-weight: 700;
-    letter-spacing: 0.16em;
-    color: var(--acme-text);
-  }
-
-  .acme-q__brand span {
-    font-weight: 400;
-    letter-spacing: 0.06em;
-    opacity: 0.55;
-  }
-
-  .acme-q__note {
-    margin: 0;
-    font-size: 14px;
-    line-height: 1.5;
-    color: rgba(255, 255, 255, 0.6);
   }
 
   .acme-q acme-chat {
     display: block;
-    width: 100%;
+    width: min(760px, 100%);
   }
 
   @media (max-width: 640px) {
     .acme-q {
-      padding: 22px 14px 26px;
-      border-radius: 12px;
+      padding: 0;
+      place-items: stretch;
     }
   }
 </style>
 
 <div class="acme-q">
-  <div class="acme-q__inner">
-
-    <div class="acme-q__head">
-      <p class="acme-q__brand">Acme <span>Scoping Assistant</span></p>
-      <p class="acme-q__note">
-        Ask whether a marketing request is in scope, what it costs, and who to send it to.
-      </p>
-    </div>
-
-    <acme-chat api-base="https://your-service-url.a.run.app"></acme-chat>
-
-  </div>
+  <acme-chat api-base="https://your-service-url.a.run.app"></acme-chat>
 </div>
 
 <!--
