@@ -324,6 +324,64 @@ def main() -> int:
         },
     )
 
+    # The gap this closes: `budget: true` in the health body is decided once at
+    # startup and never changes, so the uptime check above cannot see a sheet
+    # that becomes unreadable later. The service stays up, keeps answering, and
+    # serves figures that get quietly older — which for a spend balance is the
+    # worst of the failure modes, because the answer still looks like an answer.
+    ensure_log_metric(
+        api,
+        "acme_sheet_refresh_failures",
+        "Budget or rate-card refreshes that could not re-read the spreadsheet.",
+        'resource.type="cloud_run_revision" AND '
+        '(jsonPayload.event="budget.refresh_failed" OR '
+        'jsonPayload.event="quote.refresh_failed")',
+    )
+    ensure_policy(
+        api,
+        "Acme scoping — spreadsheet refresh failing",
+        {
+            "documentation": {
+                "content": (
+                    "The service can no longer re-read the spreadsheet, and is "
+                    "serving the last figures it managed to load. Budget balances "
+                    "and quoted prices are both stale and getting staler; the "
+                    "health endpoint still reports ok, because the stores were "
+                    "built successfully at startup. "
+                    "Check `budgetAgeSeconds` and `quoteAgeSeconds` on /api/health "
+                    "to see how far behind they are. The usual cause is the Sheet "
+                    "being unshared from the runtime service account."
+                ),
+                "mimeType": "text/markdown",
+            },
+            "combiner": "OR",
+            "conditions": [
+                {
+                    "displayName": "refresh failures in half an hour",
+                    "conditionThreshold": {
+                        "filter": (
+                            "metric.type="
+                            '"logging.googleapis.com/user/acme_sheet_refresh_failures" '
+                            'AND resource.type="cloud_run_revision"'
+                        ),
+                        "aggregations": [
+                            {"alignmentPeriod": "1800s", "perSeriesAligner": "ALIGN_SUM"}
+                        ],
+                        # Two, not one: a single failed read is a blip the next
+                        # refresh fixes by itself, and paging on it teaches
+                        # people to ignore the alert.
+                        "comparison": "COMPARISON_GT",
+                        "thresholdValue": 1,
+                        "duration": "0s",
+                        "trigger": {"count": 1},
+                    },
+                }
+            ],
+            "notificationChannels": [channel] if channel else [],
+            "alertStrategy": {"autoClose": "3600s"},
+        },
+    )
+
     # Recorded, not alerted on. A threshold chosen before any data exists is a
     # guess, and a guessed threshold is how alerting gets switched off.
     ensure_log_metric(

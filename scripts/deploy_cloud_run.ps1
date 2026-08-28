@@ -122,6 +122,8 @@ $mailFrom = $envMap["MAIL_FROM_ADDRESS"]
 $sessionSecret = $envMap["SESSION_TOKEN_SECRET"]
 $password = $envMap["INTERNAL_ACCESS_PASSWORD"]
 $allowedOrigins = $envMap["ALLOWED_ORIGINS"]
+$budgetTtl = $envMap["BUDGET_CACHE_TTL_SECONDS"]
+$quoteTtl = $envMap["QUOTE_CACHE_TTL_SECONDS"]
 
 # The HMAC that signs session tokens. Every deploy used to mint a fresh one
 # when .env had none, which silently logged out everyone still using the app.
@@ -211,6 +213,16 @@ if (-not [string]::IsNullOrWhiteSpace($mailFrom)) {
 # serves itself.
 if (-not [string]::IsNullOrWhiteSpace($allowedOrigins)) {
     $envVars += "ALLOWED_ORIGINS=$allowedOrigins"
+}
+# Both default sensibly in code, so these only travel when .env overrides them.
+# Passed through because otherwise tuning how stale a figure may get would look
+# like it worked locally and silently do nothing in production — the same trap
+# ALLOWED_ORIGINS was in.
+if (-not [string]::IsNullOrWhiteSpace($budgetTtl)) {
+    $envVars += "BUDGET_CACHE_TTL_SECONDS=$budgetTtl"
+}
+if (-not [string]::IsNullOrWhiteSpace($quoteTtl)) {
+    $envVars += "QUOTE_CACHE_TTL_SECONDS=$quoteTtl"
 }
 
 # Build the knowledge index here rather than inside the image.
