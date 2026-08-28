@@ -172,7 +172,19 @@ class Settings(BaseSettings):
 
     @property
     def origins(self) -> tuple[str, ...]:
-        return tuple(part.strip() for part in self.allowed_origins.split(",") if part.strip())
+        """The allowlist, normalised the way a browser sends an Origin.
+
+        Lowercased and stripped of any trailing slash, because scheme and host
+        are case-insensitive per RFC 3986 while both the origin check and
+        Starlette's CORS middleware compare strings exactly. Normalising here
+        rather than at each comparison means the two cannot disagree: doing it
+        in only one of them turned a mixed-case entry into a 400 from the other,
+        with nothing to suggest the capitalisation was the cause."""
+        return tuple(
+            part.strip().rstrip("/").casefold()
+            for part in self.allowed_origins.split(",")
+            if part.strip()
+        )
 
     @property
     def session_auth_enabled(self) -> bool:

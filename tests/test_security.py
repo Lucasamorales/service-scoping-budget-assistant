@@ -172,3 +172,70 @@ class TestSecurityHeaders:
             bundle = client.get("/widget/acme-chat.js")
             assert bundle.status_code == 200
             assert "acme-chat" in bundle.text
+
+
+class TestCorsPreflight:
+    """The browser's question before a cross-origin request.
+
+    These only matter off-origin, which is why the page this service serves
+    itself never showed the problem: a preflight to /api/chat reached the
+    bearer-token check with no Authorization header — because a preflight never
+    carries one — and was refused. Sign-in worked, every message after it did
+    not.
+    """
+
+    ORIGIN = "https://www.example.com"
+
+    def _client(self) -> TestClient:
+        return TestClient(
+            create_app(
+                Settings(
+                    environment="production",
+                    allowed_origins=self.ORIGIN,
+                    session_token_secret="test-secret-not-real",
+                    internal_access_password="pw",
+                    budget_spreadsheet_id="",
+                )
+            )
+        )
+
+    def _preflight(self, client: TestClient, path: str, origin: str):
+        return client.options(
+            path,
+            headers={
+                "Origin": origin,
+                "Access-Control-Request-Method": "POST",
+                "Access-Control-Request-Headers": "authorization,content-type",
+            },
+        )
+
+    def test_a_preflight_to_chat_is_not_asked_for_a_token(self) -> None:
+        response = self._preflight(self._client(), "/api/chat", self.ORIGIN)
+        assert response.status_code == 200
+        assert response.headers["access-control-allow-origin"] == self.ORIGIN
+
+    def test_the_real_request_still_needs_one(self) -> None:
+        """Exempting the preflight must not exempt what follows it."""
+        response = self._client().post(
+            "/api/chat", headers={"Origin": self.ORIGIN}, json={"message": "hi"}
+        )
+        assert response.status_code == 401
+
+    def test_a_foreign_origin_is_refused_before_anything_else(self) -> None:
+        response = self._preflight(self._client(), "/api/chat", "https://evil.example")
+        assert response.status_code == 403
+
+    def test_the_allowlist_ignores_capitalisation(self) -> None:
+        """Host and scheme are case-insensitive, so a mixed-case entry must
+        still match rather than 403 with no hint why."""
+        client = TestClient(
+            create_app(
+                Settings(
+                    environment="production",
+                    allowed_origins="https://WWW.Example.com",
+                    session_token_secret="test-secret-not-real",
+                    budget_spreadsheet_id="",
+                )
+            )
+        )
+        assert self._preflight(client, "/api/chat", self.ORIGIN).status_code == 200
