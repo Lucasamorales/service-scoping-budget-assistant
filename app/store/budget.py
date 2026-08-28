@@ -152,6 +152,11 @@ class BudgetStore(Protocol):
 
     def snapshot(self, branch: BranchRef, month: str) -> BudgetSnapshot: ...
 
+    @property
+    def cache_age_seconds(self) -> int:
+        """Seconds since these figures were read from their source."""
+        ...
+
 
 @dataclass(frozen=True, slots=True)
 class _WorkbookData:
@@ -178,18 +183,35 @@ class _CachedWorkbook:
         self._ttl = max(int(ttl_seconds), 0)
         self._lock = threading.Lock()
         self._data = loader()
-        self._loaded_at = time.monotonic()
+        now = time.monotonic()
+        # Two clocks, deliberately. ``_read_at`` is when the figures being
+        # served were actually read, and only a success moves it. ``_tried_at``
+        # is when a refresh was last attempted, and paces the retry. Sharing
+        # one clock made a failing refresh look like a fresh one: the stamp
+        # moved, so age reset to zero while the data underneath got older.
+        self._read_at = now
+        self._tried_at = now
 
     @property
     def data(self) -> _WorkbookData:
-        if self._ttl and time.monotonic() - self._loaded_at >= self._ttl:
+        if self._ttl and time.monotonic() - self._tried_at >= self._ttl:
             self._refresh()
         return self._data
+
+    @property
+    def age_seconds(self) -> int:
+        """How old the figures being served actually are.
+
+        Grows without bound while refreshes keep failing, which is the point:
+        that is the state worth reporting, and the one that used to be
+        invisible.
+        """
+        return int(time.monotonic() - self._read_at)
 
     def _refresh(self) -> None:
         with self._lock:
             # Another thread may have refreshed while this one waited.
-            if time.monotonic() - self._loaded_at < self._ttl:
+            if time.monotonic() - self._tried_at < self._ttl:
                 return
             try:
                 self._data = self._loader()
@@ -197,19 +219,25 @@ class _CachedWorkbook:
                 logger.warning(
                     "budget.refresh_failed",
                     error=str(exc),
+                    age_seconds=self.age_seconds,
                     detail="serving the previously loaded figures",
                 )
             else:
+                self._read_at = time.monotonic()
                 logger.info("budget.refreshed", branches=len(self._data.branches))
             # Stamped either way, so a persistent failure retries on the TTL
             # rather than on every single question.
-            self._loaded_at = time.monotonic()
+            self._tried_at = time.monotonic()
 
 
 class _WorkbookBackedStore:
     """Shared read paths for the xlsx and Sheets stores."""
 
     _cache: _CachedWorkbook
+
+    @property
+    def cache_age_seconds(self) -> int:
+        return self._cache.age_seconds
 
     def branches(self) -> tuple[BranchRef, ...]:
         return self._cache.data.branches
@@ -242,7 +270,7 @@ class SheetsBudgetStore(_WorkbookBackedStore):
         spreadsheet_id: str,
         *,
         credentials_path: str = "",
-        ttl_seconds: int = 900,
+        ttl_seconds: int = 300,
     ) -> None:
         self._spreadsheet_id = spreadsheet_id
         self._cache = _CachedWorkbook(
@@ -311,7 +339,7 @@ def build_budget_store(
     xlsx_path: Path | None = None,
     spreadsheet_id: str = "",
     credentials_path: str = "",
-    cache_ttl_seconds: int = 900,
+    cache_ttl_seconds: int = 300,
 ) -> BudgetStore | None:
     """Load budget data.
 

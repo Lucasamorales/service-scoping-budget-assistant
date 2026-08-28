@@ -39,7 +39,7 @@ from app.store.contacts import (
     ContactDirectory,
 )
 from app.store.mail import Mailer
-from app.store.quote import QuoteStore
+from app.store.quote import RateCard
 from app.store.roster import RosterStore
 from app.tools.actions import yes_no_actions
 from app.tools.budget import answer_budget
@@ -84,7 +84,7 @@ class Executor:
     resolver: ScopeResolver
     contacts: ContactDirectory
     budget_store: BudgetStore | None = None
-    quote_store: QuoteStore | None = None
+    quote_store: RateCard | None = None
     roster: RosterStore | None = None
     audit_log: AuditStore | None = None
 

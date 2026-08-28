@@ -6,7 +6,7 @@ from dataclasses import dataclass
 
 from app.core.types import ServiceItem
 from app.store.budget import BudgetSnapshot, BudgetStore
-from app.store.quote import QuoteStore
+from app.store.quote import RateCard
 from app.tools.budget import answer_budget
 
 __all__ = ["QuoteOutcome", "quote_for"]
@@ -28,7 +28,7 @@ class QuoteOutcome:
 
 def quote_for(
     item: ServiceItem,
-    store: QuoteStore | None,
+    store: RateCard | None,
     budget_store: BudgetStore | None,
     *,
     session_branch: str | None = None,

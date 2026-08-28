@@ -130,6 +130,16 @@ def health(request: Request) -> HealthResponse:
         mail=settings.mail_configured,
         budget=pipeline.budget_store is not None,
         quote=pipeline.quote_store is not None,
+        budget_age_seconds=(
+            pipeline.budget_store.cache_age_seconds
+            if pipeline.budget_store is not None
+            else None
+        ),
+        quote_age_seconds=(
+            pipeline.quote_store.cache_age_seconds
+            if pipeline.quote_store is not None
+            else None
+        ),
     )
 
 

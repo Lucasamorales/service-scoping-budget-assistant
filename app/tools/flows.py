@@ -17,7 +17,7 @@ from app.store.audit import (
 from app.store.budget import BudgetStore
 from app.store.contacts import Contact, ContactDirectory
 from app.store.mail import Mailer
-from app.store.quote import QuoteStore
+from app.store.quote import RateCard
 from app.tools.actions import Action, yes_no_actions
 from app.tools.budget import answer_budget
 from app.tools.mail import build_request_email, send_request_email
@@ -109,7 +109,7 @@ def enrich_scope_flow(
     item: ServiceItem,
     *,
     contacts: ContactDirectory,
-    quote_store: QuoteStore | None,
+    quote_store: RateCard | None,
     budget_store: BudgetStore | None,
     identity: SessionIdentity,
     question: str,
@@ -361,7 +361,7 @@ def _flow_in_scope(
 def _flow_quote(
     item: ServiceItem,
     contacts: ContactDirectory,
-    quote_store: QuoteStore | None,
+    quote_store: RateCard | None,
     budget_store: BudgetStore | None,
     identity: SessionIdentity,
     question: str,

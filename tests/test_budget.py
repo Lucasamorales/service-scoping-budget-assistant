@@ -262,7 +262,7 @@ class TestCacheTtl:
         cache = budget_module._CachedWorkbook(loader, ttl_seconds=1)
         assert cache.data.label == "load-1"
         # Reach back in time rather than sleeping.
-        cache._loaded_at -= 5
+        cache._tried_at -= 5
         assert cache.data.label == "load-2"
         assert len(calls) == 2
 
@@ -283,7 +283,7 @@ class TestCacheTtl:
 
         cache = budget_module._CachedWorkbook(loader, ttl_seconds=1)
         state["fail"] = True
-        cache._loaded_at -= 5
+        cache._tried_at -= 5
         assert cache.data.label == "good"
 
 
@@ -428,3 +428,39 @@ class TestPipelineBudget:
 def test_canonical_month_helpers() -> None:
     assert canonical_month("august") == "Aug"
     assert canonical_month("AUG") == "Aug"
+
+
+class TestCacheAge:
+    """Staleness has to be visible, because the health flag cannot show it.
+
+    ``budget: true`` is decided once at startup and never changes, so a sheet
+    that becomes unreadable later leaves the service looking healthy while the
+    figures it serves get older.
+    """
+
+    def test_age_keeps_growing_while_refreshes_fail(self) -> None:
+        from app.store.budget import _CachedWorkbook, _load_workbook
+
+        cache = _CachedWorkbook(lambda: _load_workbook(FIXTURE), ttl_seconds=300)
+
+        def explode() -> object:
+            raise RuntimeError("sheet unreachable")
+
+        cache._loader = explode  # type: ignore[assignment]
+        cache._read_at -= 900
+        cache._tried_at -= 301
+
+        assert cache.data.branches, "the last good figures are still served"
+        # One clock for both "last read" and "last tried" reset this to zero on
+        # a failed refresh, so ageing data looked permanently fresh.
+        assert cache.age_seconds >= 900
+
+    def test_a_successful_refresh_resets_the_age(self) -> None:
+        from app.store.budget import _CachedWorkbook, _load_workbook
+
+        cache = _CachedWorkbook(lambda: _load_workbook(FIXTURE), ttl_seconds=300)
+        cache._read_at -= 900
+        cache._tried_at -= 301
+
+        assert cache.data.branches
+        assert cache.age_seconds < 5

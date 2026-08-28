@@ -20,15 +20,25 @@ rejected at load so a stale Tier 4 mapping cannot quote silently.
 from __future__ import annotations
 
 import json
+import threading
+import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal
+from typing import Literal, Protocol
 
 import structlog
 
 from app.core.keys import service_key
 
-__all__ = ["ALLOWED_TIERS", "QuoteStore", "TierPrice", "load_quote_store"]
+__all__ = [
+    "ALLOWED_TIERS",
+    "CachedQuoteStore",
+    "QuoteStore",
+    "RateCard",
+    "TierPrice",
+    "load_quote_store",
+]
 
 logger = structlog.get_logger(__name__)
 
@@ -37,11 +47,41 @@ TierPrice = float | Literal["Variable"]
 ALLOWED_TIERS = frozenset({"1", "2", "3", "Variable"})
 
 
+class RateCard(Protocol):
+    """What a caller needs from the rate card, however it is kept current."""
+
+    @property
+    def currency(self) -> str: ...
+
+    @property
+    def tiers(self) -> dict[str, TierPrice]: ...
+
+    @property
+    def services(self) -> dict[str, str]: ...
+
+    @property
+    def cache_age_seconds(self) -> int:
+        """Seconds since these prices were read from their source."""
+        ...
+
+    def tier_for(self, service_key: str) -> str | None: ...
+
+    def price_for_tier(self, tier: str) -> TierPrice | None: ...
+
+    def lookup(self, service_key: str) -> tuple[str, TierPrice] | None: ...
+
+
 @dataclass(frozen=True, slots=True)
 class QuoteStore:
     currency: str
     tiers: dict[str, TierPrice]
     services: dict[str, str]
+
+    @property
+    def cache_age_seconds(self) -> int:
+        """Always zero. A fixture read from disk is its own source of truth;
+        there is no sheet behind it that could have moved on."""
+        return 0
 
     def tier_for(self, service_key: str) -> str | None:
         return self.services.get(service_key)
@@ -67,7 +107,8 @@ def load_quote_store(
     spreadsheet_id: str = "",
     credentials_path: str = "",
     known_items: frozenset[str] | None = None,
-) -> QuoteStore | None:
+    ttl_seconds: int = 0,
+) -> RateCard | None:
     """Load the rate card.
 
     With a spreadsheet id the live sheet is the source of truth for both
@@ -83,14 +124,40 @@ def load_quote_store(
     They change nothing about what loads; they only let a sheet row that names
     a service no document matches be reported at startup instead of going
     unnoticed.
-    """
-    store = _load_quote_json(path)
-    if not spreadsheet_id.strip():
-        return store
 
+    ``ttl_seconds`` re-reads the sheet in the background of a long-lived
+    process. Zero keeps the old behaviour of reading once, which is right for
+    the fixture and for one-shot scripts.
+    """
+    fixture = _load_quote_json(path)
+    if not spreadsheet_id.strip():
+        return fixture
+
+    def loader() -> QuoteStore | None:
+        return _load_from_sheets(
+            fixture,
+            spreadsheet_id.strip(),
+            credentials_path=credentials_path,
+            known_items=known_items,
+        )
+
+    initial = loader()
+    if initial is None or ttl_seconds <= 0:
+        return initial
+    return CachedQuoteStore(loader, ttl_seconds=ttl_seconds, initial=initial)
+
+
+def _load_from_sheets(
+    store: QuoteStore | None,
+    spreadsheet_id: str,
+    *,
+    credentials_path: str,
+    known_items: frozenset[str] | None,
+) -> QuoteStore | None:
+    """One read of both tabs, assembled into a card. Safe to call repeatedly."""
     try:
         sheet_tiers = _load_pricing_tiers_from_sheets(
-            spreadsheet_id.strip(),
+            spreadsheet_id,
             credentials_path=credentials_path,
         )
     except Exception as exc:  # noqa: BLE001 - never quote stale JSON prices as live
@@ -129,7 +196,7 @@ def load_quote_store(
     # sheet said Tier 3, and nothing compared them.
     try:
         services = _load_service_tiers_from_sheets(
-            spreadsheet_id.strip(),
+            spreadsheet_id,
             credentials_path=credentials_path,
             known_items=known_items,
         )
@@ -156,6 +223,100 @@ def load_quote_store(
         tiers["Variable"] = "Variable"
     logger.info("quote.sheets_tiers_loaded", tiers=sorted(str(k) for k in tiers))
     return QuoteStore(currency=currency, tiers=tiers, services=services)
+
+
+class CachedQuoteStore:
+    """A rate card that re-reads the sheet, so prices do not need a restart.
+
+    The static store is loaded once and frozen, which was fine while the tier
+    map lived in a file that only changed with a deploy. Now that the business
+    owns both halves on the sheet, a re-tiered service would have kept quoting
+    the old price until the container happened to recycle — and with
+    ``--min-instances 0`` that is minutes on a quiet day and hours on a busy
+    one, which is no kind of guarantee.
+
+    Two clocks, for the same reason as the budget cache: only a successful read
+    moves ``_read_at``, so :attr:`cache_age_seconds` keeps growing while
+    refreshes fail instead of resetting and hiding it.
+
+    A failed refresh keeps the last good card. Prices that are five minutes old
+    are worth far more than no price at all, and the staleness is reported
+    rather than guessed at.
+    """
+
+    def __init__(
+        self,
+        loader: Callable[[], QuoteStore | None],
+        *,
+        ttl_seconds: int,
+        initial: QuoteStore,
+    ) -> None:
+        self._loader = loader
+        self._ttl = max(int(ttl_seconds), 0)
+        self._lock = threading.Lock()
+        self._data = initial
+        now = time.monotonic()
+        self._read_at = now
+        self._tried_at = now
+
+    @property
+    def cache_age_seconds(self) -> int:
+        return int(time.monotonic() - self._read_at)
+
+    def _current(self) -> QuoteStore:
+        if self._ttl and time.monotonic() - self._tried_at >= self._ttl:
+            self._refresh()
+        return self._data
+
+    def _refresh(self) -> None:
+        with self._lock:
+            # Another thread may have refreshed while this one waited.
+            if time.monotonic() - self._tried_at < self._ttl:
+                return
+            try:
+                fresh = self._loader()
+            except Exception as exc:  # noqa: BLE001 - keep the last good card
+                logger.warning(
+                    "quote.refresh_failed",
+                    error=str(exc),
+                    age_seconds=self.cache_age_seconds,
+                    detail="serving the previously loaded rate card",
+                )
+            else:
+                if fresh is None:
+                    logger.warning(
+                        "quote.refresh_empty",
+                        age_seconds=self.cache_age_seconds,
+                        detail="sheet read returned nothing; keeping the last card",
+                    )
+                else:
+                    self._data = fresh
+                    self._read_at = time.monotonic()
+                    logger.info("quote.refreshed", services=len(fresh.services))
+            # Stamped either way, so a persistent failure retries on the TTL
+            # rather than on every single question.
+            self._tried_at = time.monotonic()
+
+    @property
+    def currency(self) -> str:
+        return self._current().currency
+
+    @property
+    def tiers(self) -> dict[str, TierPrice]:
+        return self._current().tiers
+
+    @property
+    def services(self) -> dict[str, str]:
+        return self._current().services
+
+    def tier_for(self, service_key: str) -> str | None:
+        return self._current().tier_for(service_key)
+
+    def price_for_tier(self, tier: str) -> TierPrice | None:
+        return self._current().price_for_tier(tier)
+
+    def lookup(self, service_key: str) -> tuple[str, TierPrice] | None:
+        return self._current().lookup(service_key)
 
 
 def _load_quote_json(path: Path) -> QuoteStore | None:

@@ -293,3 +293,15 @@ class HealthResponse(Base):
     mail: bool = False
     budget: bool = False
     quote: bool = False
+
+    budget_age_seconds: int | None = None
+    """How old the spend figures being served are, in seconds.
+
+    ``budget`` only says a store was built at startup and stays true forever
+    after, so a sheet that becomes unreadable later leaves the service looking
+    entirely healthy while it quietly serves older and older numbers. This is
+    the field that shows that, and it grows without bound when refreshes fail."""
+
+    quote_age_seconds: int | None = None
+    """The same, for tier prices. Zero when they come from the fixture, which
+    is its own source and cannot drift from it."""

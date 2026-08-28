@@ -8,6 +8,7 @@ from pathlib import Path
 from app.core.keys import service_key
 from app.core.types import AtAGlance, ServiceItem, Status
 from app.store.quote import (
+    CachedQuoteStore,
     QuoteStore,
     _parse_pricing_tier_rows,
     _parse_scope_rows,
@@ -130,3 +131,62 @@ def test_an_affirmative_automatic_price_still_quotes() -> None:
     outcome = quote_for(_item("Yes"), _store(), None)
     assert outcome.kind != "variable"
     assert "350" in outcome.text
+
+
+class TestCachedRateCard:
+    """The sheet moving under a long-lived process.
+
+    The static store is loaded once, which was correct while the tier map lived
+    in a file. Now the business owns it on the sheet, so a reprice must not
+    wait for the container to recycle.
+    """
+
+    @staticmethod
+    def _card(price: float) -> QuoteStore:
+        return QuoteStore(
+            currency="GBP",
+            tiers={"3": price, "Variable": "Variable"},
+            services={"events--photoshoots": "3"},
+        )
+
+    def test_a_reprice_is_picked_up_without_a_restart(self) -> None:
+        cards = [self._card(350.0), self._card(400.0)]
+        store = CachedQuoteStore(
+            lambda: cards.pop(0) if cards else None,
+            ttl_seconds=300,
+            initial=cards.pop(0),
+        )
+        assert store.lookup("events--photoshoots") == ("3", 350.0)
+
+        store._tried_at -= 301  # the TTL elapsing, without waiting for it
+        assert store.lookup("events--photoshoots") == ("3", 400.0)
+
+    def test_a_failed_refresh_keeps_the_last_good_card(self) -> None:
+        """No price is worse than a five-minute-old price, so the last good
+        card is served and the staleness reported instead."""
+
+        def explode() -> QuoteStore | None:
+            raise RuntimeError("sheet unreachable")
+
+        store = CachedQuoteStore(explode, ttl_seconds=300, initial=self._card(350.0))
+        store._tried_at -= 301
+        assert store.lookup("events--photoshoots") == ("3", 350.0)
+
+    def test_age_keeps_growing_while_refreshes_fail(self) -> None:
+        """The bug this guards: one clock for both 'when did we last read' and
+        'when did we last try' made a failing refresh reset the age to zero, so
+        data that was getting older looked permanently fresh."""
+
+        def explode() -> QuoteStore | None:
+            raise RuntimeError("sheet unreachable")
+
+        store = CachedQuoteStore(explode, ttl_seconds=300, initial=self._card(350.0))
+        store._read_at -= 900
+        store._tried_at -= 301
+        store.lookup("events--photoshoots")
+
+        assert store.cache_age_seconds >= 900
+
+    def test_a_fixture_reports_no_age(self) -> None:
+        """It is its own source; there is no sheet behind it to drift from."""
+        assert self._card(350.0).cache_age_seconds == 0

@@ -84,10 +84,30 @@ class Settings(BaseSettings):
 
     firestore_database: str = "(default)"
 
-    budget_cache_ttl_seconds: int = 900
+    budget_cache_ttl_seconds: int = 300
     """How long budget/spend figures may be served before the sheet is re-read.
     The tracker is edited during the day, so a store loaded once at startup
-    answered "what is left?" from whenever the container happened to boot."""
+    answered "what is left?" from whenever the container happened to boot.
+
+    Five minutes rather than fifteen because this is money and the edit that
+    matters is immediate: a quote gets approved, someone writes it into the
+    ledger, and until the next read the assistant reports a balance that has
+    already been spent. The read is four small tabs, well inside the Sheets
+    quota even at one instance per five minutes.
+
+    It also bounds disagreement between instances. The cache is per-container
+    and up to three serve at once, so this is the widest gap between the
+    figures two people can be told at the same moment."""
+
+    quote_cache_ttl_seconds: int = 300
+    """How long tier prices and the service-to-tier map may be served before
+    the sheet is re-read.
+
+    Separate from the budget TTL because the two move on different rhythms:
+    spend changes several times a day, a tier changes when the business decides
+    to reprice. What they share is that both used to be read once, and the
+    price half had no expiry at all — a re-tiered service kept quoting the old
+    number until the container recycled."""
 
     budget_spreadsheet_id: str = ""
     budget_xlsx_path: Path = Path("fixtures/budget/acme_scope_db.xlsx")

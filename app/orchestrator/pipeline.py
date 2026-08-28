@@ -54,7 +54,7 @@ from app.store.audit import (
 from app.store.budget import BudgetStore, build_budget_store
 from app.store.contacts import ContactDirectory, load_contacts
 from app.store.mail import Mailer, build_mailer
-from app.store.quote import QuoteStore, load_quote_store
+from app.store.quote import RateCard, load_quote_store
 from app.store.roster import RosterStore, load_roster
 from app.tools.actions import Action
 from app.tools.budget import BudgetToolResult
@@ -192,7 +192,7 @@ class Pipeline:
         system_prompt: str | None = None,
         branches: tuple[str, ...] = (),
         budget_store: BudgetStore | None = None,
-        quote_store: QuoteStore | None = None,
+        quote_store: RateCard | None = None,
         contacts: ContactDirectory | None = None,
         roster: RosterStore | None = None,
         mailer: Mailer | None = None,
@@ -263,6 +263,9 @@ class Pipeline:
             # Lets a sheet row naming a service the corpus has no document for
             # be reported at startup rather than silently priced into nothing.
             known_items=catalog.item_ids,
+            # Without this the card is read once and frozen for the life of the
+            # container, so a reprice on the sheet waits for a restart.
+            ttl_seconds=settings.quote_cache_ttl_seconds,
         )
         contacts = load_contacts(settings.contacts_path)
         roster = load_roster(
