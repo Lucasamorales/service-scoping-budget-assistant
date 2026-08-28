@@ -33,7 +33,14 @@
     --acme-text: #FFFFFF;
 
     position: relative;
-    padding: 48px 24px 56px;
+    /* The panel has to hug the widget. Left to fill its container it becomes a
+       wide navy band with a 760px column adrift in the middle, which is what
+       made it read as unfinished — the emptiness either side, not the widget.
+       760 for the column plus 44 of breathing room each side. */
+    max-width: 848px;
+    margin-left: auto;
+    margin-right: auto;
+    padding: 34px 44px 40px;
     border-radius: 18px;
     background:
       radial-gradient(900px 420px at 85% -10%, rgba(107, 176, 224, 0.18), transparent 55%),
@@ -53,14 +60,17 @@
 
   /* Full-bleed variant. Add the class in Webflow — <div class="acme-q acme-q--bleed">
      — when the embed sits in a full-width section and you want the navy to run
-     edge to edge. Left off by default because 100vw includes the scrollbar,
-     which on a page that scrolls produces a few pixels of horizontal drift. */
+     edge to edge like the standalone page does. Only worth it if the section is
+     tall enough to read as a band rather than a stripe; otherwise the tight
+     panel above looks more deliberate. */
   .acme-q--bleed {
     margin-left: 50%;
     transform: translateX(-50%);
     width: 100vw;
     max-width: 100vw;
     border-radius: 0;
+    padding-left: 24px;
+    padding-right: 24px;
   }
 
   .acme-q__inner {
@@ -109,7 +119,7 @@
 
   @media (max-width: 640px) {
     .acme-q {
-      padding: 28px 14px 34px;
+      padding: 22px 14px 26px;
       border-radius: 12px;
     }
   }
