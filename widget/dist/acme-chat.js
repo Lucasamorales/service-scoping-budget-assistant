@@ -1,66 +1,24 @@
-async function H(a,e,t){let n=await fetch(`${a}/api/session`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({password:e,subject:t.subject,branch:t.branch??null,country:t.country??null})});if(!n.ok){let r=await M(n);throw new Error(r||"Could not sign in.")}let o=await n.json();return{token:o.token,expiresAt:o.expiresAt,role:o.role,subject:o.subject??t.subject,country:o.country,branch:o.branch}}async function L(a,e,t,n,o,r,i){let s={"Content-Type":"application/json"};o&&(s.Authorization=`Bearer ${o}`);let d=await fetch(`${a}/api/chat/stream`,{method:"POST",headers:s,body:JSON.stringify({message:e,state:t,history:n}),signal:i});if(!d.ok||!d.body){let f=await M(d);throw new Error(f||`Request failed (${d.status})`)}let l=d.body.getReader(),p=new TextDecoder,c="";for(;;){let{value:f,done:z}=await l.read();if(z)break;c+=p.decode(f,{stream:!0});let T=c.split(`
+async function T(a,t,e){let n=await fetch(`${a}/api/session`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({password:t,subject:e.subject,branch:e.branch??null,country:e.country??null})});if(!n.ok){let i=await H(n);throw new Error(i||"Could not sign in.")}let r=await n.json();return{token:r.token,expiresAt:r.expiresAt,role:r.role,subject:r.subject??e.subject,country:r.country,branch:r.branch}}async function C(a,t,e,n,r,i,o){let s={"Content-Type":"application/json"};r&&(s.Authorization=`Bearer ${r}`);let d=await fetch(`${a}/api/chat/stream`,{method:"POST",headers:s,body:JSON.stringify({message:t,state:e,history:n}),signal:o});if(!d.ok||!d.body){let f=await H(d);throw new Error(f||`Request failed (${d.status})`)}let l=d.body.getReader(),p=new TextDecoder,c="";for(;;){let{value:f,done:M}=await l.read();if(M)break;c+=p.decode(f,{stream:!0});let A=c.split(`
 
-`);c=T.pop()??"";for(let N of T)S(N,r)}c.trim()&&S(c,r)}function S(a,e){let t="message",n=[];for(let i of a.split(`
-`))i.startsWith("event:")?t=i.slice(6).trim():i.startsWith("data:")&&n.push(i.slice(5).replace(/^ /,""));let o=n.join(`
-`);if(!o)return;let r;try{r=JSON.parse(o)}catch{return}if(t==="verdict"){let i=r,s=i.verdict;e.onVerdict({verdict:s&&typeof s=="object"?{status:u(s.status),meaning:u(s.meaning),service:u(s.service)}:null,citations:C(i.citations),notes:C(i.notes),needsAHuman:!!i.needsAHuman,awaitingAnswer:!!i.awaitingAnswer,candidates:Array.isArray(i.candidates)?i.candidates:[],actions:Array.isArray(i.actions)?i.actions:[]})}else if(t==="text"){let i=u(r.text);i&&e.onText(i)}else if(t==="done"){let i=r;e.onDone({...i,text:u(i.text),source:u(i.source)||"deterministic",degraded:!!i.degraded,truncated:!!i.truncated})}}function u(a){return typeof a!="string"||a==="[object Object]"?"":a}function C(a){return Array.isArray(a)?a.map(e=>u(e)).filter(Boolean):[]}async function M(a){try{let e=await a.json();return j(e.detail)}catch{return""}}function j(a){return typeof a=="string"?a:Array.isArray(a)?a.map(t=>{if(typeof t=="string")return t;if(t&&typeof t=="object"&&"msg"in t){let n=t.msg,o=t.loc,r=Array.isArray(o)?o.join("."):"";return typeof n=="string"?r?`${r}: ${n}`:n:""}return""}).filter(Boolean).join("; ")||"Request failed validation.":a&&typeof a=="object"?"Request failed.":""}var $={"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"};function g(a){return a.replace(/[&<>"']/g,e=>$[e]??e)}function x(a){return g(typeof a=="string"?a:"").replace(/\*\*(.+?)\*\*/g,"<strong>$1</strong>").replace(/(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)/g,"<em>$1</em>").replace(/_(.+?)_/g,"<em>$1</em>").replace(/\n/g,"<br>")}function h(a){try{let e=sessionStorage.getItem(a);return e?JSON.parse(e):null}catch{return null}}function b(a,e){try{sessionStorage.setItem(a,JSON.stringify(e))}catch{}}function m(a){try{sessionStorage.removeItem(a)}catch{}}function D(a){try{let e=localStorage.getItem(a);return e==="navy"||e==="light"?e:null}catch{return null}}function v(a,e){try{localStorage.setItem(a,e)}catch{}}function q(a){let e=D(a);if(e)return e;try{if(window.matchMedia("(prefers-color-scheme: light)").matches)return"light"}catch{}return"navy"}var y=`
+`);c=A.pop()??"";for(let q of A)F(q,i)}c.trim()&&F(c,i)}function F(a,t){let e="message",n=[];for(let o of a.split(`
+`))o.startsWith("event:")?e=o.slice(6).trim():o.startsWith("data:")&&n.push(o.slice(5).replace(/^ /,""));let r=n.join(`
+`);if(!r)return;let i;try{i=JSON.parse(r)}catch{return}if(e==="verdict"){let o=i,s=o.verdict;t.onVerdict({verdict:s&&typeof s=="object"?{status:u(s.status),meaning:u(s.meaning),service:u(s.service)}:null,citations:S(o.citations),notes:S(o.notes),needsAHuman:!!o.needsAHuman,awaitingAnswer:!!o.awaitingAnswer,candidates:Array.isArray(o.candidates)?o.candidates:[],actions:Array.isArray(o.actions)?o.actions:[]})}else if(e==="text"){let o=u(i.text);o&&t.onText(o)}else if(e==="done"){let o=i;t.onDone({...o,text:u(o.text),source:u(o.source)||"deterministic",degraded:!!o.degraded,truncated:!!o.truncated})}}function u(a){return typeof a!="string"||a==="[object Object]"?"":a}function S(a){return Array.isArray(a)?a.map(t=>u(t)).filter(Boolean):[]}async function H(a){try{let t=await a.json();return N(t.detail)}catch{return""}}function N(a){return typeof a=="string"?a:Array.isArray(a)?a.map(e=>{if(typeof e=="string")return e;if(e&&typeof e=="object"&&"msg"in e){let n=e.msg,r=e.loc,i=Array.isArray(r)?r.join("."):"";return typeof n=="string"?i?`${i}: ${n}`:n:""}return""}).filter(Boolean).join("; ")||"Request failed validation.":a&&typeof a=="object"?"Request failed.":""}var j={"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"};function g(a){return a.replace(/[&<>"']/g,t=>j[t]??t)}function x(a){return g(typeof a=="string"?a:"").replace(/\*\*(.+?)\*\*/g,"<strong>$1</strong>").replace(/(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)/g,"<em>$1</em>").replace(/_(.+?)_/g,"<em>$1</em>").replace(/\n/g,"<br>")}function h(a){try{let t=sessionStorage.getItem(a);return t?JSON.parse(t):null}catch{return null}}function m(a,t){try{sessionStorage.setItem(a,JSON.stringify(t))}catch{}}function b(a){try{sessionStorage.removeItem(a)}catch{}}var v=`
 :host {
-  --canvas: #101A33;
-  --panel: #232F55;
-  --surface: #2E3D6E;
-  --surface-alt: #25355F;
-  --input-bg: #1B2547;
-  --accent: #6BB0E0;
-  --red: #EE2C2C;
-  --user-bg: #3B6BA5;
-  --text: #FFFFFF;
-  --body: rgba(255, 255, 255, 0.9);
-  --text-soft: rgba(255, 255, 255, 0.62);
-  --text-faint: rgba(255, 255, 255, 0.4);
-  --line: rgba(255, 255, 255, 0.14);
-  --hair: rgba(255, 255, 255, 0.1);
-  --toggle-line: rgba(255, 255, 255, 0.22);
-  --header-bg: transparent;
-  --header-border: rgba(255, 255, 255, 0.1);
-  --header-text: #FFFFFF;
-  --handover-bubble: #33223A;
-  --handover-border: rgba(238, 44, 44, 0.45);
-  --note: #E08A6A;
-  --login-input-bg: rgba(255, 255, 255, 0.06);
+  /* One palette. The assistant used to ship navy and light with a toggle in
+     the header; Acme uses light, so the choice was noise on every screen for a
+     decision nobody needed to make.
 
-  --pill-in-fg: #6ED39B;
-  --pill-in-bg: rgba(110, 211, 155, 0.14);
-  --pill-in-bd: rgba(110, 211, 155, 0.55);
-  --pill-quote-fg: #9CCCEC;
-  --pill-quote-bg: rgba(107, 176, 224, 0.14);
-  --pill-quote-bd: rgba(107, 176, 224, 0.55);
-  --pill-local-fg: #E8B23C;
-  --pill-local-bg: rgba(232, 178, 60, 0.12);
-  --pill-local-bd: rgba(232, 178, 60, 0.5);
-  --pill-out-fg: #C0A99A;
-  --pill-out-bg: rgba(192, 169, 154, 0.12);
-  --pill-out-bd: rgba(192, 169, 154, 0.45);
-  --pill-ask-fg: #F0B27A;
-  --pill-ask-bg: rgba(240, 178, 122, 0.12);
-  --pill-ask-bd: rgba(240, 178, 122, 0.5);
-
-  --font-ui: "Archivo", "Segoe UI", sans-serif;
-  --font-display: "Caveat Brush", "Segoe Print", cursive;
-
-  display: block;
-  color: var(--text);
-  font-family: var(--font-ui);
-  font-size: 15px;
-  line-height: 1.45;
-}
-
-.shell[data-theme="light"],
-:host([data-theme="light"]) .shell {
+     These are the light values exactly as the toggle produced them, so nothing
+     about the appearance changed when the switch went away. --red and --note
+     were never redefined by the light override and are carried across
+     unaltered for the same reason. */
   --canvas: #E4EBF2;
   --panel: #F4F7FA;
   --surface: #FFFFFF;
   --surface-alt: #F0F4F8;
   --input-bg: #FFFFFF;
   --accent: #3B6BA5;
+  --red: #EE2C2C;
   --user-bg: #232F55;
   --text: #14213B;
   --body: #2C3D50;
@@ -68,12 +26,17 @@ async function H(a,e,t){let n=await fetch(`${a}/api/session`,{method:"POST",head
   --text-faint: #8A9BAD;
   --line: #D7E0EA;
   --hair: #E8EEF4;
+  /* Not a leftover of the theme switch: New chat borders with this, and it
+     sits in the navy header, so it stays a translucent white. */
   --toggle-line: rgba(255, 255, 255, 0.28);
+  /* Header stays navy with white text: the light theme was never a white
+     slab, and this is the band that keeps it recognisably Acme. */
   --header-bg: #232F55;
   --header-border: transparent;
   --header-text: #FFFFFF;
   --handover-bubble: #FFFFFF;
   --handover-border: #F2C2C2;
+  --note: #E08A6A;
   --login-input-bg: #FFFFFF;
 
   --pill-in-fg: #1F7A4D;
@@ -91,6 +54,15 @@ async function H(a,e,t){let n=await fetch(`${a}/api/session`,{method:"POST",head
   --pill-ask-fg: #9A4E12;
   --pill-ask-bg: #FCEEE2;
   --pill-ask-bd: #E8BE96;
+
+  --font-ui: "Archivo", "Segoe UI", sans-serif;
+  --font-display: "Caveat Brush", "Segoe Print", cursive;
+
+  display: block;
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-size: 15px;
+  line-height: 1.45;
 }
 
 * { box-sizing: border-box; }
@@ -145,39 +117,6 @@ header {
   font-size: 12px;
   opacity: 0.6;
   white-space: nowrap;
-}
-
-.theme-toggle {
-  display: flex;
-  gap: 3px;
-  padding: 3px;
-  border: 1px solid var(--toggle-line);
-  border-radius: 999px;
-  flex-shrink: 0;
-}
-
-.theme-toggle button {
-  appearance: none;
-  border: 0;
-  background: transparent;
-  color: rgba(255, 255, 255, 0.65);
-  font: inherit;
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  padding: 6px 12px;
-  border-radius: 999px;
-  cursor: pointer;
-}
-
-.theme-toggle button[aria-pressed="true"] {
-  background: #6BB0E0;
-  color: #14213B;
-}
-
-.theme-toggle button:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
 }
 
 button.new-chat {
@@ -703,17 +642,11 @@ button.send:focus-visible {
     animation: none;
   }
 }
-`;var w="acme.session",E="acme.state",A="acme.history",k="acme.theme",B=12,I=[{label:"Merch for a launch",message:"Can we order merch for a branch opening?"},{label:"Billboard advert",message:"Can we put an advert on a billboard?"},{label:"Translate web pages",message:"Can you translate our web pages into Spanish?"}],O={in_scope:"In scope",out_of_scope:"Out of scope",local:"Local",quote_required:"Quote required"},F=class extends HTMLElement{#e;#o;#a=!1;#n=null;#i=null;#r=[];#t="navy";#c=!1;#p=null;constructor(){super(),this.#e=this.attachShadow({mode:"open"}),this.#o=(this.getAttribute("api-base")||"").replace(/\/$/,"")}connectedCallback(){this.#t=q(k),this.#n=h(w),this.#i=h(E),this.#r=this.#C(),this.#v()}disconnectedCallback(){this.#p?.abort()}async#v(){try{let e=await fetch(`${this.#o}/api/health`).then(t=>t.json());this.#a=!!e.authRequired}catch{this.#a=!1}if(this.#a&&!this.#y()){this.#b();return}this.#u()}#y(){return!!(this.#n?.token&&this.#n.expiresAt*1e3>Date.now())}#s(e){e?.setAttribute("data-theme",this.#t),this.setAttribute("data-theme",this.#t);let t=this.#e.querySelector("[data-theme-navy]"),n=this.#e.querySelector("[data-theme-light]");t&&t.setAttribute("aria-pressed",this.#t==="navy"?"true":"false"),n&&n.setAttribute("aria-pressed",this.#t==="light"?"true":"false")}#g(e){this.#e.querySelector("[data-theme-navy]")?.addEventListener("click",()=>{this.#t="navy",v(k,this.#t),this.#s(e)}),this.#e.querySelector("[data-theme-light]")?.addEventListener("click",()=>{this.#t="light",v(k,this.#t),this.#s(e)})}#h(){return`
-      <div class="theme-toggle" role="group" aria-label="Colour theme">
-        <button type="button" data-theme-navy aria-pressed="${this.#t==="navy"}">Navy</button>
-        <button type="button" data-theme-light aria-pressed="${this.#t==="light"}">Light</button>
-      </div>
-    `}#b(){this.#e.innerHTML=`
-      <style>${y}</style>
-      <div class="shell login-wrap" data-theme="${this.#t}">
+`;var y="acme.session",w="acme.state",E="acme.history",L=12,z=[{label:"Merch for a launch",message:"Can we order merch for a branch opening?"},{label:"Billboard advert",message:"Can we put an advert on a billboard?"},{label:"Translate web pages",message:"Can you translate our web pages into Spanish?"}],B={in_scope:"In scope",out_of_scope:"Out of scope",local:"Local",quote_required:"Quote required"},k=class extends HTMLElement{#e;#i;#o=!1;#t=null;#r=null;#n=[];#l=!1;#d=null;constructor(){super(),this.#e=this.attachShadow({mode:"open"}),this.#i=(this.getAttribute("api-base")||"").replace(/\/$/,"")}connectedCallback(){this.#t=h(y),this.#r=h(w),this.#n=this.#A(),this.#m()}disconnectedCallback(){this.#d?.abort()}async#m(){try{let t=await fetch(`${this.#i}/api/health`).then(e=>e.json());this.#o=!!t.authRequired}catch{this.#o=!1}if(this.#o&&!this.#b()){this.#p();return}this.#c()}#b(){return!!(this.#t?.token&&this.#t.expiresAt*1e3>Date.now())}#p(){this.#e.innerHTML=`
+      <style>${v}</style>
+      <div class="shell login-wrap">
         <header>
           <div class="brand">Acme <span>Scoping Assistant</span></div>
-          <div class="header-actions">${this.#h()}</div>
         </header>
         <div class="torn" aria-hidden="true"></div>
         <form class="login" part="login">
@@ -726,14 +659,13 @@ button.send:focus-visible {
           <button type="submit">Continue</button>
         </form>
       </div>
-    `;let e=this.#e.querySelector(".shell");this.#s(e),this.#g(e);let t=this.#e.querySelector("form");t?.addEventListener("submit",n=>{n.preventDefault(),this.#w(new FormData(t))})}async#w(e){let t=this.#e.querySelector("[data-error]");t&&(t.textContent="");let n=String(e.get("subject")||"").trim();if(n.length<2){t&&(t.textContent="Enter your name so we can log who asked.");return}try{this.#n=await H(this.#o,String(e.get("password")||""),{subject:n,branch:String(e.get("branch")||"")||void 0}),b(w,this.#n),this.#u()}catch(o){t&&(t.textContent=o instanceof Error?o.message:"Sign-in failed.")}}#u(){let e=this.#n?.branch?g(this.#n.branch):"";this.#e.innerHTML=`
-      <style>${y}</style>
-      <div class="shell" data-theme="${this.#t}">
+    `;let t=this.#e.querySelector("form");t?.addEventListener("submit",e=>{e.preventDefault(),this.#f(new FormData(t))})}async#f(t){let e=this.#e.querySelector("[data-error]");e&&(e.textContent="");let n=String(t.get("subject")||"").trim();if(n.length<2){e&&(e.textContent="Enter your name so we can log who asked.");return}try{this.#t=await T(this.#i,String(t.get("password")||""),{subject:n,branch:String(t.get("branch")||"")||void 0}),m(y,this.#t),this.#c()}catch(r){e&&(e.textContent=r instanceof Error?r.message:"Sign-in failed.")}}#c(){let t=this.#t?.branch?g(this.#t.branch):"";this.#e.innerHTML=`
+      <style>${v}</style>
+      <div class="shell">
         <header>
           <div class="brand">Acme <span>Scoping Assistant</span></div>
           <div class="header-actions">
-            ${e?`<div class="branch">${e}</div>`:""}
-            ${this.#h()}
+            ${t?`<div class="branch">${t}</div>`:""}
             <button type="button" class="new-chat" data-reset>New chat</button>
           </div>
         </header>
@@ -757,11 +689,11 @@ button.send:focus-visible {
           </div>
         </form>
       </div>
-    `;let t=this.#e.querySelector(".shell");this.#s(t),this.#g(t);let n=this.#e.querySelector("[data-cards]");I.forEach((i,s)=>{let d=document.createElement("button");d.type="button",d.className="card",d.innerHTML=`
-        <span class="num">${String(s+1).padStart(2,"0")}</span>
+    `;let e=this.#e.querySelector("[data-cards]");z.forEach((i,o)=>{let s=document.createElement("button");s.type="button",s.className="card",s.innerHTML=`
+        <span class="num">${String(o+1).padStart(2,"0")}</span>
         <span class="label">${g(i.label)}</span>
         <span class="hint">${g(i.message)}</span>
-      `,d.addEventListener("click",()=>{this.#l(i.message)}),n?.append(d)}),this.#e.querySelector("[data-reset]")?.addEventListener("click",()=>{this.#i=null,this.#r=[],m(E),m(A),this.#u()});let o=this.#e.querySelector("form.composer"),r=this.#e.querySelector("textarea");o?.addEventListener("submit",i=>{i.preventDefault();let s=r instanceof HTMLTextAreaElement?r.value.trim():"";s&&(r instanceof HTMLTextAreaElement&&(r.value="",this.#m(r)),this.#l(s))}),r?.addEventListener("keydown",i=>{i.key==="Enter"&&!i.shiftKey&&(i.preventDefault(),o?.requestSubmit())}),r?.addEventListener("input",()=>{r instanceof HTMLTextAreaElement&&this.#m(r)})}#m(e){e.style.height="auto",e.style.height=`${Math.min(e.scrollHeight,96)}px`}#E(){this.#e.querySelector("[data-empty]")?.remove()}async#l(e){if(this.#c)return;this.#c=!0,this.#x(!0),this.#E(),this.#T(e);let t=this.#S();this.#p=new AbortController;let n="",o=null,r=null,i=!1,s=()=>{!i&&r&&(this.#A(t,r),i=!0),t.row.classList.remove("pending")},d=this.#r.slice();try{await L(this.#o,e,this.#i,d,this.#a?this.#n?.token??null:null,{onVerdict:l=>{r=l},onText:l=>{n+=l,s(),o||(o=document.createElement("span"),o.className="caret",o.setAttribute("aria-hidden","true")),t.body.innerHTML=x(n),t.body.append(o),this.#d()},onDone:l=>{typeof l.text=="string"&&l.text.length>0&&(n=l.text),s(),o?.remove(),o=null,t.body.innerHTML=x(n),this.#i=l.state,b(E,this.#i),this.#H(e,n),l.degraded&&(t.notes.textContent=(t.notes.textContent?t.notes.textContent+" ":"")+"Answered without the language model."),l.truncated&&(t.notes.textContent=(t.notes.textContent?t.notes.textContent+" ":"")+"The reply was cut short.")}},this.#p.signal)}catch(l){o?.remove(),s();let p=l instanceof Error?l.message:"Something went wrong.";if(p.toLowerCase().includes("unauthorised")){m(w),this.#n=null,this.#b();return}t.body.textContent=p}finally{this.#c=!1,this.#x(!1),this.#d()}}#A(e,t){if(e.status.replaceChildren(),e.banner.replaceChildren(),e.bubble.classList.toggle("handover",t.needsAHuman),t.needsAHuman){let r=document.createElement("div");r.className="handover-banner",r.textContent="Handover to a person",e.banner.append(r)}else if(t.verdict?.status&&t.verdict.service){let r=String(t.verdict.status);e.status.append(this.#f(r,O[r]??r));let i=document.createElement("div");i.className="service-title",i.textContent=String(t.verdict.service),e.status.append(i)}else t.awaitingAnswer&&e.status.append(this.#f("ask","Needs clarification"));let n=Array.isArray(t.citations)?t.citations.filter(r=>typeof r=="string"):[];n.length&&(e.citations.textContent=`Read from ${n.join("; ")}`);let o=Array.isArray(t.notes)?t.notes.filter(r=>typeof r=="string"):[];o.length&&(e.notes.textContent=o.join(" ")),t.awaitingAnswer&&t.candidates?.length?this.#k(e.candidates,t.candidates):t.actions?.length&&this.#F(e.candidates,t.actions)}#k(e,t){e.replaceChildren(),e.className="candidates",t.forEach((n,o)=>{let r=document.createElement("button");r.type="button",r.className="candidate",r.innerHTML=`
-        <span class="num">${o+1}</span>
+      `,s.addEventListener("click",()=>{this.#a(i.message)}),e?.append(s)}),this.#e.querySelector("[data-reset]")?.addEventListener("click",()=>{this.#r=null,this.#n=[],b(w),b(E),this.#c()});let n=this.#e.querySelector("form.composer"),r=this.#e.querySelector("textarea");n?.addEventListener("submit",i=>{i.preventDefault();let o=r instanceof HTMLTextAreaElement?r.value.trim():"";o&&(r instanceof HTMLTextAreaElement&&(r.value="",this.#u(r)),this.#a(o))}),r?.addEventListener("keydown",i=>{i.key==="Enter"&&!i.shiftKey&&(i.preventDefault(),n?.requestSubmit())}),r?.addEventListener("input",()=>{r instanceof HTMLTextAreaElement&&this.#u(r)})}#u(t){t.style.height="auto",t.style.height=`${Math.min(t.scrollHeight,96)}px`}#x(){this.#e.querySelector("[data-empty]")?.remove()}async#a(t){if(this.#l)return;this.#l=!0,this.#h(!0),this.#x(),this.#E(t);let e=this.#k();this.#d=new AbortController;let n="",r=null,i=null,o=!1,s=()=>{!o&&i&&(this.#v(e,i),o=!0),e.row.classList.remove("pending")},d=this.#n.slice();try{await C(this.#i,t,this.#r,d,this.#o?this.#t?.token??null:null,{onVerdict:l=>{i=l},onText:l=>{n+=l,s(),r||(r=document.createElement("span"),r.className="caret",r.setAttribute("aria-hidden","true")),e.body.innerHTML=x(n),e.body.append(r),this.#s()},onDone:l=>{typeof l.text=="string"&&l.text.length>0&&(n=l.text),s(),r?.remove(),r=null,e.body.innerHTML=x(n),this.#r=l.state,m(w,this.#r),this.#F(t,n),l.degraded&&(e.notes.textContent=(e.notes.textContent?e.notes.textContent+" ":"")+"Answered without the language model."),l.truncated&&(e.notes.textContent=(e.notes.textContent?e.notes.textContent+" ":"")+"The reply was cut short.")}},this.#d.signal)}catch(l){r?.remove(),s();let p=l instanceof Error?l.message:"Something went wrong.";if(p.toLowerCase().includes("unauthorised")){b(y),this.#t=null,this.#p();return}e.body.textContent=p}finally{this.#l=!1,this.#h(!1),this.#s()}}#v(t,e){if(t.status.replaceChildren(),t.banner.replaceChildren(),t.bubble.classList.toggle("handover",e.needsAHuman),e.needsAHuman){let i=document.createElement("div");i.className="handover-banner",i.textContent="Handover to a person",t.banner.append(i)}else if(e.verdict?.status&&e.verdict.service){let i=String(e.verdict.status);t.status.append(this.#g(i,B[i]??i));let o=document.createElement("div");o.className="service-title",o.textContent=String(e.verdict.service),t.status.append(o)}else e.awaitingAnswer&&t.status.append(this.#g("ask","Needs clarification"));let n=Array.isArray(e.citations)?e.citations.filter(i=>typeof i=="string"):[];n.length&&(t.citations.textContent=`Read from ${n.join("; ")}`);let r=Array.isArray(e.notes)?e.notes.filter(i=>typeof i=="string"):[];r.length&&(t.notes.textContent=r.join(" ")),e.awaitingAnswer&&e.candidates?.length?this.#y(t.candidates,e.candidates):e.actions?.length&&this.#w(t.candidates,e.actions)}#y(t,e){t.replaceChildren(),t.className="candidates",e.forEach((n,r)=>{let i=document.createElement("button");i.type="button",i.className="candidate",i.innerHTML=`
+        <span class="num">${r+1}</span>
         <span class="label">${g(n.label)}</span>
-      `,r.addEventListener("click",()=>{e.querySelectorAll("button").forEach(i=>{i.disabled=!0}),this.#l(n.label)}),e.append(r)})}#F(e,t){e.replaceChildren(),e.className="candidates actions",t.forEach(n=>{if(n.kind==="link"&&n.url){let s=document.createElement("a");s.className="candidate action",s.href=n.url,s.target="_blank",s.rel="noopener noreferrer",s.textContent=n.label,e.append(s);return}let o=document.createElement("button");o.type="button",o.className="candidate action";let r=typeof n.label=="string"?n.label:"Continue",i=typeof n.message=="string"&&n.message?n.message:r;o.textContent=r,o.addEventListener("click",()=>{e.querySelectorAll("button").forEach(s=>{s.disabled=!0}),this.#l(i)}),e.append(o)})}#T(e){let t=this.#e.querySelector("[data-messages]"),n=document.createElement("div");n.className="row user";let o=document.createElement("div");o.className="bubble",o.textContent=e,n.append(o),t?.append(n),this.#d()}#S(){let e=this.#e.querySelector("[data-messages]"),t=document.createElement("div");t.className="row assistant pending";let n=document.createElement("div");n.className="bubble";let o=document.createElement("div");o.className="live-banner",o.setAttribute("aria-live","polite");let r=document.createElement("div");r.className="bubble-inner";let i=document.createElement("div");i.className="live",i.setAttribute("aria-live","polite");let s=document.createElement("div");s.className="prose";let d=document.createElement("div"),l=document.createElement("div");l.className="citations";let p=document.createElement("div");p.className="note";let c=document.createElement("div");return c.className="waiting",c.textContent="Looking that up\u2026",c.setAttribute("aria-hidden","true"),r.append(i,s,d,l,p),n.append(o,r,c),t.append(n),e?.append(t),this.#d(),{row:t,bubble:n,banner:o,status:i,body:s,candidates:d,citations:l,notes:p}}#f(e,t){let n=document.createElement("div");return n.className=`verdict ${e}`,n.textContent=t,n}#x(e){let t=this.#e.querySelector("[data-send]"),n=this.#e.querySelector("textarea");t&&(t.disabled=e),n&&(n.disabled=e)}#d(){let e=this.#e.querySelector("[data-messages]");e&&(e.scrollTop=e.scrollHeight)}#C(){let e=h(A);return Array.isArray(e)?e.filter(t=>!!t&&(t.role==="user"||t.role==="assistant")&&typeof t.content=="string"&&t.content.trim().length>0).slice(-B):[]}#H(e,t){let n=(r,i=11e3)=>r.length<=i?r:`${r.slice(0,i-1)}\u2026`,o=[...this.#r,{role:"user",content:n(e,2e3)},{role:"assistant",content:n(t)}];this.#r=o.slice(-B),b(A,this.#r)}};customElements.get("acme-chat")||customElements.define("acme-chat",F);export{F as AcmeChat,g as escapeHtml,x as renderMarkdown};
+      `,i.addEventListener("click",()=>{t.querySelectorAll("button").forEach(o=>{o.disabled=!0}),this.#a(n.label)}),t.append(i)})}#w(t,e){t.replaceChildren(),t.className="candidates actions",e.forEach(n=>{if(n.kind==="link"&&n.url){let s=document.createElement("a");s.className="candidate action",s.href=n.url,s.target="_blank",s.rel="noopener noreferrer",s.textContent=n.label,t.append(s);return}let r=document.createElement("button");r.type="button",r.className="candidate action";let i=typeof n.label=="string"?n.label:"Continue",o=typeof n.message=="string"&&n.message?n.message:i;r.textContent=i,r.addEventListener("click",()=>{t.querySelectorAll("button").forEach(s=>{s.disabled=!0}),this.#a(o)}),t.append(r)})}#E(t){let e=this.#e.querySelector("[data-messages]"),n=document.createElement("div");n.className="row user";let r=document.createElement("div");r.className="bubble",r.textContent=t,n.append(r),e?.append(n),this.#s()}#k(){let t=this.#e.querySelector("[data-messages]"),e=document.createElement("div");e.className="row assistant pending";let n=document.createElement("div");n.className="bubble";let r=document.createElement("div");r.className="live-banner",r.setAttribute("aria-live","polite");let i=document.createElement("div");i.className="bubble-inner";let o=document.createElement("div");o.className="live",o.setAttribute("aria-live","polite");let s=document.createElement("div");s.className="prose";let d=document.createElement("div"),l=document.createElement("div");l.className="citations";let p=document.createElement("div");p.className="note";let c=document.createElement("div");return c.className="waiting",c.textContent="Looking that up\u2026",c.setAttribute("aria-hidden","true"),i.append(o,s,d,l,p),n.append(r,i,c),e.append(n),t?.append(e),this.#s(),{row:e,bubble:n,banner:r,status:o,body:s,candidates:d,citations:l,notes:p}}#g(t,e){let n=document.createElement("div");return n.className=`verdict ${t}`,n.textContent=e,n}#h(t){let e=this.#e.querySelector("[data-send]"),n=this.#e.querySelector("textarea");e&&(e.disabled=t),n&&(n.disabled=t)}#s(){let t=this.#e.querySelector("[data-messages]");t&&(t.scrollTop=t.scrollHeight)}#A(){let t=h(E);return Array.isArray(t)?t.filter(e=>!!e&&(e.role==="user"||e.role==="assistant")&&typeof e.content=="string"&&e.content.trim().length>0).slice(-L):[]}#F(t,e){let n=(i,o=11e3)=>i.length<=o?i:`${i.slice(0,o-1)}\u2026`,r=[...this.#n,{role:"user",content:n(t,2e3)},{role:"assistant",content:n(e)}];this.#n=r.slice(-L),m(E,this.#n)}};customElements.get("acme-chat")||customElements.define("acme-chat",k);export{k as AcmeChat,g as escapeHtml,x as renderMarkdown};

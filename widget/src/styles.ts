@@ -2,63 +2,21 @@
 
 export const STYLES = `
 :host {
-  --canvas: #101A33;
-  --panel: #232F55;
-  --surface: #2E3D6E;
-  --surface-alt: #25355F;
-  --input-bg: #1B2547;
-  --accent: #6BB0E0;
-  --red: #EE2C2C;
-  --user-bg: #3B6BA5;
-  --text: #FFFFFF;
-  --body: rgba(255, 255, 255, 0.9);
-  --text-soft: rgba(255, 255, 255, 0.62);
-  --text-faint: rgba(255, 255, 255, 0.4);
-  --line: rgba(255, 255, 255, 0.14);
-  --hair: rgba(255, 255, 255, 0.1);
-  --toggle-line: rgba(255, 255, 255, 0.22);
-  --header-bg: transparent;
-  --header-border: rgba(255, 255, 255, 0.1);
-  --header-text: #FFFFFF;
-  --handover-bubble: #33223A;
-  --handover-border: rgba(238, 44, 44, 0.45);
-  --note: #E08A6A;
-  --login-input-bg: rgba(255, 255, 255, 0.06);
+  /* One palette. The assistant used to ship navy and light with a toggle in
+     the header; Acme uses light, so the choice was noise on every screen for a
+     decision nobody needed to make.
 
-  --pill-in-fg: #6ED39B;
-  --pill-in-bg: rgba(110, 211, 155, 0.14);
-  --pill-in-bd: rgba(110, 211, 155, 0.55);
-  --pill-quote-fg: #9CCCEC;
-  --pill-quote-bg: rgba(107, 176, 224, 0.14);
-  --pill-quote-bd: rgba(107, 176, 224, 0.55);
-  --pill-local-fg: #E8B23C;
-  --pill-local-bg: rgba(232, 178, 60, 0.12);
-  --pill-local-bd: rgba(232, 178, 60, 0.5);
-  --pill-out-fg: #C0A99A;
-  --pill-out-bg: rgba(192, 169, 154, 0.12);
-  --pill-out-bd: rgba(192, 169, 154, 0.45);
-  --pill-ask-fg: #F0B27A;
-  --pill-ask-bg: rgba(240, 178, 122, 0.12);
-  --pill-ask-bd: rgba(240, 178, 122, 0.5);
-
-  --font-ui: "Archivo", "Segoe UI", sans-serif;
-  --font-display: "Caveat Brush", "Segoe Print", cursive;
-
-  display: block;
-  color: var(--text);
-  font-family: var(--font-ui);
-  font-size: 15px;
-  line-height: 1.45;
-}
-
-.shell[data-theme="light"],
-:host([data-theme="light"]) .shell {
+     These are the light values exactly as the toggle produced them, so nothing
+     about the appearance changed when the switch went away. --red and --note
+     were never redefined by the light override and are carried across
+     unaltered for the same reason. */
   --canvas: #E4EBF2;
   --panel: #F4F7FA;
   --surface: #FFFFFF;
   --surface-alt: #F0F4F8;
   --input-bg: #FFFFFF;
   --accent: #3B6BA5;
+  --red: #EE2C2C;
   --user-bg: #232F55;
   --text: #14213B;
   --body: #2C3D50;
@@ -66,12 +24,17 @@ export const STYLES = `
   --text-faint: #8A9BAD;
   --line: #D7E0EA;
   --hair: #E8EEF4;
+  /* Not a leftover of the theme switch: New chat borders with this, and it
+     sits in the navy header, so it stays a translucent white. */
   --toggle-line: rgba(255, 255, 255, 0.28);
+  /* Header stays navy with white text: the light theme was never a white
+     slab, and this is the band that keeps it recognisably Acme. */
   --header-bg: #232F55;
   --header-border: transparent;
   --header-text: #FFFFFF;
   --handover-bubble: #FFFFFF;
   --handover-border: #F2C2C2;
+  --note: #E08A6A;
   --login-input-bg: #FFFFFF;
 
   --pill-in-fg: #1F7A4D;
@@ -89,6 +52,15 @@ export const STYLES = `
   --pill-ask-fg: #9A4E12;
   --pill-ask-bg: #FCEEE2;
   --pill-ask-bd: #E8BE96;
+
+  --font-ui: "Archivo", "Segoe UI", sans-serif;
+  --font-display: "Caveat Brush", "Segoe Print", cursive;
+
+  display: block;
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-size: 15px;
+  line-height: 1.45;
 }
 
 * { box-sizing: border-box; }
@@ -143,39 +115,6 @@ header {
   font-size: 12px;
   opacity: 0.6;
   white-space: nowrap;
-}
-
-.theme-toggle {
-  display: flex;
-  gap: 3px;
-  padding: 3px;
-  border: 1px solid var(--toggle-line);
-  border-radius: 999px;
-  flex-shrink: 0;
-}
-
-.theme-toggle button {
-  appearance: none;
-  border: 0;
-  background: transparent;
-  color: rgba(255, 255, 255, 0.65);
-  font: inherit;
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  padding: 6px 12px;
-  border-radius: 999px;
-  cursor: pointer;
-}
-
-.theme-toggle button[aria-pressed="true"] {
-  background: #6BB0E0;
-  color: #14213B;
-}
-
-.theme-toggle button:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
 }
 
 button.new-chat {

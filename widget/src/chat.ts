@@ -9,13 +9,12 @@ import {
   type Verdict,
 } from "./api.js";
 import { renderMarkdown, escapeHtml } from "./markdown.js";
-import { readJson, removeKey, resolveInitialTheme, writeJson, writeTheme, type Theme } from "./storage.js";
+import { readJson, removeKey, writeJson } from "./storage.js";
 import { STYLES } from "./styles.js";
 
 const SESSION_KEY = "acme.session";
 const STATE_KEY = "acme.state";
 const HISTORY_KEY = "acme.history";
-const THEME_KEY = "acme.theme";
 const MAX_HISTORY = 12;
 
 const STARTERS = [
@@ -38,7 +37,6 @@ class AcmeChat extends HTMLElement {
   #session: SessionInfo | null = null;
   #state: ConversationState | null = null;
   #history: HistoryMessage[] = [];
-  #theme: Theme = "navy";
   #busy = false;
   #abort: AbortController | null = null;
 
@@ -49,7 +47,6 @@ class AcmeChat extends HTMLElement {
   }
 
   connectedCallback(): void {
-    this.#theme = resolveInitialTheme(THEME_KEY);
     this.#session = readJson<SessionInfo>(SESSION_KEY);
     this.#state = readJson<ConversationState>(STATE_KEY);
     this.#history = this.#loadHistory();
@@ -79,44 +76,12 @@ class AcmeChat extends HTMLElement {
     return Boolean(this.#session?.token && this.#session.expiresAt * 1000 > Date.now());
   }
 
-  #applyTheme(shell: Element | null): void {
-    shell?.setAttribute("data-theme", this.#theme);
-    this.setAttribute("data-theme", this.#theme);
-    const navy = this.#root.querySelector<HTMLButtonElement>("[data-theme-navy]");
-    const light = this.#root.querySelector<HTMLButtonElement>("[data-theme-light]");
-    if (navy) navy.setAttribute("aria-pressed", this.#theme === "navy" ? "true" : "false");
-    if (light) light.setAttribute("aria-pressed", this.#theme === "light" ? "true" : "false");
-  }
-
-  #bindThemeToggle(shell: Element | null): void {
-    this.#root.querySelector("[data-theme-navy]")?.addEventListener("click", () => {
-      this.#theme = "navy";
-      writeTheme(THEME_KEY, this.#theme);
-      this.#applyTheme(shell);
-    });
-    this.#root.querySelector("[data-theme-light]")?.addEventListener("click", () => {
-      this.#theme = "light";
-      writeTheme(THEME_KEY, this.#theme);
-      this.#applyTheme(shell);
-    });
-  }
-
-  #themeToggleHtml(): string {
-    return `
-      <div class="theme-toggle" role="group" aria-label="Colour theme">
-        <button type="button" data-theme-navy aria-pressed="${this.#theme === "navy"}">Navy</button>
-        <button type="button" data-theme-light aria-pressed="${this.#theme === "light"}">Light</button>
-      </div>
-    `;
-  }
-
   #renderLogin(): void {
     this.#root.innerHTML = `
       <style>${STYLES}</style>
-      <div class="shell login-wrap" data-theme="${this.#theme}">
+      <div class="shell login-wrap">
         <header>
           <div class="brand">Acme <span>Scoping Assistant</span></div>
-          <div class="header-actions">${this.#themeToggleHtml()}</div>
         </header>
         <div class="torn" aria-hidden="true"></div>
         <form class="login" part="login">
@@ -130,9 +95,6 @@ class AcmeChat extends HTMLElement {
         </form>
       </div>
     `;
-    const shell = this.#root.querySelector(".shell");
-    this.#applyTheme(shell);
-    this.#bindThemeToggle(shell);
     const form = this.#root.querySelector("form");
     form?.addEventListener("submit", (event) => {
       event.preventDefault();
@@ -164,12 +126,11 @@ class AcmeChat extends HTMLElement {
     const branch = this.#session?.branch ? escapeHtml(this.#session.branch) : "";
     this.#root.innerHTML = `
       <style>${STYLES}</style>
-      <div class="shell" data-theme="${this.#theme}">
+      <div class="shell">
         <header>
           <div class="brand">Acme <span>Scoping Assistant</span></div>
           <div class="header-actions">
             ${branch ? `<div class="branch">${branch}</div>` : ""}
-            ${this.#themeToggleHtml()}
             <button type="button" class="new-chat" data-reset>New chat</button>
           </div>
         </header>
@@ -194,10 +155,6 @@ class AcmeChat extends HTMLElement {
         </form>
       </div>
     `;
-
-    const shell = this.#root.querySelector(".shell");
-    this.#applyTheme(shell);
-    this.#bindThemeToggle(shell);
 
     const cards = this.#root.querySelector("[data-cards]");
     STARTERS.forEach((starter, index) => {
