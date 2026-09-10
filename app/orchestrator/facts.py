@@ -122,10 +122,20 @@ class FactPack:
         composed question. Mail confirm/cancel is the third: history still
         contains the original request, and a model shown "No" plus that thread
         will re-answer the request instead of acknowledging the decline.
+
+        A priced quote is the fourth, and the only one here that is a business
+        decision rather than a technical one. The wording was written and
+        approved by stakeholders, and approved wording that comes out slightly
+        different every time has not really been approved. The composer is a
+        good writer and would paraphrase it — the system prompt tells it to
+        vary its phrasing — so the only way to honour "verbatim" is not to ask
+        it. Variable and unpriced quotes are unaffected and still composed.
         """
         if self.handover is not None or self.out_of_remit:
             return False
         if self.scope is not None and self.scope.outcome is Outcome.AMBIGUOUS:
+            return False
+        if self.quote is not None and self.quote.kind == "priced":
             return False
         return Capability.MAIL not in self.satisfied
 

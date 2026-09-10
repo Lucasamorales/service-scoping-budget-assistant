@@ -261,10 +261,11 @@
       "expectItem": "events--attendance-travel-accommodation-food",
       "expectVerdict": "quote_required",
       "mustNotInclude": [
-        "350.00 GBP"
+        "350",
+        "£"
       ],
       "critical": true,
-      "note": "Variable tier must abort the automatic price, not print one."
+      "note": "Variable tier must abort the automatic price, not print one. Bans the bare figure and the currency symbol rather than a formatted string: it used to ban '350.00 GBP', and when the approved quote copy changed the format to £350 that assertion stopped being able to fail. An assertion that cannot fail is worse than none, because it reads like cover."
     },
     {
       "id": "list-full",

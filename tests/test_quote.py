@@ -9,6 +9,8 @@ from pathlib import Path
 
 from app.core.keys import service_key
 from app.core.types import AtAGlance, ServiceItem, Status
+from app.orchestrator.facts import FactPack
+from app.orchestrator.plan import Capability, Plan
 from app.store.quote import (
     CachedQuoteStore,
     QuoteStore,
@@ -241,3 +243,80 @@ class TestCachedRateCard:
     def test_a_fixture_reports_no_age(self) -> None:
         """It is its own source; there is no sheet behind it to drift from."""
         assert self._card(350.0).cache_age_seconds == 0
+
+
+APPROVED_QUOTE_COPY = (
+    "This falls outside of the approved scope, and it's usually priced at £350. "
+    "If you'd like to go ahead with it, you'll need a PO approved from your "
+    "country manager. I can email your Country Manager to kick things off."
+)
+
+
+class TestApprovedQuoteCopy:
+    """Wording signed off by stakeholders, which has to go out as written.
+
+    Pinned character for character on purpose. Approved copy that comes out
+    slightly different every time has not really been approved, and the whole
+    reason the composer is bypassed for this one case is that it is a good
+    writer and would paraphrase it.
+    """
+
+    @staticmethod
+    def _item() -> ServiceItem:
+        return ServiceItem(
+            item_id="photography--billboards",
+            section="Photography",
+            item="Billboards",
+            status=Status.QUOTE_REQUIRED,
+            status_raw="On demand",
+            status_meaning="This is something we need to quote",
+            aliases=(),
+            at_a_glance=AtAGlance(),
+            summary="",
+            sections={},
+            body="",
+            source="photography--billboards.md",
+        )
+
+    @staticmethod
+    def _store() -> QuoteStore:
+        return QuoteStore(
+            currency="GBP",
+            tiers={"3": 350.0, "Variable": "Variable"},
+            services={"photography--billboards": "3"},
+        )
+
+    def test_the_copy_is_produced_word_for_word(self) -> None:
+        outcome = quote_for(self._item(), self._store(), None)
+
+        assert outcome.kind == "priced"
+        assert outcome.text == APPROVED_QUOTE_COPY
+
+    def test_the_price_reads_as_a_pound_figure_not_an_invoice(self) -> None:
+        """£350, not 350.00 GBP. Trailing zeros read like a bill rather than
+        the ballpark the sentence around them describes."""
+        assert "£350" in quote_for(self._item(), self._store(), None).text
+        assert "350.00" not in quote_for(self._item(), self._store(), None).text
+
+    def test_a_priced_quote_is_not_handed_to_the_composer(self) -> None:
+        """The bypass that makes 'verbatim' true rather than aspirational."""
+        pack = FactPack(
+            plan=Plan(capabilities=(Capability.SCOPE, Capability.QUOTE)),
+            satisfied=(Capability.SCOPE, Capability.QUOTE),
+            quote=quote_for(self._item(), self._store(), None),
+        )
+
+        assert pack.allows_generation is False
+
+    def test_a_quote_with_no_price_is_still_composed(self) -> None:
+        """Only the approved sentence is pinned. A service the rate card cannot
+        price has no approved wording, so it keeps the assistant's voice."""
+        empty = QuoteStore(currency="GBP", tiers={}, services={})
+        pack = FactPack(
+            plan=Plan(capabilities=(Capability.SCOPE, Capability.QUOTE)),
+            satisfied=(Capability.SCOPE, Capability.QUOTE),
+            quote=quote_for(self._item(), empty, None),
+        )
+
+        assert pack.quote is not None and pack.quote.kind == "missing"
+        assert pack.allows_generation is True
