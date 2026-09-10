@@ -68,6 +68,10 @@ export const STYLES = `
 .shell {
   display: grid;
   grid-template-rows: auto 1fr auto;
+  /* Anchors the context overlay, which is absolutely positioned to cover the
+     whole widget. overflow: hidden below then clips it to the rounded corners
+     for free. */
+  position: relative;
   height: min(760px, calc(100vh - 80px));
   max-height: 100dvh;
   background: var(--panel);
@@ -321,26 +325,57 @@ button.new-chat:focus-visible {
 
 .candidate:hover { border-color: var(--accent); }
 
-/* The context box, offered under a reply that can send an email. Sits where
-   the Yes/No pair was, because it replaces that decision rather than adding to
-   it: there is no way to send without filling it in. */
-.note-box {
+/* The context box. A dialog over the whole widget rather than a field below
+   the reply: inline, it sat under a wall of text and people scrolled past it,
+   then wondered why nothing sent. Covering the conversation makes the one
+   remaining step the only thing on screen. */
+.note-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  /* The scrim carries the dimming on its own, so a browser without
+     backdrop-filter still separates the dialog from the conversation instead
+     of showing it floating on unchanged text. */
+  background: rgba(20, 33, 59, 0.42);
+  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
+  animation: note-in 140ms ease-out;
+}
+
+.note-card {
+  width: min(420px, 100%);
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  margin-top: 10px;
+  gap: 10px;
+  padding: 20px;
+  border-radius: 14px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  box-shadow: 0 18px 44px rgba(16, 26, 51, 0.3);
+}
+
+@keyframes note-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .note-overlay { animation: none; }
 }
 
 .note-prompt {
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 600;
-  color: var(--body);
+  color: var(--text);
 }
 
 .note-input {
   width: 100%;
   resize: vertical;
-  min-height: 68px;
+  min-height: 84px;
   padding: 10px 12px;
   border-radius: 10px;
   border: 1px solid var(--line);

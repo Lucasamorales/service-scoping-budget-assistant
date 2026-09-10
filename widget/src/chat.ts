@@ -442,20 +442,39 @@ class AcmeChat extends HTMLElement {
 
   /** Ask for context before sending, and refuse to send without it.
    *
-   * The server enforces the same rule — this is the fast half of it, so nobody
-   * makes a round trip to be told they left the box empty.
+   * A dialog over the whole widget, not a field under the reply. Inline it sat
+   * below a wall of text and got scrolled past, which left people waiting for
+   * an email that was still waiting on them.
+   *
+   * The server enforces the same requirement — this is the fast half of it, so
+   * nobody makes a round trip to be told they left the box empty.
    */
   #openNoteBox(host: HTMLElement, action: ChatAction, message: string): void {
-    host.replaceChildren();
-    host.className = "note-box";
+    const shell = this.#root.querySelector(".shell");
+    if (!shell) return;
+
+    // Nothing behind the dialog stays clickable, so a stray Yes cannot race the
+    // one the dialog is about to send.
+    const behind = [...host.querySelectorAll("button")] as HTMLButtonElement[];
+    behind.forEach((el) => (el.disabled = true));
+
+    const overlay = document.createElement("div");
+    overlay.className = "note-overlay";
+    overlay.setAttribute("role", "dialog");
+    overlay.setAttribute("aria-modal", "true");
+
+    const card = document.createElement("div");
+    card.className = "note-card";
 
     const label = document.createElement("label");
     label.className = "note-prompt";
+    label.id = `note-prompt-${action.id}`;
     label.textContent = action.prompt || "Add some context for this request";
+    overlay.setAttribute("aria-labelledby", label.id);
 
     const field = document.createElement("textarea");
     field.className = "note-input";
-    field.rows = 3;
+    field.rows = 4;
     field.placeholder = action.placeholder || "";
     field.maxLength = 1000;
     label.htmlFor = field.id = `note-${action.id}`;
@@ -475,12 +494,41 @@ class AcmeChat extends HTMLElement {
     row.className = "note-actions";
     row.append(send, cancel);
 
+    const close = (): void => {
+      overlay.remove();
+      document.removeEventListener("keydown", onKey, true);
+    };
+
+    const focusables = (): HTMLElement[] =>
+      [field, send, cancel].filter((el) => !el.hasAttribute("disabled"));
+
+    function onKey(event: KeyboardEvent): void {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        cancel.click();
+        return;
+      }
+      if (event.key !== "Tab") return;
+      // Keep focus inside the dialog. Without this, tabbing walks onto the
+      // disabled conversation behind it and the caret disappears.
+      const items = focusables();
+      const active = overlay.contains(document.activeElement)
+        ? (overlay.getRootNode() as ShadowRoot).activeElement
+        : null;
+      const index = items.indexOf(active as HTMLElement);
+      const next = event.shiftKey ? index - 1 : index + 1;
+      if (next < 0 || next >= items.length) {
+        event.preventDefault();
+        items[event.shiftKey ? items.length - 1 : 0].focus();
+      }
+    }
+
     field.addEventListener("input", () => {
       send.disabled = field.value.trim().length === 0;
     });
     field.addEventListener("keydown", (event) => {
-      // Enter sends, newline needs a modifier — a note is a sentence, not a
-      // document, and reaching for the mouse to send one is friction.
+      // Enter sends, Shift+Enter breaks the line. A note is a sentence, and
+      // reaching for the mouse to send one is friction.
       if (event.key === "Enter" && !event.shiftKey) {
         event.preventDefault();
         if (!send.disabled) send.click();
@@ -489,17 +537,18 @@ class AcmeChat extends HTMLElement {
     send.addEventListener("click", () => {
       const note = field.value.trim();
       if (!note) return;
-      send.disabled = true;
-      cancel.disabled = true;
-      field.disabled = true;
+      close();
       void this.#ask(message, note);
     });
     cancel.addEventListener("click", () => {
-      host.replaceChildren();
+      close();
       void this.#ask("No");
     });
+    document.addEventListener("keydown", onKey, true);
 
-    host.append(label, field, row);
+    card.append(label, field, row);
+    overlay.append(card);
+    shell.append(overlay);
     field.focus();
   }
 
