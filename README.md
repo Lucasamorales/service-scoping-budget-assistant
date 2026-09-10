@@ -4,6 +4,71 @@ A decision-support assistant for Acme marketing requests across 13 branches in 4
 It answers whether a requested service is in scope, refused, handled locally, or needs a quote,
 checks the branch's remaining budget, and drafts the follow-up email for a human to approve.
 
+
+Somebody at a venue asks in their own words. They get a verdict, the price if there is one, and
+a way to send the request onward — in one turn, without reading a scope document.
+
+## What it looks like
+
+Every picture here is taken from a running instance by
+[`scripts/capture_screenshots.py`](scripts/capture_screenshots.py), so none of them can drift
+from what the thing actually does. Retake the set with the service running:
+
+```powershell
+.\.venv\Scripts\python.exe -m pip install -e ".[docs]"   # once, for Playwright
+.\.venv\Scripts\python.exe -m scripts.capture_screenshots
+```
+
+### Asking
+
+<table>
+<tr>
+<td width="50%"><img src="docs/images/01-start.png" alt="The opening screen"></td>
+<td width="50%"><img src="docs/images/03-context.png" alt="The context box"></td>
+</tr>
+<tr>
+<td><b>Three example requests to start from</b>, and a link into the full service list for
+anyone who would rather browse.</td>
+<td><b>Nothing is emailed without a reason.</b> Saying yes opens this before anything sends, and
+the server refuses the send if it arrives empty — a rule the browser keeps is not a rule.</td>
+</tr>
+</table>
+
+### Looking it up
+
+
+All 89 services, grouped by verdict rather than by department, because the verdict is the
+question being asked. The panel sits **beside** the conversation rather than over it, so it can
+stay open while somebody keeps typing.
+
+Search covers the summaries as well as the names — "waiver" and "landlord" appear only in the
+prose — and every word has to match, in any order. Results open themselves and the counts read
+`3 of 42`, so nobody has to click into each heading to find which one held the match.
+
+### The handoff
+
+<table>
+<tr>
+<td width="52%"><img src="docs/images/06-email.png" alt="The request email"></td>
+<td width="48%"><img src="docs/images/07-pdf.png" alt="The first page of the attached PDF"></td>
+</tr>
+<tr>
+<td><b>What the Country Manager receives.</b> The amount and the ask carry the page; the
+requester's own words sit above the details. HTML and plain text are rendered from one set of
+values, so the two can never say different things.</td>
+<td><b>The whole conversation, attached.</b> Built from the audit log rather than the browser's
+clipped history, with the verdict on each turn that reached one.
+<a href="docs/images/conversation.pdf">Open the sample</a>.</td>
+</tr>
+</table>
+
+### On a phone
+
+<img src="docs/images/05-narrow.png" alt="The service list as a drawer on a narrow screen" width="360">
+
+Below the width where both fit side by side, the service list becomes a drawer over the
+conversation instead.
+
 ## The one idea this rests on
 
 Every document in [`documents/`](documents/) carries a `Status code` field with one of four
@@ -73,6 +138,9 @@ To clone this onto another PC or deploy to Cloud Run, see [`docs/HOSTING.md`](do
 # Score retrieval against evals/retrieval.json. Run before touching a prompt.
 .\.venv\Scripts\python.exe -m scripts.eval_retrieval
 .\.venv\Scripts\python.exe -m scripts.eval_retrieval --case seo-audit   # show the scoring
+
+# Retake the README's screenshots. Needs the service running and `pip install playwright`.
+.\.venv\Scripts\python.exe -m scripts.capture_screenshots
 
 # Score the verdicts the resolver actually produces. Fails only on a wrong verdict.
 .\.venv\Scripts\python.exe -m scripts.eval_resolver
@@ -542,38 +610,44 @@ other number here: until 26 Aug 2026 the suite scored 51/51 while a request to s
 posts was being answered from *Marketing calendars* — the right tool on the wrong item, which no
 capability assertion can see.
 
-On the rules planner it currently scores **64/74, 0 of 15 critical failures, with 10 recorded
-known failures**. Those ten are the defects found by the 26 August golden-question round: each
-one names the task that will fix it, stays visible in every run, and does not gate CI — see
-[`docs/REMEDIATION.md`](docs/REMEDIATION.md). A case that starts passing is reported so its
-marker gets removed.
+On the rules planner it currently scores **68/74 (92%), 0 of 14 critical failures, with 6
+recorded known failures**. Those six are what remains of the defects found by the 26 August
+golden-question round: each one names the task that will fix it, stays visible in every run, and
+does not gate CI — see [`docs/REMEDIATION.md`](docs/REMEDIATION.md). A case that starts passing
+is reported so its marker gets removed, which is how the count came down.
 
 The set includes the phrases that used to fail in production: "what's left for london", "who is
 my account manager", "do you handle translating our web pages", "what do I get for free".
 
-All 81 documents parse into a typed registry with zero errors and 385 searchable phrases. The
-resolver returns a verdict, a clarifying question, or a handover. Gemini is wired via
+All 92 documents parse into a typed registry with zero errors — 89 of them service items,
+across 12 sections, with 434 searchable phrases. The resolver returns a verdict, a clarifying
+question, or a handover. Gemini is wired via
 `GEMINI_API_KEY` ([Google AI Studio](https://aistudio.google.com/apikey)). A GCP project is for
 Firestore / Sheets / GCS — **not** for the model (no Vertex AI).
 
-**Also live:** read-only Google Sheet (budget, pricing tiers, roster), Resend mail (short
-résumé body plus a PDF of the audit-log conversation; test from-address), Firestore audit
-dual-write, and hybrid retrieval — the deploy script builds the index with `--embed` and ships
-it in the image, because Cloud Build has no Gemini key of its own.
+**Also live:** read-only Google Sheet (budget, pricing tiers, roster), Firestore audit
+dual-write, hybrid retrieval — the deploy script builds the index with `--embed` and ships it in
+the image, because Cloud Build has no Gemini key of its own — and the designed request email
+with its conversation PDF, described under [The handoff email](#the-handoff-email) below.
+
+**Deployed on Cloud Run.** `.\scripts\deploy_cloud_run.ps1` builds the index, writes the
+secrets, and ships the image; see [`docs/HOSTING.md`](docs/HOSTING.md).
 
 The corpus itself is unusually clean: `report_corpus` finds no encoding damage, no stray escapes
 and only two non-ASCII characters across 136,000.
 
 ### Corpus findings that need a human decision
 
-The validator reports 18 warnings. None block the build, but three would give an Account Manager
-the wrong answer and are worth Acme's attention:
+The validator reports 30 warnings. None block the build, but four would give an Account Manager
+the wrong answer and are worth Acme's attention. All four are the same knot of content-planning
+names:
 
 | Phrase | Declared alias of | Also the name of | Problem |
 |---|---|---|---|
 | `content strategy` | Content planning (`local`) | SEO content strategy (`in scope`) | verdicts differ |
 | `content planning` | SEO content strategy (`in scope`) | Content planning (`local`) | verdicts differ |
-| `ad editing` | Video editing for ads (`in scope`) | Video editing ad hoc (`quote required`) | verdicts differ |
+| `content plan` | SEO content strategy (`in scope`) | Content planning (`local`) | verdicts differ |
+| `content schedule` | SEO content calendar (`in scope`) | Content scheduling (`local`) | verdicts differ |
 
 Each is a phrase one item claims as an alias while it is also the name of a *different* item with
 a *different* verdict. Retrieval obeys the corpus exactly; the corpus is what needs correcting.
@@ -592,6 +666,39 @@ The remaining warnings are cosmetic or expected:
   across two sections. These are real domain overlaps and the resolver disambiguates by asking,
   which is exactly why a similarity score is not allowed to choose the verdict.
 
+## The handoff email
+
+When somebody says yes to "shall I email your Country Manager?", this is what goes out —
+pictured under [The handoff](#the-handoff) above.
+
+- **Three variants.** In scope to the Account Manager, a purchase order to the Country Manager,
+  and a manual quote to the Account Manager when the rate card has no figure. Only the middle one
+  carries money; the third is a request to think rather than to approve, so the requester's own
+  words are promoted above the details.
+- **HTML and plain text from one set of values.** Several recipients only ever see the text part.
+  It is the fallback, not a courtesy, so the two can never say different things.
+- **Templates are files.** [`app/assets/templates/`](app/assets/templates/) holds the designed
+  HTML and text; substitution is a dictionary lookup over `{{token}}` placeholders with no
+  expression syntax anywhere near it, and every value is HTML-escaped on the way in. The
+  requester's context is typed into a web form, and that is the one field this matters most for.
+- **The system's own vocabulary stays out.** The status row reads `Quote required`, not the
+  spreadsheet's `Y` or `On demand`; the requester's role reads `Account Manager`, not the sign-in
+  code `am`. Both were shipped once and both read as a machine dump.
+- **The conversation travels as a PDF**, laid out to the same design and built from the audit log
+  rather than the browser's clipped history. Brand faces are embedded, so `£` and `—` render as
+  typed rather than depending on a Latin-1 core font.
+
+Two settings shape it, both in [`.env.example`](.env.example):
+
+| Setting | What it does |
+|---|---|
+| `PUBLIC_BASE_URL` | Where a mail client fetches the logo and the brand faces. An email has no origin, so both URLs must be absolute. Empty is safe: the mail still goes, without the image and in a system font. The deploy script fills it in from the service itself. |
+| `MAIL_REDIRECT_TO` | Sends every request email to one address instead of the AM or CM, for testing the whole path without mail reaching them. A redirected message says so in its subject and at the top of both bodies. Empty in production, and the deploy announces it when set. |
+
+Fonts are a bonus, not a requirement: Gmail and Outlook strip web fonts however they are
+declared, so the design keeps its hierarchy in the fallback stack. That is why the money figure
+is the largest, heaviest thing on the page rather than the only thing set in the display face.
+
 ## The internal chat page
 
 [`widget/`](widget/) is a Shadow DOM custom element (`<acme-chat>`) served at `/`. It streams
@@ -600,6 +707,20 @@ conversation state in `sessionStorage`, and signs in via `POST /api/session` whe
 
 Styles and markup live inside the shadow root so a host page cannot break the layout. Model text is
 HTML-escaped before a tiny markdown subset is applied — never injected raw.
+
+Three things in it are worth knowing about:
+
+- **The service list** (`GET /api/catalog`) sits beside the conversation rather than over it, so
+  it can stay open while somebody keeps typing, and it groups by verdict because that is the
+  question being asked. Its search reads the summaries as well as the names, and marks matches
+  with text nodes rather than by splicing tags into escaped text.
+- **The context box** is a modal over the whole widget, not a field under the reply. Inline it
+  sat below a wall of text and got scrolled past, and people waited for an email that was still
+  waiting on them.
+- **An offer expires** when the conversation moves past it. The button that confirms an email
+  does not carry what it is agreeing to — the service and the amount live in a sealed token, and
+  the server keeps one at a time — so a stale "Yes, request a PO" would raise a purchase order
+  for whatever was asked about after it.
 
 ### Trying Gemini locally
 
@@ -617,10 +738,11 @@ To force the old rule-only path while testing: `USE_LLM_PLANNER=false` and/or
 **Built and wired locally:** budget tracker (live Sheet when configured), quoting
 (both tier prices and the service→tier map from the Sheet), roster, Resend mail,
 Firestore audit.
-**Docker image and Cloud Run script are in the repo.** Hosting is blocked until billing
-is linked on `your-gcp-project`. New machine, secrets, and GCP steps:
-[`docs/HOSTING.md`](docs/HOSTING.md).
-**Still later:** GCS index download at boot, IAP, production Resend DNS.
+**Running on Cloud Run**, with the widget embedded through a Webflow page. New machine,
+secrets, and GCP steps: [`docs/HOSTING.md`](docs/HOSTING.md).
+**Still later:** GCS index download at boot, IAP, and a verified Resend domain — until that
+last one exists the sender is the provider's sandbox address, which delivers only to the Resend
+account owner.
 
 Architecture write-up: [`docs/ASSESSMENT-AND-PLAN.md`](docs/ASSESSMENT-AND-PLAN.md).
 Status board: [`docs/ARCHITECTURE-AUDIT.md`](docs/ARCHITECTURE-AUDIT.md).
@@ -638,7 +760,7 @@ Four documents were originally listed as missing. Two of them now live on the Sh
 | Business logic: FOC modifiers, thresholds, routing rules | **Not in corpus** — see below |
 | Quoting: confirm merch tier with the business | **Answered** — the `Scope` tab says Tier 3 |
 
-The business logic document is the one that still shapes the conversation. The 81 documents give
+The business logic document is the one that still shapes the conversation. The 89 items give
 one flat verdict per item, but a leaflet that already exists and needs resizing is free while the
 same leaflet built from scratch is quoted. Those branches, the question that decides between them,
 and the thresholds around them all live in that file. It should be parsed at build time rather

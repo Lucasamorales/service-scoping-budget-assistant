@@ -29,6 +29,13 @@ cloud = [
     "google-api-python-client>=2.149",
     "google-auth>=2.35",
 ]
+# Only for scripts/capture_screenshots.py, which retakes the README's pictures.
+# Kept out of dev because it pulls a driver bundle nobody needs to run the
+# tests, and it drives the Chrome already on the machine rather than
+# downloading its own.
+docs = [
+    "playwright>=1.48",
+]
 dev = [
     "pytest>=8.3",
     "pytest-asyncio>=0.24",
@@ -92,6 +99,8 @@ module = [
     "googleapiclient.*",
     "httplib2.*",
     "openpyxl.*",
+    "playwright.*",
+    "pypdfium2.*",
     "snowballstemmer.*",
 ]
 follow_imports = "skip"
