@@ -319,11 +319,25 @@ def _report(result: CaseResult) -> None:
     print()
 
 
+def settings_sheet_id() -> str:
+    """The configured spreadsheet, for ``--live-sheet``."""
+    return get_settings().budget_spreadsheet_id
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--cases", type=Path, default=DEFAULT_CASES)
     parser.add_argument("--case", help="Run a single case by id.")
     parser.add_argument("--verbose", action="store_true", help="Show every case.")
+    parser.add_argument(
+        "--live-sheet",
+        action="store_true",
+        help=(
+            "Read budget figures from the live spreadsheet instead of the "
+            "checked-in workbook. Off by default: cases assert fixture figures, "
+            "so a live read turns an edited cap into a failing suite."
+        ),
+    )
     parser.add_argument(
         "--mode",
         choices=MODES,
@@ -344,6 +358,17 @@ def main() -> int:
         update={
             "use_llm_planner": args.mode in ("planner", "deployed"),
             "use_dense_retrieval": args.mode != "rules",
+            # The checked-in workbook, unless asked otherwise. Budget cases
+            # assert figures — "2,500" for the UK total — and those are facts
+            # about the fixture, not about the business. Reading the live sheet
+            # makes the suite fail whenever somebody edits a cap: it went red on
+            # 10 Sep because UK caps moved from 500 to 100, which is a
+            # legitimate business change and no kind of regression.
+            #
+            # CI and the nightly already blank the variable in their own
+            # environments. This is for the developer who just runs the script
+            # and gets a red suite that has nothing to do with their change.
+            "budget_spreadsheet_id": "" if not args.live_sheet else settings_sheet_id(),
         }
     )
     try:
