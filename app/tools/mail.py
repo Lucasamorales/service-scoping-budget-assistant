@@ -33,6 +33,19 @@ _PREHEADER_CAP = 90
 first thing worth losing — everything before it has already said what the mail
 is."""
 
+_ROLE_LABEL = {
+    "am": "Account Manager",
+    "gm": "General Manager",
+    "country": "Country Manager",
+    "admin": "Admin",
+}
+"""How the requester's own role is written out.
+
+Sign-in stores it as a wire code, and "Remy, am" in front of a country manager
+is the same failure as the "Y" the status row used to print — the system's
+vocabulary, in an email to somebody who has never seen it. An unrecognised
+value is dropped rather than guessed at."""
+
 _UNKNOWN = "Not recorded"
 """What a value nobody supplied is called.
 
@@ -120,7 +133,9 @@ def build_request_email(
         title=subject,
         filename_stem=stem,
         requester=requester,
-        role=role,
+        # The written-out role, not the sign-in code — the PDF puts it on the
+        # cover, where "Remy, am" reads exactly as badly as it does in the mail.
+        role=values["requester_role"],
         country=country,
         branch=branch,
         service=service,
@@ -161,10 +176,11 @@ def _values(
     from_address: str,
 ) -> dict[str, str]:
     base = asset_base_url.rstrip("/")
+    job = _ROLE_LABEL.get((role or "").strip().casefold(), "")
     values = {
         "recipient_name": contact.name,
         "requester_name": requester or _UNKNOWN,
-        "requester_role": role or "",
+        "requester_role": job,
         "country": country or _UNKNOWN,
         # Falls back to the country so the subject still says where this came
         # from. A subject reading "· Not recorded" tells nobody anything.
@@ -182,8 +198,8 @@ def _values(
         # a comma whatever they happen to hold. Without this an unset branch
         # printed "unknown, United Kingdom".
         "venue_line": ", ".join(part for part in (branch, country) if part) or _UNKNOWN,
-        "requester_line": _requested_by(requester, role, None),
-        "requested_by": _requested_by(requester, role, branch or country),
+        "requester_line": _requested_by(requester, job, None),
+        "requested_by": _requested_by(requester, job, branch or country),
         "context": (note or "").strip(),
         "reference": conversation_id or _UNKNOWN,
         "from_address": from_address,

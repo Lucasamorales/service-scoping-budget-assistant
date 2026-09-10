@@ -656,6 +656,7 @@ def pending_from_state(state: ConversationState) -> PendingAction:
         recipient_country=state.pending_recipient_country,
         recipient_name=state.pending_recipient_name,
         needs_country=state.pending_needs_country,
+        note=state.pending_note,
     )
 
 
@@ -750,6 +751,7 @@ def _carry_forward(
         pending_recipient_country=pending.recipient_country if pending else None,
         pending_recipient_name=pending.recipient_name if pending else None,
         pending_needs_country=pending.needs_country if pending else False,
+        pending_note=pending.note if pending else None,
         active_tool=active_tool,
         budget_country=budget_country,
         budget_branch=budget_branch,

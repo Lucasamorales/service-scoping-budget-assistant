@@ -111,6 +111,20 @@ class PendingAction:
     needs_country: bool = False
     """True while we wait for the user to name their country before send."""
 
+    note: str | None = None
+    """The context the requester typed, held across a round trip.
+
+    It has to live here because the country question comes between typing the
+    context and sending: the user answers "United Kingdom", that turn carries
+    no note, and the paragraph they had already written was gone. The email
+    went out with an empty "Why they are asking" block, which is the one part
+    of it a person wrote deliberately.
+
+    Sealed with the rest of the action, so the client cannot alter it in
+    transit. It still cannot change who is emailed or for how much — it is
+    body text and nothing else reads it.
+    """
+
 
 @dataclass(frozen=True, slots=True)
 class FlowResult:
@@ -178,9 +192,17 @@ def confirm_pending(
     asset_base_url: str = "",
 ) -> FlowResult:
     answer = is_affirmative(message)
-    context = (note or "").strip()
+    # A note typed on this turn wins; otherwise the one carried by the action,
+    # which is how a context written before the country question survives it.
+    context = (note or pending.note or "").strip()
+    pending = replace(pending, note=context or None)
 
     def send(ready: PendingAction) -> FlowResult:
+        # Guarded here rather than at each branch. The country questions used
+        # to call send() directly and so skipped the check below entirely —
+        # every email that needed a country was sent with no context at all.
+        if not context:
+            return _ask_context(ready, contacts)
         return _send_pending(
             ready,
             catalog_get=catalog_get,

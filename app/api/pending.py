@@ -73,6 +73,11 @@ def seal_pending(
         "recipient_country": pending.recipient_country,
         "recipient_name": pending.recipient_name,
         "needs_country": pending.needs_country,
+        # Body text for the email, carried so it survives the country
+        # question. Sealed like everything else here, so the client cannot
+        # alter what it already wrote; it still cannot reach who is emailed or
+        # for how much, which is what this seal exists to protect.
+        "note": pending.note,
         "conversation_id": conversation_id,
         "iat": int(time.time() if now is None else now),
     }
@@ -129,6 +134,7 @@ def open_pending(
         recipient_country=_text(payload.get("recipient_country")),
         recipient_name=_text(payload.get("recipient_name")),
         needs_country=bool(payload.get("needs_country")),
+        note=_text(payload.get("note")),
     )
 
 

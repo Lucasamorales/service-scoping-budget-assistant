@@ -70,7 +70,12 @@ from ``MAX_MESSAGE_CHARS`` so a catalogue list does not 422 the next turn."""
 """Longer than any real scoping question. A cap here bounds prompt cost and
 removes the easiest way to run up a bill or bury instructions in padding."""
 
-MAX_PENDING_TOKEN_CHARS = 1024
+MAX_PENDING_TOKEN_CHARS = 3072
+"""Room for the sealed action plus the requester's context.
+
+The context can run to MAX_NOTE_CHARS, and signing and base64 inflate it, so
+the old 1024 would have rejected the token for any note beyond a sentence or
+two — as a malformed request, on the turn that sends the email."""
 """Generous ceiling on the sealed mail action. The real thing is ~300 chars."""
 
 MAX_CARRIED_IDS = 8
@@ -130,6 +135,9 @@ class StateModel(Base):
             pending_recipient_country=pending.recipient_country if pending else None,
             pending_recipient_name=pending.recipient_name if pending else None,
             pending_needs_country=pending.needs_country if pending else False,
+            # From the sealed action, never from the wire: the client carries
+            # the token, not the fields.
+            pending_note=pending.note if pending else None,
             active_tool=self.active_tool,
             budget_country=self.budget_country,
             budget_branch=self.budget_branch,
@@ -216,8 +224,10 @@ class ChatRequest(Base):
     the message as a yes or a no, and free prose about a launch event is
     neither — carrying the note here keeps that check meaning what it says.
 
-    It never reaches the sealed pending action, so nothing typed here can
-    change who is emailed or for how much.
+    Carried into the sealed pending action once given, so a context written
+    before the country question survives it. That cannot change who is emailed
+    or for how much: those are separate sealed fields and nothing reads this
+    one but the email body.
     """
 
     def history_turns(self) -> tuple[HistoryTurn, ...]:

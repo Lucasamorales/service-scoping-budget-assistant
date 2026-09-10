@@ -35,10 +35,17 @@ def client():
         yield test_client
 
 
-def ask(client: TestClient, message: str, state: dict | None = None) -> dict:
+def ask(
+    client: TestClient,
+    message: str,
+    state: dict | None = None,
+    note: str | None = None,
+) -> dict:
     payload: dict[str, object] = {"message": message}
     if state is not None:
         payload["state"] = state
+    if note is not None:
+        payload["note"] = note
     response = client.post("/api/chat", json=payload)
     assert response.status_code == 200, response.text
     return response.json()
@@ -167,8 +174,27 @@ class TestForgedMailAction:
         second = ask(client, "yes please", first["state"])
         assert "which country" in second["text"].lower()
 
+        # Naming the country is not the last step. Nothing sends without the
+        # context, and this turn has none — it used to send anyway.
         third = ask(client, "United Kingdom", second["state"])
-        assert "isn't connected" in third["text"] or "draft" in third["text"].lower()
+        assert "context" in third["text"].lower()
+        assert third["state"]["pendingToken"], "the CTA stays alive"
+
+        fourth = ask(client, "Yes", third["state"], note="For the March reopening.")
+        assert "isn't connected" in fourth["text"] or "draft" in fourth["text"].lower()
+
+    def test_a_context_given_early_survives_the_country_question(
+        self, client: TestClient
+    ) -> None:
+        """Typed at the first Yes, wanted two turns later. It travels sealed
+        with the action, so answering "United Kingdom" completes the send
+        instead of asking for the paragraph again."""
+        first = ask(client, "can we do a billboard?")
+        second = ask(client, "Yes", first["state"], note="For the March reopening.")
+        assert "which country" in second["text"].lower()
+
+        third = ask(client, "United Kingdom", second["state"])
+        assert "context" not in third["text"].lower()
 
     def test_a_token_cannot_be_replayed_into_another_conversation(
         self, client: TestClient
@@ -466,3 +492,23 @@ class TestBrandAssetsAreReachableFromAnEmail:
             "/api/chat", json={"message": "hi"}, headers={"Origin": "https://evil.example"}
         )
         assert response.status_code in {401, 403}
+
+
+class TestTheSealedActionHoldsTheContext:
+    def test_the_longest_allowed_context_still_fits_the_token(
+        self, client: TestClient
+    ) -> None:
+        """Signing and base64 inflate it. At the old 1024-character bound a
+        token carrying anything past a sentence or two came back rejected as a
+        malformed request — on the turn that sends the email."""
+        from app.api.schemas import MAX_NOTE_CHARS, MAX_PENDING_TOKEN_CHARS
+
+        first = ask(client, "can we do a billboard?")
+        second = ask(client, "Yes", first["state"], note="x" * MAX_NOTE_CHARS)
+        token = second["state"]["pendingToken"]
+        assert token
+        assert len(token) <= MAX_PENDING_TOKEN_CHARS
+
+        # And the client can hand it straight back.
+        third = ask(client, "United Kingdom", second["state"])
+        assert third["state"] is not None

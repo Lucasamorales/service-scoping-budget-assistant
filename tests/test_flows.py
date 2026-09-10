@@ -198,9 +198,21 @@ class TestConfirmMail:
             second.next_state,
             identity=SessionIdentity(),
         )
-        assert third.next_state.pending_action_kind is None
         assert third.next_state.pending_needs_country is False
-        assert "Charlie" in third.text
+        # Country known, context still missing — so it asks rather than sends.
+        # This branch used to call send() directly, which skipped the context
+        # requirement entirely and mailed an empty "Why they are asking".
+        assert third.next_state.pending_action_kind == "email_cm_po"
+        assert "context" in third.text.lower()
+
+        fourth = flow_pipeline.answer(
+            "Yes",
+            third.next_state,
+            identity=SessionIdentity(),
+            note="For the March reopening.",
+        )
+        assert fourth.next_state.pending_action_kind is None
+        assert "Charlie" in fourth.text
 
 
 class TestAudit:

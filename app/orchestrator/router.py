@@ -311,6 +311,14 @@ class ConversationState:
     pending_needs_country: bool = False
     """True when the next turn should name a country before mail send."""
 
+    pending_note: str | None = None
+    """Context already typed for the pending email.
+
+    Carried because the country question lands between typing it and sending:
+    the turn that answers "United Kingdom" has no note of its own, and without
+    this the paragraph the requester wrote was gone by the time the email was
+    built."""
+
     active_tool: str | None = None
     """Sticky tool session, e.g. ``budget``, until a clear topic change."""
 
