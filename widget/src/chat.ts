@@ -4,6 +4,7 @@ import {
   streamChat,
   type CandidateOption,
   type CatalogCategory,
+  type CatalogItem,
   type ChatAction,
   type ConversationState,
   type HistoryMessage,
@@ -55,6 +56,8 @@ const BRAND_MARK = `<svg class="brand-mark" viewBox="46 353 2294 482" xmlns="htt
  * missing one leaves an empty red circle. This ships with the bundle.
  */
 const SEND_ICON = `<svg class="send-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M3.3 20.7 21.5 12 3.3 3.3 3.3 10.1 15.4 12 3.3 13.9Z" fill="currentColor"/></svg>`;
+
+const SEARCH_ICON = `<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.4 15.4 21 21"/></svg>`;
 
 const STARTERS = [
   { label: "Merch for a launch", message: "Can we order merch for a branch opening?" },
@@ -667,31 +670,101 @@ class AcmeChat extends HTMLElement {
     const title = document.createElement("div");
     title.className = "catalog-title";
     title.textContent = "What we cover";
+    // Behind a button rather than always on show. Most visits are a browse of
+    // four headings, and a field standing open above them suggests the list
+    // cannot be read without one.
+    const search = document.createElement("button");
+    search.type = "button";
+    search.className = "catalog-search-toggle";
+    search.setAttribute("aria-label", "Search the service list");
+    search.setAttribute("aria-expanded", "false");
+    search.innerHTML = SEARCH_ICON;
+
     const close = document.createElement("button");
     close.type = "button";
     close.className = "catalog-close";
     close.setAttribute("aria-label", "Close the service list");
     close.textContent = "×";
-    head.append(title, close);
+
+    const actions = document.createElement("div");
+    actions.className = "catalog-actions";
+    actions.append(search, close);
+    head.append(title, actions);
+
+    const searchRow = document.createElement("div");
+    searchRow.className = "catalog-search";
+    searchRow.hidden = true;
+    const field = document.createElement("input");
+    field.type = "search";
+    field.className = "catalog-search-input";
+    field.placeholder = "Search services";
+    field.setAttribute("aria-label", "Search the service list");
+    const tally = document.createElement("div");
+    tally.className = "catalog-tally";
+    searchRow.append(field, tally);
 
     const body = document.createElement("div");
     body.className = "catalog-body";
     body.textContent = "Loading…";
+
+    let filter: ((query: string) => number) | null = null;
+    const total = () => this.#catalog?.reduce((sum, c) => sum + c.count, 0) ?? 0;
+
+    const runFilter = (): void => {
+      const query = field.value.trim();
+      const matched = filter ? filter(query) : 0;
+      if (!query) {
+        tally.textContent = "";
+        return;
+      }
+      tally.textContent =
+        matched === 0
+          ? "Nothing matches that"
+          : `${matched} of ${total()}`;
+    };
+
+    const showSearch = (open: boolean): void => {
+      searchRow.hidden = !open;
+      search.setAttribute("aria-expanded", open ? "true" : "false");
+      search.classList.toggle("on", open);
+      if (open) {
+        field.focus();
+      } else {
+        field.value = "";
+        runFilter();
+      }
+    };
+
+    search.addEventListener("click", () => showSearch(searchRow.hidden));
+    field.addEventListener("input", runFilter);
 
     const dismiss = (): void => {
       panel.remove();
       document.removeEventListener("keydown", onKey, true);
     };
     function onKey(event: KeyboardEvent): void {
-      if (event.key === "Escape") {
-        event.preventDefault();
-        dismiss();
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      // Escape unwinds one step at a time: the query first, then the field,
+      // then the panel. Closing everything on the first press throws away a
+      // search somebody is still reading the results of.
+      if (!searchRow.hidden && field.value) {
+        field.value = "";
+        runFilter();
+        field.focus();
+        return;
       }
+      if (!searchRow.hidden) {
+        showSearch(false);
+        search.focus();
+        return;
+      }
+      dismiss();
     }
     close.addEventListener("click", dismiss);
     document.addEventListener("keydown", onKey, true);
 
-    panel.append(head, body);
+    panel.append(head, searchRow, body);
     frame.append(panel);
     close.focus();
 
@@ -702,19 +775,45 @@ class AcmeChat extends HTMLElement {
           this.#authRequired ? this.#session?.token ?? null : null,
         );
       }
-      this.#renderCatalog(body, this.#catalog);
+      filter = this.#renderCatalog(body, this.#catalog);
     } catch {
       body.replaceChildren();
       const message = document.createElement("p");
       message.className = "catalog-empty";
       message.textContent = "Couldn't load the list just now. Close this and try again.";
       body.append(message);
+      search.disabled = true;
     }
   }
 
-  #renderCatalog(host: HTMLElement, categories: CatalogCategory[]): void {
+  /** Draw the list, and hand back the function that searches it.
+   *
+   * Returning the filter rather than storing it keeps every reference to these
+   * elements inside this method: the panel is rebuilt from scratch each time it
+   * opens, and a filter left on the instance would be closing over a DOM that
+   * had already been thrown away.
+   */
+  #renderCatalog(
+    host: HTMLElement,
+    categories: CatalogCategory[],
+  ): (query: string) => number {
     host.replaceChildren();
-    const groups: { toggle: HTMLButtonElement; items: HTMLElement }[] = [];
+    type Group = {
+      group: HTMLElement;
+      toggle: HTMLButtonElement;
+      items: HTMLElement;
+      count: HTMLElement;
+      total: number;
+      rows: { row: HTMLElement; item: CatalogItem; haystack: string }[];
+    };
+    const groups: Group[] = [];
+    let searching = false;
+
+    const empty = document.createElement("p");
+    empty.className = "catalog-empty";
+    empty.hidden = true;
+    empty.textContent =
+      "No service matches that. Try a shorter word, or ask in the chat and I'll check.";
 
     categories.forEach((category) => {
       const group = document.createElement("div");
@@ -734,34 +833,83 @@ class AcmeChat extends HTMLElement {
       const items = document.createElement("div");
       items.className = "catalog-items";
       items.hidden = true;
-      category.items.forEach((item) => {
+
+      const rows = category.items.map((item) => {
         const row = document.createElement("div");
         row.className = "catalog-item";
-        row.innerHTML = `
-          <span class="name">${escapeHtml(item.name)}</span>
-          <span class="where">${escapeHtml(item.section)}</span>
-          <span class="what">${escapeHtml(item.summary)}</span>
-        `;
+        fillRow(row, item, []);
         items.append(row);
+        return {
+          row,
+          item,
+          // Section and summary included: people search for "billboard" but
+          // also for "waiver" or "landlord", which only ever appear in the
+          // prose. Lowercased once here rather than on every keystroke.
+          haystack: `${item.name} ${item.section} ${item.summary}`.toLowerCase(),
+        };
       });
 
       toggle.addEventListener("click", () => {
         const opening = items.hidden;
-        // One at a time. Four categories open at once is 89 services in a
-        // column, which is the wall this panel exists to replace.
-        groups.forEach((other) => {
-          other.items.hidden = true;
-          other.toggle.setAttribute("aria-expanded", "false");
-        });
+        // One at a time while browsing. Four categories open at once is 89
+        // services in a column, which is the wall this panel exists to
+        // replace — but that does not apply to results, where the whole point
+        // is seeing every match at once.
+        if (!searching) {
+          groups.forEach((other) => {
+            other.items.hidden = true;
+            other.toggle.setAttribute("aria-expanded", "false");
+          });
+        }
         items.hidden = !opening;
         toggle.setAttribute("aria-expanded", opening ? "true" : "false");
         if (opening) toggle.scrollIntoView({ block: "nearest" });
       });
 
-      groups.push({ toggle, items });
+      groups.push({ group, toggle, items, count, total: category.count, rows });
       group.append(toggle, items);
       host.append(group);
     });
+
+    host.append(empty);
+
+    return (query: string): number => {
+      // Every word has to appear somewhere in the item, in any order. "photo
+      // billboard" and "billboard photo" are the same request, and anybody
+      // typing two words means both.
+      const terms = query.toLowerCase().split(/\s+/).filter(Boolean);
+      searching = terms.length > 0;
+      let matched = 0;
+
+      groups.forEach((entry) => {
+        let hits = 0;
+        entry.rows.forEach(({ row, item, haystack }) => {
+          const hit = !searching || terms.every((term) => haystack.includes(term));
+          row.hidden = !hit;
+          if (hit) {
+            hits += 1;
+            fillRow(row, item, terms);
+          }
+        });
+        matched += hits;
+        entry.group.hidden = searching && hits === 0;
+        entry.count.textContent = searching
+          ? `${hits} of ${entry.total}`
+          : String(entry.total);
+        // Results are opened for you. Making somebody click into each heading
+        // to find out which of them held the match is the work the search was
+        // supposed to save.
+        entry.items.hidden = searching ? hits === 0 : true;
+        entry.toggle.setAttribute(
+          "aria-expanded",
+          searching && hits > 0 ? "true" : "false",
+        );
+      });
+
+      empty.hidden = !searching || matched > 0;
+      if (searching) host.scrollTop = 0;
+      return matched;
+    };
   }
 
   #appendUser(message: string): void {
@@ -873,6 +1021,66 @@ class AcmeChat extends HTMLElement {
     this.#history = next.slice(-MAX_HISTORY);
     writeJson(HISTORY_KEY, this.#history);
   }
+}
+
+/** Write one service into its row, marking whatever the search matched.
+ *
+ * Built from text nodes rather than a string of HTML. The names and summaries
+ * come from the documents, and marking a match by splicing tags into escaped
+ * text means tracking offsets that the escaping has already moved — the sort
+ * of arithmetic that turns a stray ampersand into markup.
+ */
+function fillRow(row: HTMLElement, item: CatalogItem, terms: string[]): void {
+  row.replaceChildren(
+    field("name", item.name, terms),
+    field("where", item.section, terms),
+    field("what", item.summary, terms),
+  );
+}
+
+function field(className: string, text: string, terms: string[]): HTMLElement {
+  const el = document.createElement("span");
+  el.className = className;
+  el.append(marked(text, terms));
+  return el;
+}
+
+function marked(text: string, terms: string[]): DocumentFragment {
+  const out = document.createDocumentFragment();
+  const found: [number, number][] = [];
+  if (terms.length) {
+    const lower = text.toLowerCase();
+    terms.forEach((term) => {
+      for (let at = lower.indexOf(term); at !== -1; at = lower.indexOf(term, at + term.length)) {
+        found.push([at, at + term.length]);
+      }
+    });
+  }
+  if (!found.length) {
+    out.append(text);
+    return out;
+  }
+
+  // Two search words can match overlapping runs of the same sentence, and
+  // marking each separately would nest one <mark> inside another.
+  found.sort((a, b) => a[0] - b[0]);
+  const spans: [number, number][] = [];
+  found.forEach(([start, end]) => {
+    const last = spans.at(-1);
+    if (last && start <= last[1]) last[1] = Math.max(last[1], end);
+    else spans.push([start, end]);
+  });
+
+  let cursor = 0;
+  spans.forEach(([start, end]) => {
+    if (start > cursor) out.append(text.slice(cursor, start));
+    const hit = document.createElement("mark");
+    hit.textContent = text.slice(start, end);
+    out.append(hit);
+    cursor = end;
+  });
+  if (cursor < text.length) out.append(text.slice(cursor));
+  return out;
 }
 
 export { AcmeChat, renderMarkdown, escapeHtml };

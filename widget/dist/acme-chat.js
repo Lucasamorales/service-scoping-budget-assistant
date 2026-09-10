@@ -1,8 +1,8 @@
-async function z(d,e,t){let n=await fetch(`${d}/api/session`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({password:e,subject:t.subject,branch:t.branch??null,country:t.country??null})});if(!n.ok){let r=await E(n);throw new Error(r||"Could not sign in.")}let a=await n.json();return{token:a.token,expiresAt:a.expiresAt,role:a.role,subject:a.subject??t.subject,country:a.country,branch:a.branch}}async function B(d,e,t,n,a,r,o,i){let p={"Content-Type":"application/json"};a&&(p.Authorization=`Bearer ${a}`);let s=await fetch(`${d}/api/chat/stream`,{method:"POST",headers:p,body:JSON.stringify({message:e,state:t,history:n,note:i||null}),signal:o});if(!s.ok||!s.body){let f=await E(s);throw new Error(f||`Request failed (${s.status})`)}let l=s.body.getReader(),c=new TextDecoder,h="";for(;;){let{value:f,done:w}=await l.read();if(w)break;h+=c.decode(f,{stream:!0});let b=h.split(`
+async function D(d,e,t){let n=await fetch(`${d}/api/session`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({password:e,subject:t.subject,branch:t.branch??null,country:t.country??null})});if(!n.ok){let r=await F(n);throw new Error(r||"Could not sign in.")}let o=await n.json();return{token:o.token,expiresAt:o.expiresAt,role:o.role,subject:o.subject??t.subject,country:o.country,branch:o.branch}}async function $(d,e,t,n,o,r,a,i){let s={"Content-Type":"application/json"};o&&(s.Authorization=`Bearer ${o}`);let l=await fetch(`${d}/api/chat/stream`,{method:"POST",headers:s,body:JSON.stringify({message:e,state:t,history:n,note:i||null}),signal:a});if(!l.ok||!l.body){let h=await F(l);throw new Error(h||`Request failed (${l.status})`)}let c=l.body.getReader(),p=new TextDecoder,f="";for(;;){let{value:h,done:g}=await c.read();if(g)break;f+=p.decode(h,{stream:!0});let b=f.split(`
 
-`);h=b.pop()??"";for(let u of b)N(u,r)}h.trim()&&N(h,r)}function N(d,e){let t="message",n=[];for(let o of d.split(`
-`))o.startsWith("event:")?t=o.slice(6).trim():o.startsWith("data:")&&n.push(o.slice(5).replace(/^ /,""));let a=n.join(`
-`);if(!a)return;let r;try{r=JSON.parse(a)}catch{return}if(t==="verdict"){let o=r,i=o.verdict;e.onVerdict({verdict:i&&typeof i=="object"?{status:m(i.status),meaning:m(i.meaning),service:m(i.service)}:null,citations:q(o.citations),notes:q(o.notes),needsAHuman:!!o.needsAHuman,awaitingAnswer:!!o.awaitingAnswer,candidates:Array.isArray(o.candidates)?o.candidates:[],actions:Array.isArray(o.actions)?o.actions:[]})}else if(t==="text"){let o=m(r.text);o&&e.onText(o)}else if(t==="done"){let o=r;e.onDone({...o,text:m(o.text),source:m(o.source)||"deterministic",degraded:!!o.degraded,truncated:!!o.truncated})}}function m(d){return typeof d!="string"||d==="[object Object]"?"":d}function q(d){return Array.isArray(d)?d.map(e=>m(e)).filter(Boolean):[]}async function E(d){try{let e=await d.json();return O(e.detail)}catch{return""}}function O(d){return typeof d=="string"?d:Array.isArray(d)?d.map(t=>{if(typeof t=="string")return t;if(t&&typeof t=="object"&&"msg"in t){let n=t.msg,a=t.loc,r=Array.isArray(a)?a.join("."):"";return typeof n=="string"?r?`${r}: ${n}`:n:""}return""}).filter(Boolean).join("; ")||"Request failed validation.":d&&typeof d=="object"?"Request failed.":""}async function j(d,e){let t={};e&&(t.Authorization=`Bearer ${e}`);let n=await fetch(`${d}/api/catalog`,{headers:t});if(!n.ok)throw new Error(await E(n));let a=await n.json();return Array.isArray(a.categories)?a.categories:[]}var R={"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"};function g(d){return d.replace(/[&<>"']/g,e=>R[e]??e)}function k(d){return g(typeof d=="string"?d:"").replace(/\*\*(.+?)\*\*/g,"<strong>$1</strong>").replace(/(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)/g,"<em>$1</em>").replace(/_(.+?)_/g,"<em>$1</em>").replace(/\n/g,"<br>")}function C(d){try{let e=sessionStorage.getItem(d);return e?JSON.parse(e):null}catch{return null}}function v(d,e){try{sessionStorage.setItem(d,JSON.stringify(e))}catch{}}function y(d){try{sessionStorage.removeItem(d)}catch{}}var F=`
+`);f=b.pop()??"";for(let u of b)z(u,r)}f.trim()&&z(f,r)}function z(d,e){let t="message",n=[];for(let a of d.split(`
+`))a.startsWith("event:")?t=a.slice(6).trim():a.startsWith("data:")&&n.push(a.slice(5).replace(/^ /,""));let o=n.join(`
+`);if(!o)return;let r;try{r=JSON.parse(o)}catch{return}if(t==="verdict"){let a=r,i=a.verdict;e.onVerdict({verdict:i&&typeof i=="object"?{status:v(i.status),meaning:v(i.meaning),service:v(i.service)}:null,citations:B(a.citations),notes:B(a.notes),needsAHuman:!!a.needsAHuman,awaitingAnswer:!!a.awaitingAnswer,candidates:Array.isArray(a.candidates)?a.candidates:[],actions:Array.isArray(a.actions)?a.actions:[]})}else if(t==="text"){let a=v(r.text);a&&e.onText(a)}else if(t==="done"){let a=r;e.onDone({...a,text:v(a.text),source:v(a.source)||"deterministic",degraded:!!a.degraded,truncated:!!a.truncated})}}function v(d){return typeof d!="string"||d==="[object Object]"?"":d}function B(d){return Array.isArray(d)?d.map(e=>v(e)).filter(Boolean):[]}async function F(d){try{let e=await d.json();return _(e.detail)}catch{return""}}function _(d){return typeof d=="string"?d:Array.isArray(d)?d.map(t=>{if(typeof t=="string")return t;if(t&&typeof t=="object"&&"msg"in t){let n=t.msg,o=t.loc,r=Array.isArray(o)?o.join("."):"";return typeof n=="string"?r?`${r}: ${n}`:n:""}return""}).filter(Boolean).join("; ")||"Request failed validation.":d&&typeof d=="object"?"Request failed.":""}async function j(d,e){let t={};e&&(t.Authorization=`Bearer ${e}`);let n=await fetch(`${d}/api/catalog`,{headers:t});if(!n.ok)throw new Error(await F(n));let o=await n.json();return Array.isArray(o.categories)?o.categories:[]}var V={"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"};function y(d){return d.replace(/[&<>"']/g,e=>V[e]??e)}function A(d){return y(typeof d=="string"?d:"").replace(/\*\*(.+?)\*\*/g,"<strong>$1</strong>").replace(/(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)/g,"<em>$1</em>").replace(/_(.+?)_/g,"<em>$1</em>").replace(/\n/g,"<br>")}function w(d){try{let e=sessionStorage.getItem(d);return e?JSON.parse(e):null}catch{return null}}function E(d,e){try{sessionStorage.setItem(d,JSON.stringify(e))}catch{}}function k(d){try{sessionStorage.removeItem(d)}catch{}}var S=`
 :host {
   /* One palette. The assistant used to ship navy and light with a toggle in
      the header; Acme uses light, so the choice was noise on every screen for a
@@ -404,7 +404,7 @@ button.header-button:focus-visible {
   height: min(760px, calc(100vh - 80px));
   max-height: 100dvh;
   display: grid;
-  grid-template-rows: auto 1fr;
+  grid-template-rows: auto auto 1fr;
   background: var(--panel);
   border: 1px solid var(--line);
   border-radius: 16px;
@@ -454,10 +454,105 @@ button.header-button:focus-visible {
   outline-offset: 2px;
 }
 
+.catalog-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.catalog-search-toggle {
+  appearance: none;
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--text-soft);
+  padding: 5px 9px;
+  border-radius: 999px;
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  transition: background-color 150ms ease, color 150ms ease, border-color 150ms ease;
+}
+
+.catalog-search-toggle svg {
+  width: 15px;
+  height: 15px;
+  display: block;
+}
+
+.catalog-search-toggle:hover { border-color: var(--accent); color: var(--accent); }
+
+/* Held down while the field is open, so the button reads as a state rather
+   than as something that did nothing the second time it was pressed. */
+.catalog-search-toggle.on {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #FFFFFF;
+}
+
+.catalog-search-toggle:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.catalog-search-toggle:disabled { opacity: 0.4; cursor: not-allowed; }
+
+/* Same trap as .catalog-items: display on the class beats the browser's own
+   [hidden] rule, so without this the field is open before it is asked for. */
+.catalog-search[hidden] { display: none; }
+
+.catalog-search {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--hair);
+  background: var(--surface);
+}
+
+.catalog-search-input {
+  flex: 1;
+  min-width: 0;
+  appearance: none;
+  font: inherit;
+  font-size: 13px;
+  padding: 8px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--input-bg);
+  color: var(--text);
+}
+
+.catalog-search-input::placeholder { color: var(--text-faint); }
+
+.catalog-search-input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.catalog-tally {
+  font-size: 11px;
+  color: var(--text-faint);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
 .catalog-body {
   overflow-y: auto;
   padding: 10px 12px 16px;
 }
+
+.catalog-group[hidden] { display: none; }
+
+.catalog-item[hidden] { display: none; }
+
+.catalog-item mark {
+  background: #FDF0C6;
+  color: inherit;
+  border-radius: 2px;
+  padding: 0 1px;
+}
+
+.catalog-empty[hidden] { display: none; }
 
 .catalog-group + .catalog-group {
   margin-top: 6px;
@@ -531,6 +626,7 @@ button.header-button:focus-visible {
 .catalog-empty {
   padding: 16px 13px;
   font-size: 13px;
+  line-height: 1.5;
   color: var(--text-soft);
 }
 
@@ -985,12 +1081,12 @@ button.send:focus-visible {
     animation: none;
   }
 }
-`;var A="acme.session",S="acme.state",T="acme.history",D=12,$='<svg class="brand-mark" viewBox="46 353 2294 482" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Logo"><text x="46" y="760" font-family="sans-serif" font-weight="900" font-size="460" fill="#FFFFFF">LOGO</text></svg>',_='<svg class="send-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M3.3 20.7 21.5 12 3.3 3.3 3.3 10.1 15.4 12 3.3 13.9Z" fill="currentColor"/></svg>',V=[{label:"Merch for a launch",message:"Can we order merch for a branch opening?"},{label:"Billboard advert",message:"Can we put an advert on a billboard?"},{label:"Venue TV screens",message:"Can we change the graphics on our venue TV screens?"}],P={in_scope:"In scope",out_of_scope:"Out of scope",local:"Local",quote_required:"Quote required"},L=class extends HTMLElement{#e;#a;#r=!1;#t=null;#i=null;#n=[];#l=null;#d=!1;#c=null;constructor(){super(),this.#e=this.attachShadow({mode:"open"}),this.#a=(this.getAttribute("api-base")||"").replace(/\/$/,"")}connectedCallback(){this.#t=C(A),this.#i=C(S),this.#n=this.#L(),this.#f()}disconnectedCallback(){this.#c?.abort()}async#f(){try{let e=await fetch(`${this.#a}/api/health`).then(t=>t.json());this.#r=!!e.authRequired}catch{this.#r=!1}if(this.#r&&!this.#b()){this.#u();return}this.#p()}#b(){return!!(this.#t?.token&&this.#t.expiresAt*1e3>Date.now())}#u(){this.#e.innerHTML=`
-      <style>${F}</style>
+`;var T="acme.session",L="acme.state",H="acme.history",I=12,O='<svg class="brand-mark" viewBox="46 353 2294 482" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Logo"><text x="46" y="760" font-family="sans-serif" font-weight="900" font-size="460" fill="#FFFFFF">LOGO</text></svg>',P='<svg class="send-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M3.3 20.7 21.5 12 3.3 3.3 3.3 10.1 15.4 12 3.3 13.9Z" fill="currentColor"/></svg>',K='<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.4 15.4 21 21"/></svg>',Y=[{label:"Merch for a launch",message:"Can we order merch for a branch opening?"},{label:"Billboard advert",message:"Can we put an advert on a billboard?"},{label:"Venue TV screens",message:"Can we change the graphics on our venue TV screens?"}],Z={in_scope:"In scope",out_of_scope:"Out of scope",local:"Local",quote_required:"Quote required"},N=class extends HTMLElement{#e;#o;#r=!1;#t=null;#i=null;#n=[];#s=null;#c=!1;#d=null;constructor(){super(),this.#e=this.attachShadow({mode:"open"}),this.#o=(this.getAttribute("api-base")||"").replace(/\/$/,"")}connectedCallback(){this.#t=w(T),this.#i=w(L),this.#n=this.#L(),this.#f()}disconnectedCallback(){this.#d?.abort()}async#f(){try{let e=await fetch(`${this.#o}/api/health`).then(t=>t.json());this.#r=!!e.authRequired}catch{this.#r=!1}if(this.#r&&!this.#b()){this.#u();return}this.#p()}#b(){return!!(this.#t?.token&&this.#t.expiresAt*1e3>Date.now())}#u(){this.#e.innerHTML=`
+      <style>${S}</style>
       <div class="frame">
       <div class="shell login-wrap">
         <header>
-          <div class="brand">${$}</div>
+          <div class="brand">${O}</div>
         </header>
         <div class="torn" aria-hidden="true"></div>
         <form class="login" part="login">
@@ -1004,12 +1100,12 @@ button.send:focus-visible {
         </form>
       </div>
       </div>
-    `;let e=this.#e.querySelector("form");e?.addEventListener("submit",t=>{t.preventDefault(),this.#x(new FormData(e))})}async#x(e){let t=this.#e.querySelector("[data-error]");t&&(t.textContent="");let n=String(e.get("subject")||"").trim();if(n.length<2){t&&(t.textContent="Enter your name so we can log who asked.");return}try{this.#t=await z(this.#a,String(e.get("password")||""),{subject:n,branch:String(e.get("branch")||"")||void 0}),v(A,this.#t),this.#p()}catch(a){t&&(t.textContent=a instanceof Error?a.message:"Sign-in failed.")}}#p(){let e=this.#t?.branch?g(this.#t.branch):"";this.#e.innerHTML=`
-      <style>${F}</style>
+    `;let e=this.#e.querySelector("form");e?.addEventListener("submit",t=>{t.preventDefault(),this.#x(new FormData(e))})}async#x(e){let t=this.#e.querySelector("[data-error]");t&&(t.textContent="");let n=String(e.get("subject")||"").trim();if(n.length<2){t&&(t.textContent="Enter your name so we can log who asked.");return}try{this.#t=await D(this.#o,String(e.get("password")||""),{subject:n,branch:String(e.get("branch")||"")||void 0}),E(T,this.#t),this.#p()}catch(o){t&&(t.textContent=o instanceof Error?o.message:"Sign-in failed.")}}#p(){let e=this.#t?.branch?y(this.#t.branch):"";this.#e.innerHTML=`
+      <style>${S}</style>
       <div class="frame">
       <div class="shell">
         <header>
-          <div class="brand">${$}</div>
+          <div class="brand">${O}</div>
           <div class="header-actions">
             ${e?`<div class="branch">${e}</div>`:""}
             <button type="button" class="header-button" data-open-catalog hidden>Services</button>
@@ -1033,20 +1129,16 @@ button.send:focus-visible {
         <form class="composer">
           <div class="composer-pill">
             <textarea name="message" rows="1" placeholder="Can't find what you need? Type it here." required></textarea>
-            <button type="submit" class="send" data-send aria-label="Send">${_}</button>
+            <button type="submit" class="send" data-send aria-label="Send">${P}</button>
           </div>
         </form>
       </div>
       </div>
-    `;let t=this.#e.querySelector("[data-cards]");V.forEach((r,o)=>{let i=document.createElement("button");i.type="button",i.className="card",i.innerHTML=`
-        <span class="num">${String(o+1).padStart(2,"0")}</span>
-        <span class="label">${g(r.label)}</span>
-        <span class="hint">${g(r.message)}</span>
-      `,i.addEventListener("click",()=>{this.#o(r.message)}),t?.append(i)}),this.#e.querySelectorAll("[data-open-catalog]").forEach(r=>{r.addEventListener("click",()=>void this.#F())}),this.#e.querySelector("[data-reset]")?.addEventListener("click",()=>{this.#i=null,this.#n=[],y(S),y(T),this.#p()});let n=this.#e.querySelector("form.composer"),a=this.#e.querySelector("textarea");n?.addEventListener("submit",r=>{r.preventDefault();let o=a instanceof HTMLTextAreaElement?a.value.trim():"";o&&(a instanceof HTMLTextAreaElement&&(a.value="",this.#h(a)),this.#o(o))}),a?.addEventListener("keydown",r=>{r.key==="Enter"&&!r.shiftKey&&(r.preventDefault(),n?.requestSubmit())}),a?.addEventListener("input",()=>{a instanceof HTMLTextAreaElement&&this.#h(a)})}#h(e){e.style.height="auto",e.style.height=`${Math.min(e.scrollHeight,96)}px`}#C(){let e=this.#e.querySelector("[data-empty]");e&&(e.remove(),this.#e.querySelector("[data-open-catalog]")?.removeAttribute("hidden"))}async#o(e,t){if(this.#d)return;this.#d=!0,this.#w(),this.#m(!0),this.#C(),this.#S(t?.trim()||e);let n=this.#T();this.#c=new AbortController;let a="",r=()=>{n.body.querySelector(".caret")?.remove()},o=null,i=!1,p=()=>{!i&&o&&(this.#v(n,o),i=!0),n.row.classList.remove("pending")},s=this.#n.slice();try{await B(this.#a,e,this.#i,s,this.#r?this.#t?.token??null:null,{onVerdict:l=>{o=l},onText:l=>{a+=l,p(),n.body.innerHTML=k(a);let c=document.createElement("span");c.className="caret",c.setAttribute("aria-hidden","true"),n.body.append(c),this.#s()},onDone:l=>{typeof l.text=="string"&&l.text.length>0&&(a=l.text),p(),n.body.innerHTML=k(a),this.#i=l.state,v(S,this.#i),this.#H(e,a),l.degraded&&(n.notes.textContent=(n.notes.textContent?n.notes.textContent+" ":"")+"Answered without the language model."),l.truncated&&(n.notes.textContent=(n.notes.textContent?n.notes.textContent+" ":"")+"The reply was cut short.")}},this.#c.signal,t)}catch(l){r(),p();let c=l instanceof Error?l.message:"Something went wrong.";if(c.toLowerCase().includes("unauthorised")){y(A),this.#t=null,this.#u();return}n.body.textContent=c}finally{this.#d=!1,this.#m(!1),this.#s()}}#v(e,t){if(e.status.replaceChildren(),e.banner.replaceChildren(),e.bubble.classList.toggle("handover",t.needsAHuman),t.needsAHuman){let r=document.createElement("div");r.className="handover-banner",r.textContent="Handover to a person",e.banner.append(r)}else if(t.verdict?.status&&t.verdict.service){let r=String(t.verdict.status);e.status.append(this.#g(r,P[r]??r));let o=document.createElement("div");o.className="service-title",o.textContent=String(t.verdict.service),e.status.append(o)}else t.awaitingAnswer&&e.status.append(this.#g("ask","Needs clarification"));let n=Array.isArray(t.citations)?t.citations.filter(r=>typeof r=="string").map(r=>r.trim()).filter(Boolean):[];n.length&&(e.citations.textContent=n.join(" "));let a=Array.isArray(t.notes)?t.notes.filter(r=>typeof r=="string"):[];a.length&&(e.notes.textContent=a.join(" ")),t.awaitingAnswer&&t.candidates?.length?this.#y(e.candidates,t.candidates):t.actions?.length&&this.#E(e.candidates,t.actions)}#y(e,t){e.replaceChildren(),e.className="candidates",t.forEach((n,a)=>{let r=document.createElement("button");r.type="button",r.className="candidate",r.innerHTML=`
-        <span class="num">${a+1}</span>
-        <span class="label">${g(n.label)}</span>
-      `,r.addEventListener("click",()=>{e.querySelectorAll("button").forEach(o=>{o.disabled=!0}),this.#o(n.label)}),e.append(r)})}#w(){this.#e.querySelectorAll(".candidates.actions").forEach(e=>{let t=[...e.querySelectorAll("button")];if(!t.length||t.every(a=>a.disabled))return;t.forEach(a=>a.disabled=!0);let n=document.createElement("p");n.className="actions-expired",n.textContent="No longer current \u2014 ask again if you still need it.",e.append(n)})}#E(e,t){e.replaceChildren(),e.className="candidates actions",t.forEach(n=>{if(n.kind==="link"&&n.url){let i=document.createElement("a");i.className="candidate action",i.href=n.url,i.target="_blank",i.rel="noopener noreferrer",i.textContent=n.label,e.append(i);return}let a=document.createElement("button");a.type="button",a.className="candidate action";let r=typeof n.label=="string"?n.label:"Continue",o=typeof n.message=="string"&&n.message?n.message:r;a.textContent=r,a.addEventListener("click",()=>{if(n.kind==="note"){this.#k(e,n,o);return}e.querySelectorAll("button").forEach(i=>{i.disabled=!0}),this.#o(o)}),e.append(a)})}#k(e,t,n){let a=this.#e.querySelector(".shell");if(!a)return;[...e.querySelectorAll("button")].forEach(u=>u.disabled=!0);let o=document.createElement("div");o.className="note-overlay",o.setAttribute("role","dialog"),o.setAttribute("aria-modal","true");let i=document.createElement("div");i.className="note-card";let p=document.createElement("label");p.className="note-prompt",p.id=`note-prompt-${t.id}`,p.textContent=t.prompt||"Add some context for this request",o.setAttribute("aria-labelledby",p.id);let s=document.createElement("textarea");s.className="note-input",s.rows=4,s.placeholder=t.placeholder||"",s.maxLength=1e3,p.htmlFor=s.id=`note-${t.id}`;let l=document.createElement("button");l.type="button",l.className="candidate action note-send",l.textContent="Send it",l.disabled=!0;let c=document.createElement("button");c.type="button",c.className="candidate action note-cancel",c.textContent="Cancel";let h=document.createElement("div");h.className="note-actions",h.append(l,c);let f=()=>{o.remove(),document.removeEventListener("keydown",b,!0)},w=()=>[s,l,c].filter(u=>!u.hasAttribute("disabled"));function b(u){if(u.key==="Escape"){u.preventDefault(),c.click();return}if(u.key!=="Tab")return;let x=w(),I=o.contains(document.activeElement)?o.getRootNode().activeElement:null,H=x.indexOf(I),M=u.shiftKey?H-1:H+1;(M<0||M>=x.length)&&(u.preventDefault(),x[u.shiftKey?x.length-1:0].focus())}s.addEventListener("input",()=>{l.disabled=s.value.trim().length===0}),s.addEventListener("keydown",u=>{u.key==="Enter"&&!u.shiftKey&&(u.preventDefault(),l.disabled||l.click())}),l.addEventListener("click",()=>{let u=s.value.trim();u&&(f(),this.#o(n,u))}),c.addEventListener("click",()=>{f(),this.#o("No")}),document.addEventListener("keydown",b,!0),i.append(p,s,h),o.append(i),a.append(o),s.focus()}async#F(){let e=this.#e.querySelector(".frame");if(!e||this.#e.querySelector(".catalog"))return;let t=document.createElement("aside");t.className="catalog",t.setAttribute("aria-label","Service list");let n=document.createElement("div");n.className="catalog-head";let a=document.createElement("div");a.className="catalog-title",a.textContent="What we cover";let r=document.createElement("button");r.type="button",r.className="catalog-close",r.setAttribute("aria-label","Close the service list"),r.textContent="\xD7",n.append(a,r);let o=document.createElement("div");o.className="catalog-body",o.textContent="Loading\u2026";let i=()=>{t.remove(),document.removeEventListener("keydown",p,!0)};function p(s){s.key==="Escape"&&(s.preventDefault(),i())}r.addEventListener("click",i),document.addEventListener("keydown",p,!0),t.append(n,o),e.append(t),r.focus();try{this.#l||(this.#l=await j(this.#a,this.#r?this.#t?.token??null:null)),this.#A(o,this.#l)}catch{o.replaceChildren();let s=document.createElement("p");s.className="catalog-empty",s.textContent="Couldn't load the list just now. Close this and try again.",o.append(s)}}#A(e,t){e.replaceChildren();let n=[];t.forEach(a=>{let r=document.createElement("div");r.className="catalog-group";let o=document.createElement("button");o.type="button",o.className="catalog-toggle",o.setAttribute("aria-expanded","false");let i=document.createElement("span");i.textContent=a.label;let p=document.createElement("span");p.className="catalog-count",p.textContent=String(a.count),o.append(i,p);let s=document.createElement("div");s.className="catalog-items",s.hidden=!0,a.items.forEach(l=>{let c=document.createElement("div");c.className="catalog-item",c.innerHTML=`
-          <span class="name">${g(l.name)}</span>
-          <span class="where">${g(l.section)}</span>
-          <span class="what">${g(l.summary)}</span>
-        `,s.append(c)}),o.addEventListener("click",()=>{let l=s.hidden;n.forEach(c=>{c.items.hidden=!0,c.toggle.setAttribute("aria-expanded","false")}),s.hidden=!l,o.setAttribute("aria-expanded",l?"true":"false"),l&&o.scrollIntoView({block:"nearest"})}),n.push({toggle:o,items:s}),r.append(o,s),e.append(r)})}#S(e){let t=this.#e.querySelector("[data-messages]"),n=document.createElement("div");n.className="row user";let a=document.createElement("div");a.className="bubble",a.textContent=e,n.append(a),t?.append(n),this.#s()}#T(){let e=this.#e.querySelector("[data-messages]"),t=document.createElement("div");t.className="row assistant pending";let n=document.createElement("div");n.className="bubble";let a=document.createElement("div");a.className="live-banner",a.setAttribute("aria-live","polite");let r=document.createElement("div");r.className="bubble-inner";let o=document.createElement("div");o.className="live",o.setAttribute("aria-live","polite");let i=document.createElement("div");i.className="prose";let p=document.createElement("div"),s=document.createElement("div");s.className="citations";let l=document.createElement("div");l.className="note";let c=document.createElement("div");return c.className="waiting",c.textContent="Looking that up\u2026",c.setAttribute("aria-hidden","true"),r.append(o,i,p,s,l),n.append(a,r,c),t.append(n),e?.append(t),this.#s(),{row:t,bubble:n,banner:a,status:o,body:i,candidates:p,citations:s,notes:l}}#g(e,t){let n=document.createElement("div");return n.className=`verdict ${e}`,n.textContent=t,n}#m(e){let t=this.#e.querySelector("[data-send]"),n=this.#e.querySelector("textarea");t&&(t.disabled=e),n&&(n.disabled=e)}#s(){let e=this.#e.querySelector("[data-messages]");e&&(e.scrollTop=e.scrollHeight)}#L(){let e=C(T);return Array.isArray(e)?e.filter(t=>!!t&&(t.role==="user"||t.role==="assistant")&&typeof t.content=="string"&&t.content.trim().length>0).slice(-D):[]}#H(e,t){let n=(r,o=11e3)=>r.length<=o?r:`${r.slice(0,o-1)}\u2026`,a=[...this.#n,{role:"user",content:n(e,2e3)},{role:"assistant",content:n(t)}];this.#n=a.slice(-D),v(T,this.#n)}};customElements.get("acme-chat")||customElements.define("acme-chat",L);export{L as AcmeChat,g as escapeHtml,k as renderMarkdown};
+    `;let t=this.#e.querySelector("[data-cards]");Y.forEach((r,a)=>{let i=document.createElement("button");i.type="button",i.className="card",i.innerHTML=`
+        <span class="num">${String(a+1).padStart(2,"0")}</span>
+        <span class="label">${y(r.label)}</span>
+        <span class="hint">${y(r.message)}</span>
+      `,i.addEventListener("click",()=>{this.#a(r.message)}),t?.append(i)}),this.#e.querySelectorAll("[data-open-catalog]").forEach(r=>{r.addEventListener("click",()=>void this.#F())}),this.#e.querySelector("[data-reset]")?.addEventListener("click",()=>{this.#i=null,this.#n=[],k(L),k(H),this.#p()});let n=this.#e.querySelector("form.composer"),o=this.#e.querySelector("textarea");n?.addEventListener("submit",r=>{r.preventDefault();let a=o instanceof HTMLTextAreaElement?o.value.trim():"";a&&(o instanceof HTMLTextAreaElement&&(o.value="",this.#h(o)),this.#a(a))}),o?.addEventListener("keydown",r=>{r.key==="Enter"&&!r.shiftKey&&(r.preventDefault(),n?.requestSubmit())}),o?.addEventListener("input",()=>{o instanceof HTMLTextAreaElement&&this.#h(o)})}#h(e){e.style.height="auto",e.style.height=`${Math.min(e.scrollHeight,96)}px`}#C(){let e=this.#e.querySelector("[data-empty]");e&&(e.remove(),this.#e.querySelector("[data-open-catalog]")?.removeAttribute("hidden"))}async#a(e,t){if(this.#c)return;this.#c=!0,this.#w(),this.#m(!0),this.#C(),this.#S(t?.trim()||e);let n=this.#T();this.#d=new AbortController;let o="",r=()=>{n.body.querySelector(".caret")?.remove()},a=null,i=!1,s=()=>{!i&&a&&(this.#v(n,a),i=!0),n.row.classList.remove("pending")},l=this.#n.slice();try{await $(this.#o,e,this.#i,l,this.#r?this.#t?.token??null:null,{onVerdict:c=>{a=c},onText:c=>{o+=c,s(),n.body.innerHTML=A(o);let p=document.createElement("span");p.className="caret",p.setAttribute("aria-hidden","true"),n.body.append(p),this.#l()},onDone:c=>{typeof c.text=="string"&&c.text.length>0&&(o=c.text),s(),n.body.innerHTML=A(o),this.#i=c.state,E(L,this.#i),this.#H(e,o),c.degraded&&(n.notes.textContent=(n.notes.textContent?n.notes.textContent+" ":"")+"Answered without the language model."),c.truncated&&(n.notes.textContent=(n.notes.textContent?n.notes.textContent+" ":"")+"The reply was cut short.")}},this.#d.signal,t)}catch(c){r(),s();let p=c instanceof Error?c.message:"Something went wrong.";if(p.toLowerCase().includes("unauthorised")){k(T),this.#t=null,this.#u();return}n.body.textContent=p}finally{this.#c=!1,this.#m(!1),this.#l()}}#v(e,t){if(e.status.replaceChildren(),e.banner.replaceChildren(),e.bubble.classList.toggle("handover",t.needsAHuman),t.needsAHuman){let r=document.createElement("div");r.className="handover-banner",r.textContent="Handover to a person",e.banner.append(r)}else if(t.verdict?.status&&t.verdict.service){let r=String(t.verdict.status);e.status.append(this.#g(r,Z[r]??r));let a=document.createElement("div");a.className="service-title",a.textContent=String(t.verdict.service),e.status.append(a)}else t.awaitingAnswer&&e.status.append(this.#g("ask","Needs clarification"));let n=Array.isArray(t.citations)?t.citations.filter(r=>typeof r=="string").map(r=>r.trim()).filter(Boolean):[];n.length&&(e.citations.textContent=n.join(" "));let o=Array.isArray(t.notes)?t.notes.filter(r=>typeof r=="string"):[];o.length&&(e.notes.textContent=o.join(" ")),t.awaitingAnswer&&t.candidates?.length?this.#y(e.candidates,t.candidates):t.actions?.length&&this.#E(e.candidates,t.actions)}#y(e,t){e.replaceChildren(),e.className="candidates",t.forEach((n,o)=>{let r=document.createElement("button");r.type="button",r.className="candidate",r.innerHTML=`
+        <span class="num">${o+1}</span>
+        <span class="label">${y(n.label)}</span>
+      `,r.addEventListener("click",()=>{e.querySelectorAll("button").forEach(a=>{a.disabled=!0}),this.#a(n.label)}),e.append(r)})}#w(){this.#e.querySelectorAll(".candidates.actions").forEach(e=>{let t=[...e.querySelectorAll("button")];if(!t.length||t.every(o=>o.disabled))return;t.forEach(o=>o.disabled=!0);let n=document.createElement("p");n.className="actions-expired",n.textContent="No longer current \u2014 ask again if you still need it.",e.append(n)})}#E(e,t){e.replaceChildren(),e.className="candidates actions",t.forEach(n=>{if(n.kind==="link"&&n.url){let i=document.createElement("a");i.className="candidate action",i.href=n.url,i.target="_blank",i.rel="noopener noreferrer",i.textContent=n.label,e.append(i);return}let o=document.createElement("button");o.type="button",o.className="candidate action";let r=typeof n.label=="string"?n.label:"Continue",a=typeof n.message=="string"&&n.message?n.message:r;o.textContent=r,o.addEventListener("click",()=>{if(n.kind==="note"){this.#k(e,n,a);return}e.querySelectorAll("button").forEach(i=>{i.disabled=!0}),this.#a(a)}),e.append(o)})}#k(e,t,n){let o=this.#e.querySelector(".shell");if(!o)return;[...e.querySelectorAll("button")].forEach(u=>u.disabled=!0);let a=document.createElement("div");a.className="note-overlay",a.setAttribute("role","dialog"),a.setAttribute("aria-modal","true");let i=document.createElement("div");i.className="note-card";let s=document.createElement("label");s.className="note-prompt",s.id=`note-prompt-${t.id}`,s.textContent=t.prompt||"Add some context for this request",a.setAttribute("aria-labelledby",s.id);let l=document.createElement("textarea");l.className="note-input",l.rows=4,l.placeholder=t.placeholder||"",l.maxLength=1e3,s.htmlFor=l.id=`note-${t.id}`;let c=document.createElement("button");c.type="button",c.className="candidate action note-send",c.textContent="Send it",c.disabled=!0;let p=document.createElement("button");p.type="button",p.className="candidate action note-cancel",p.textContent="Cancel";let f=document.createElement("div");f.className="note-actions",f.append(c,p);let h=()=>{a.remove(),document.removeEventListener("keydown",b,!0)},g=()=>[l,c,p].filter(u=>!u.hasAttribute("disabled"));function b(u){if(u.key==="Escape"){u.preventDefault(),p.click();return}if(u.key!=="Tab")return;let x=g(),m=a.contains(document.activeElement)?a.getRootNode().activeElement:null,C=x.indexOf(m),q=u.shiftKey?C-1:C+1;(q<0||q>=x.length)&&(u.preventDefault(),x[u.shiftKey?x.length-1:0].focus())}l.addEventListener("input",()=>{c.disabled=l.value.trim().length===0}),l.addEventListener("keydown",u=>{u.key==="Enter"&&!u.shiftKey&&(u.preventDefault(),c.disabled||c.click())}),c.addEventListener("click",()=>{let u=l.value.trim();u&&(h(),this.#a(n,u))}),p.addEventListener("click",()=>{h(),this.#a("No")}),document.addEventListener("keydown",b,!0),i.append(s,l,f),a.append(i),o.append(a),l.focus()}async#F(){let e=this.#e.querySelector(".frame");if(!e||this.#e.querySelector(".catalog"))return;let t=document.createElement("aside");t.className="catalog",t.setAttribute("aria-label","Service list");let n=document.createElement("div");n.className="catalog-head";let o=document.createElement("div");o.className="catalog-title",o.textContent="What we cover";let r=document.createElement("button");r.type="button",r.className="catalog-search-toggle",r.setAttribute("aria-label","Search the service list"),r.setAttribute("aria-expanded","false"),r.innerHTML=K;let a=document.createElement("button");a.type="button",a.className="catalog-close",a.setAttribute("aria-label","Close the service list"),a.textContent="\xD7";let i=document.createElement("div");i.className="catalog-actions",i.append(r,a),n.append(o,i);let s=document.createElement("div");s.className="catalog-search",s.hidden=!0;let l=document.createElement("input");l.type="search",l.className="catalog-search-input",l.placeholder="Search services",l.setAttribute("aria-label","Search the service list");let c=document.createElement("div");c.className="catalog-tally",s.append(l,c);let p=document.createElement("div");p.className="catalog-body",p.textContent="Loading\u2026";let f=null,h=()=>this.#s?.reduce((m,C)=>m+C.count,0)??0,g=()=>{let m=l.value.trim(),C=f?f(m):0;if(!m){c.textContent="";return}c.textContent=C===0?"Nothing matches that":`${C} of ${h()}`},b=m=>{s.hidden=!m,r.setAttribute("aria-expanded",m?"true":"false"),r.classList.toggle("on",m),m?l.focus():(l.value="",g())};r.addEventListener("click",()=>b(s.hidden)),l.addEventListener("input",g);let u=()=>{t.remove(),document.removeEventListener("keydown",x,!0)};function x(m){if(m.key==="Escape"){if(m.preventDefault(),!s.hidden&&l.value){l.value="",g(),l.focus();return}if(!s.hidden){b(!1),r.focus();return}u()}}a.addEventListener("click",u),document.addEventListener("keydown",x,!0),t.append(n,s,p),e.append(t),a.focus();try{this.#s||(this.#s=await j(this.#o,this.#r?this.#t?.token??null:null)),f=this.#A(p,this.#s)}catch{p.replaceChildren();let m=document.createElement("p");m.className="catalog-empty",m.textContent="Couldn't load the list just now. Close this and try again.",p.append(m),r.disabled=!0}}#A(e,t){e.replaceChildren();let n=[],o=!1,r=document.createElement("p");return r.className="catalog-empty",r.hidden=!0,r.textContent="No service matches that. Try a shorter word, or ask in the chat and I'll check.",t.forEach(a=>{let i=document.createElement("div");i.className="catalog-group";let s=document.createElement("button");s.type="button",s.className="catalog-toggle",s.setAttribute("aria-expanded","false");let l=document.createElement("span");l.textContent=a.label;let c=document.createElement("span");c.className="catalog-count",c.textContent=String(a.count),s.append(l,c);let p=document.createElement("div");p.className="catalog-items",p.hidden=!0;let f=a.items.map(h=>{let g=document.createElement("div");return g.className="catalog-item",R(g,h,[]),p.append(g),{row:g,item:h,haystack:`${h.name} ${h.section} ${h.summary}`.toLowerCase()}});s.addEventListener("click",()=>{let h=p.hidden;o||n.forEach(g=>{g.items.hidden=!0,g.toggle.setAttribute("aria-expanded","false")}),p.hidden=!h,s.setAttribute("aria-expanded",h?"true":"false"),h&&s.scrollIntoView({block:"nearest"})}),n.push({group:i,toggle:s,items:p,count:c,total:a.count,rows:f}),i.append(s,p),e.append(i)}),e.append(r),a=>{let i=a.toLowerCase().split(/\s+/).filter(Boolean);o=i.length>0;let s=0;return n.forEach(l=>{let c=0;l.rows.forEach(({row:p,item:f,haystack:h})=>{let g=!o||i.every(b=>h.includes(b));p.hidden=!g,g&&(c+=1,R(p,f,i))}),s+=c,l.group.hidden=o&&c===0,l.count.textContent=o?`${c} of ${l.total}`:String(l.total),l.items.hidden=o?c===0:!0,l.toggle.setAttribute("aria-expanded",o&&c>0?"true":"false")}),r.hidden=!o||s>0,o&&(e.scrollTop=0),s}}#S(e){let t=this.#e.querySelector("[data-messages]"),n=document.createElement("div");n.className="row user";let o=document.createElement("div");o.className="bubble",o.textContent=e,n.append(o),t?.append(n),this.#l()}#T(){let e=this.#e.querySelector("[data-messages]"),t=document.createElement("div");t.className="row assistant pending";let n=document.createElement("div");n.className="bubble";let o=document.createElement("div");o.className="live-banner",o.setAttribute("aria-live","polite");let r=document.createElement("div");r.className="bubble-inner";let a=document.createElement("div");a.className="live",a.setAttribute("aria-live","polite");let i=document.createElement("div");i.className="prose";let s=document.createElement("div"),l=document.createElement("div");l.className="citations";let c=document.createElement("div");c.className="note";let p=document.createElement("div");return p.className="waiting",p.textContent="Looking that up\u2026",p.setAttribute("aria-hidden","true"),r.append(a,i,s,l,c),n.append(o,r,p),t.append(n),e?.append(t),this.#l(),{row:t,bubble:n,banner:o,status:a,body:i,candidates:s,citations:l,notes:c}}#g(e,t){let n=document.createElement("div");return n.className=`verdict ${e}`,n.textContent=t,n}#m(e){let t=this.#e.querySelector("[data-send]"),n=this.#e.querySelector("textarea");t&&(t.disabled=e),n&&(n.disabled=e)}#l(){let e=this.#e.querySelector("[data-messages]");e&&(e.scrollTop=e.scrollHeight)}#L(){let e=w(H);return Array.isArray(e)?e.filter(t=>!!t&&(t.role==="user"||t.role==="assistant")&&typeof t.content=="string"&&t.content.trim().length>0).slice(-I):[]}#H(e,t){let n=(r,a=11e3)=>r.length<=a?r:`${r.slice(0,a-1)}\u2026`,o=[...this.#n,{role:"user",content:n(e,2e3)},{role:"assistant",content:n(t)}];this.#n=o.slice(-I),E(H,this.#n)}};function R(d,e,t){d.replaceChildren(M("name",e.name,t),M("where",e.section,t),M("what",e.summary,t))}function M(d,e,t){let n=document.createElement("span");return n.className=d,n.append(J(e,t)),n}function J(d,e){let t=document.createDocumentFragment(),n=[];if(e.length){let a=d.toLowerCase();e.forEach(i=>{for(let s=a.indexOf(i);s!==-1;s=a.indexOf(i,s+i.length))n.push([s,s+i.length])})}if(!n.length)return t.append(d),t;n.sort((a,i)=>a[0]-i[0]);let o=[];n.forEach(([a,i])=>{let s=o.at(-1);s&&a<=s[1]?s[1]=Math.max(s[1],i):o.push([a,i])});let r=0;return o.forEach(([a,i])=>{a>r&&t.append(d.slice(r,a));let s=document.createElement("mark");s.textContent=d.slice(a,i),t.append(s),r=i}),r<d.length&&t.append(d.slice(r)),t}customElements.get("acme-chat")||customElements.define("acme-chat",N);export{N as AcmeChat,y as escapeHtml,A as renderMarkdown};

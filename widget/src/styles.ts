@@ -402,7 +402,7 @@ button.header-button:focus-visible {
   height: min(760px, calc(100vh - 80px));
   max-height: 100dvh;
   display: grid;
-  grid-template-rows: auto 1fr;
+  grid-template-rows: auto auto 1fr;
   background: var(--panel);
   border: 1px solid var(--line);
   border-radius: 16px;
@@ -452,10 +452,105 @@ button.header-button:focus-visible {
   outline-offset: 2px;
 }
 
+.catalog-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.catalog-search-toggle {
+  appearance: none;
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--text-soft);
+  padding: 5px 9px;
+  border-radius: 999px;
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  transition: background-color 150ms ease, color 150ms ease, border-color 150ms ease;
+}
+
+.catalog-search-toggle svg {
+  width: 15px;
+  height: 15px;
+  display: block;
+}
+
+.catalog-search-toggle:hover { border-color: var(--accent); color: var(--accent); }
+
+/* Held down while the field is open, so the button reads as a state rather
+   than as something that did nothing the second time it was pressed. */
+.catalog-search-toggle.on {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #FFFFFF;
+}
+
+.catalog-search-toggle:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.catalog-search-toggle:disabled { opacity: 0.4; cursor: not-allowed; }
+
+/* Same trap as .catalog-items: display on the class beats the browser's own
+   [hidden] rule, so without this the field is open before it is asked for. */
+.catalog-search[hidden] { display: none; }
+
+.catalog-search {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--hair);
+  background: var(--surface);
+}
+
+.catalog-search-input {
+  flex: 1;
+  min-width: 0;
+  appearance: none;
+  font: inherit;
+  font-size: 13px;
+  padding: 8px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--input-bg);
+  color: var(--text);
+}
+
+.catalog-search-input::placeholder { color: var(--text-faint); }
+
+.catalog-search-input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.catalog-tally {
+  font-size: 11px;
+  color: var(--text-faint);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
 .catalog-body {
   overflow-y: auto;
   padding: 10px 12px 16px;
 }
+
+.catalog-group[hidden] { display: none; }
+
+.catalog-item[hidden] { display: none; }
+
+.catalog-item mark {
+  background: #FDF0C6;
+  color: inherit;
+  border-radius: 2px;
+  padding: 0 1px;
+}
+
+.catalog-empty[hidden] { display: none; }
 
 .catalog-group + .catalog-group {
   margin-top: 6px;
@@ -529,6 +624,7 @@ button.header-button:focus-visible {
 .catalog-empty {
   padding: 16px 13px;
   font-size: 13px;
+  line-height: 1.5;
   color: var(--text-soft);
 }
 
