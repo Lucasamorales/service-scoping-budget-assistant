@@ -30,6 +30,14 @@ __all__ = ["install_security"]
 
 logger = structlog.get_logger(__name__)
 
+_AUTHENTICATED = ("/api/chat", "/api/catalog")
+"""Paths that need a bearer token.
+
+The catalogue is here because it is the business's own account of what it does
+and does not cover, priced work included — internal by nature, even though it
+only reads. Health stays open so an uptime probe can reach it, and it says
+nothing a competitor could not guess."""
+
 # Paths that never require a session and never consume rate-limit budget.
 _PUBLIC = frozenset({"/", "/api/health", "/docs", "/openapi.json", "/redoc"})
 
@@ -72,7 +80,7 @@ def install_security(application: FastAPI, settings: Settings) -> None:
             if _should_rate_limit(path) and (limited := _check_rate_limit(request, limiter)):
                 return limited
 
-            if require_auth and path.startswith("/api/chat"):
+            if require_auth and path.startswith(_AUTHENTICATED):
                 try:
                     request.state.session = _authenticate(
                         request, settings.session_token_secret

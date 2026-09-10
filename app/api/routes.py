@@ -15,6 +15,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+import re
 from collections.abc import Iterator
 
 import structlog
@@ -24,6 +25,9 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from app.api.pending import open_pending, seal_pending
 from app.api.schemas import (
     ActionModel,
+    CatalogCategory,
+    CatalogItem,
+    CatalogResponse,
     ChatRequest,
     ChatResponse,
     HealthResponse,
@@ -34,6 +38,7 @@ from app.api.schemas import (
 )
 from app.api.session import SessionClaims, SessionError, issue_token
 from app.core.config import Settings
+from app.core.types import ServiceItem, Status
 from app.orchestrator.history import HistoryTurn
 from app.orchestrator.pipeline import (
     Pipeline,
@@ -140,6 +145,86 @@ def health(request: Request) -> HealthResponse:
             if pipeline.quote_store is not None
             else None
         ),
+    )
+
+
+
+# Ordered the way an Account Manager needs it: what is covered, what costs
+# money, what is theirs already, what we will not do.
+_CATALOG_ORDER: tuple[tuple[Status, str], ...] = (
+    (Status.IN_SCOPE, "In scope"),
+    (Status.QUOTE_REQUIRED, "Quote required"),
+    (Status.LOCAL, "Local"),
+    (Status.OUT_OF_SCOPE, "Out of scope"),
+)
+
+
+_SENTENCE_END = re.compile(r"(?<=[.!?])\s+(?=[A-Z])")
+
+_SUMMARY_MIN = 45
+"""Below this a "sentence" is almost certainly an abbreviation.
+
+Splitting on ". " alone reduced "Int. goals dashboards provide a visual
+representation of..." to the word "Int.", which is worse than no summary. Short
+pieces are joined to the next one until the result is long enough to be a
+sentence."""
+
+_SUMMARY_CAP = 190
+"""Above this the list stops being scannable. Cut on a word boundary."""
+
+
+def _one_sentence(item: ServiceItem) -> str:
+    """The opening sentence of what the document says this service covers.
+
+    A whole section runs to a paragraph, which is too much for a list. The
+    first sentence is reliably the definition — the rest qualifies it.
+    """
+    body = (item.sections.get("What This Item Covers") or item.summary).strip()
+    if not body:
+        return ""
+    out = ""
+    for piece in _SENTENCE_END.split(body):
+        out = f"{out} {piece}".strip() if out else piece
+        if len(out) >= _SUMMARY_MIN:
+            break
+    if len(out) > _SUMMARY_CAP:
+        out = out[:_SUMMARY_CAP].rsplit(" ", 1)[0].rstrip(",;:") + "…"
+    return out
+
+
+@router.get("/catalog", response_model=CatalogResponse)
+def catalog(request: Request) -> CatalogResponse:
+    """The service breakdown, for the reference panel.
+
+    Served from the corpus already in memory rather than through a chat turn,
+    so opening the list costs no model call and leaves no trace in the
+    conversation. Behind the same bearer token as chat: this is the business's
+    own account of what it does and does not cover.
+    """
+    pipeline = _pipeline(request)
+    categories = []
+    for status, label in _CATALOG_ORDER:
+        items = sorted(
+            pipeline.catalog.by_status(status), key=lambda i: (i.section, i.item)
+        )
+        categories.append(
+            CatalogCategory(
+                status=status,
+                label=label,
+                count=len(items),
+                items=tuple(
+                    CatalogItem(
+                        id=item.item_id,
+                        name=item.item,
+                        section=item.section,
+                        summary=_one_sentence(item),
+                    )
+                    for item in items
+                ),
+            )
+        )
+    return CatalogResponse(
+        categories=tuple(categories), total=len(pipeline.catalog)
     )
 
 

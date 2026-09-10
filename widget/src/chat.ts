@@ -1,7 +1,9 @@
 import {
   createSession,
+  fetchCatalog,
   streamChat,
   type CandidateOption,
+  type CatalogCategory,
   type ChatAction,
   type ConversationState,
   type HistoryMessage,
@@ -37,6 +39,7 @@ class AcmeChat extends HTMLElement {
   #session: SessionInfo | null = null;
   #state: ConversationState | null = null;
   #history: HistoryMessage[] = [];
+  #catalog: CatalogCategory[] | null = null;
   #busy = false;
   #abort: AbortController | null = null;
 
@@ -131,15 +134,17 @@ class AcmeChat extends HTMLElement {
           <div class="brand">Acme <span>Scoping Assistant</span></div>
           <div class="header-actions">
             ${branch ? `<div class="branch">${branch}</div>` : ""}
+            <button type="button" class="new-chat" data-open-catalog hidden>Services</button>
             <button type="button" class="new-chat" data-reset>New chat</button>
           </div>
         </header>
         <div class="messages" data-messages role="log">
           <div class="empty" data-empty>
             <p class="empty-intro">
-              Central marketing covers a lot of the list, and not all of it. Ask before you brief,
-              and you will know in one turn whether a job is covered, handled locally, out of scope,
-              or needs a quote.
+              Central marketing covers a lot of
+              <button type="button" class="list-link" data-open-catalog>the list</button>,
+              and not all of it. Ask before you brief, and you will know in one turn whether a job
+              is covered, handled locally, out of scope, or needs a quote.
             </p>
             <h2 class="empty-headline">
               So — what are you trying <span class="accent">to get made?</span>
@@ -170,6 +175,10 @@ class AcmeChat extends HTMLElement {
         void this.#ask(starter.message);
       });
       cards?.append(button);
+    });
+
+    this.#root.querySelectorAll("[data-open-catalog]").forEach((el) => {
+      el.addEventListener("click", () => void this.#openCatalog());
     });
 
     this.#root.querySelector("[data-reset]")?.addEventListener("click", () => {
@@ -209,7 +218,13 @@ class AcmeChat extends HTMLElement {
   }
 
   #clearEmpty(): void {
-    this.#root.querySelector("[data-empty]")?.remove();
+    const empty = this.#root.querySelector("[data-empty]");
+    if (!empty) return;
+    empty.remove();
+    // The link lived in the text that just disappeared, so the header takes
+    // over. Hidden until now on purpose: two ways in on an empty screen is a
+    // choice nobody needs to make.
+    this.#root.querySelector("[data-open-catalog]")?.removeAttribute("hidden");
   }
 
   async #ask(message: string, note?: string): Promise<void> {
@@ -550,6 +565,122 @@ class AcmeChat extends HTMLElement {
     overlay.append(card);
     shell.append(overlay);
     field.focus();
+  }
+
+  /** The service list, as a drawer beside the conversation.
+   *
+   * Grouped by verdict rather than by section, because that is the question it
+   * answers — what is covered, what costs, what is ours. Grouping that way also
+   * means an item needs no badge: the heading it sits under is the verdict.
+   */
+  async #openCatalog(): Promise<void> {
+    const shell = this.#root.querySelector(".shell");
+    if (!shell || this.#root.querySelector(".catalog")) return;
+
+    const panel = document.createElement("aside");
+    panel.className = "catalog";
+    panel.setAttribute("aria-label", "Service list");
+
+    const head = document.createElement("div");
+    head.className = "catalog-head";
+    const title = document.createElement("div");
+    title.className = "catalog-title";
+    title.textContent = "What we cover";
+    const close = document.createElement("button");
+    close.type = "button";
+    close.className = "catalog-close";
+    close.setAttribute("aria-label", "Close the service list");
+    close.textContent = "×";
+    head.append(title, close);
+
+    const body = document.createElement("div");
+    body.className = "catalog-body";
+    body.textContent = "Loading…";
+
+    const dismiss = (): void => {
+      panel.remove();
+      document.removeEventListener("keydown", onKey, true);
+    };
+    function onKey(event: KeyboardEvent): void {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        dismiss();
+      }
+    }
+    close.addEventListener("click", dismiss);
+    document.addEventListener("keydown", onKey, true);
+
+    panel.append(head, body);
+    shell.append(panel);
+    close.focus();
+
+    try {
+      if (!this.#catalog) {
+        this.#catalog = await fetchCatalog(
+          this.#apiBase,
+          this.#authRequired ? this.#session?.token ?? null : null,
+        );
+      }
+      this.#renderCatalog(body, this.#catalog);
+    } catch {
+      body.replaceChildren();
+      const message = document.createElement("p");
+      message.className = "catalog-empty";
+      message.textContent = "Couldn't load the list just now. Close this and try again.";
+      body.append(message);
+    }
+  }
+
+  #renderCatalog(host: HTMLElement, categories: CatalogCategory[]): void {
+    host.replaceChildren();
+    const groups: { toggle: HTMLButtonElement; items: HTMLElement }[] = [];
+
+    categories.forEach((category) => {
+      const group = document.createElement("div");
+      group.className = "catalog-group";
+
+      const toggle = document.createElement("button");
+      toggle.type = "button";
+      toggle.className = "catalog-toggle";
+      toggle.setAttribute("aria-expanded", "false");
+      const label = document.createElement("span");
+      label.textContent = category.label;
+      const count = document.createElement("span");
+      count.className = "catalog-count";
+      count.textContent = String(category.count);
+      toggle.append(label, count);
+
+      const items = document.createElement("div");
+      items.className = "catalog-items";
+      items.hidden = true;
+      category.items.forEach((item) => {
+        const row = document.createElement("div");
+        row.className = "catalog-item";
+        row.innerHTML = `
+          <span class="name">${escapeHtml(item.name)}</span>
+          <span class="where">${escapeHtml(item.section)}</span>
+          <span class="what">${escapeHtml(item.summary)}</span>
+        `;
+        items.append(row);
+      });
+
+      toggle.addEventListener("click", () => {
+        const opening = items.hidden;
+        // One at a time. Four categories open at once is 89 services in a
+        // column, which is the wall this panel exists to replace.
+        groups.forEach((other) => {
+          other.items.hidden = true;
+          other.toggle.setAttribute("aria-expanded", "false");
+        });
+        items.hidden = !opening;
+        toggle.setAttribute("aria-expanded", opening ? "true" : "false");
+        if (opening) toggle.scrollIntoView({ block: "nearest" });
+      });
+
+      groups.push({ toggle, items });
+      group.append(toggle, items);
+      host.append(group);
+    });
   }
 
   #appendUser(message: string): void {

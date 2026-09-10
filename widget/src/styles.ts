@@ -329,6 +329,170 @@ button.new-chat:focus-visible {
    the reply: inline, it sat under a wall of text and people scrolled past it,
    then wondered why nothing sent. Covering the conversation makes the one
    remaining step the only thing on screen. */
+/* The service list, as a drawer beside the conversation rather than over it.
+   Different job from the context dialog, so deliberately a different pattern:
+   that one blocks because it is a step you must finish, this one is reference
+   you read while looking at the reply that raised the question. */
+.catalog {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: min(380px, 100%);
+  z-index: 6;
+  display: grid;
+  grid-template-rows: auto 1fr;
+  background: var(--panel);
+  border-left: 1px solid var(--line);
+  box-shadow: -14px 0 34px rgba(16, 26, 51, 0.16);
+  animation: catalog-in 160ms ease-out;
+}
+
+@keyframes catalog-in {
+  from { transform: translateX(12px); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .catalog { animation: none; }
+}
+
+.catalog-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--hair);
+}
+
+.catalog-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.catalog-close {
+  appearance: none;
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--text-soft);
+  font: inherit;
+  font-size: 18px;
+  line-height: 1;
+  padding: 4px 10px;
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.catalog-close:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.catalog-body {
+  overflow-y: auto;
+  padding: 10px 12px 16px;
+}
+
+.catalog-group + .catalog-group {
+  margin-top: 6px;
+}
+
+.catalog-toggle {
+  appearance: none;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 11px 13px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
+
+.catalog-toggle:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.catalog-count {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-faint);
+}
+
+/* display: flex on a class beats the browser's own [hidden] rule, so without
+   this the first category renders expanded and the accordion looks broken. */
+.catalog-items[hidden] {
+  display: none;
+}
+
+.catalog-items {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 12px 4px 6px 13px;
+}
+
+.catalog-item .name {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.catalog-item .where {
+  display: block;
+  font-size: 11px;
+  color: var(--text-faint);
+  margin-top: 1px;
+}
+
+.catalog-item .what {
+  display: block;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--text-soft);
+  margin-top: 3px;
+}
+
+.catalog-empty {
+  padding: 16px 13px;
+  font-size: 13px;
+  color: var(--text-soft);
+}
+
+/* The way in from the empty state, before there is a header button. */
+.list-link {
+  appearance: none;
+  border: 0;
+  padding: 0;
+  background: none;
+  font: inherit;
+  color: var(--accent);
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+.list-link:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+@media (max-width: 640px) {
+  .catalog { width: 100%; }
+}
+
 .note-overlay {
   position: absolute;
   inset: 0;

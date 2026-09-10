@@ -376,3 +376,64 @@ class TestNoteOverHttp:
         )
 
         assert response.status_code == 422
+
+
+class TestCatalogEndpoint:
+    """The service list behind the reference panel.
+
+    Served from the corpus already in memory rather than through a chat turn,
+    so opening the panel costs no model call and leaves nothing in the
+    conversation.
+    """
+
+    def test_it_groups_every_service_by_verdict(self, client: TestClient) -> None:
+        body = client.get("/api/catalog").json()
+
+        assert [c["label"] for c in body["categories"]] == [
+            "In scope",
+            "Quote required",
+            "Local",
+            "Out of scope",
+        ], "ordered as an AM needs it: covered, costs money, theirs, refused"
+        assert sum(c["count"] for c in body["categories"]) == body["total"]
+        assert body["total"] > 0
+
+    def test_a_category_carries_its_items(self, client: TestClient) -> None:
+        body = client.get("/api/catalog").json()
+        first = body["categories"][0]
+
+        assert len(first["items"]) == first["count"]
+        item = first["items"][0]
+        assert item["name"] and item["section"] and item["summary"]
+
+    def test_no_summary_collapses_to_an_abbreviation(self, client: TestClient) -> None:
+        """Splitting sentences on ". " reduced "Int. goals dashboards provide a
+        visual representation of..." to the word "Int.", which is worse than no
+        summary at all. Short pieces join the next one instead.
+        """
+        body = client.get("/api/catalog").json()
+        items = [item for c in body["categories"] for item in c["items"]]
+
+        stubs = [i["name"] for i in items if len(i["summary"]) < 30]
+        assert not stubs, f"summaries that read as fragments: {stubs}"
+
+    def test_summaries_stay_scannable(self, client: TestClient) -> None:
+        body = client.get("/api/catalog").json()
+        items = [item for c in body["categories"] for item in c["items"]]
+
+        assert max(len(i["summary"]) for i in items) <= 191
+
+
+class TestCatalogNeedsAuth:
+    """It is the business's own account of what it does and does not cover,
+    priced work included — internal, even though it only reads."""
+
+    def test_it_is_refused_without_a_token(self) -> None:
+        settings = Settings(
+            environment="production",
+            session_token_secret="test-secret-not-real",
+            budget_spreadsheet_id="",
+            allowed_origins="",
+        )
+        with TestClient(create_app(settings)) as client:
+            assert client.get("/api/catalog").status_code == 401

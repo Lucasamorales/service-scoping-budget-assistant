@@ -1,8 +1,8 @@
-async function q(a,e,t){let n=await fetch(`${a}/api/session`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({password:e,subject:t.subject,branch:t.branch??null,country:t.country??null})});if(!n.ok){let i=await j(n);throw new Error(i||"Could not sign in.")}let r=await n.json();return{token:r.token,expiresAt:r.expiresAt,role:r.role,subject:r.subject??t.subject,country:r.country,branch:r.branch}}async function z(a,e,t,n,r,i,o,s){let u={"Content-Type":"application/json"};r&&(u.Authorization=`Bearer ${r}`);let d=await fetch(`${a}/api/chat/stream`,{method:"POST",headers:u,body:JSON.stringify({message:e,state:t,history:n,note:s||null}),signal:o});if(!d.ok||!d.body){let m=await j(d);throw new Error(m||`Request failed (${d.status})`)}let l=d.body.getReader(),c=new TextDecoder,g="";for(;;){let{value:m,done:E}=await l.read();if(E)break;g+=c.decode(m,{stream:!0});let f=g.split(`
+async function z(c,e,t){let n=await fetch(`${c}/api/session`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({password:e,subject:t.subject,branch:t.branch??null,country:t.country??null})});if(!n.ok){let r=await k(n);throw new Error(r||"Could not sign in.")}let a=await n.json();return{token:a.token,expiresAt:a.expiresAt,role:a.role,subject:a.subject??t.subject,country:a.country,branch:a.branch}}async function j(c,e,t,n,a,r,o,i){let p={"Content-Type":"application/json"};a&&(p.Authorization=`Bearer ${a}`);let s=await fetch(`${c}/api/chat/stream`,{method:"POST",headers:p,body:JSON.stringify({message:e,state:t,history:n,note:i||null}),signal:o});if(!s.ok||!s.body){let f=await k(s);throw new Error(f||`Request failed (${s.status})`)}let l=s.body.getReader(),d=new TextDecoder,g="";for(;;){let{value:f,done:E}=await l.read();if(E)break;g+=d.decode(f,{stream:!0});let b=g.split(`
 
-`);g=f.pop()??"";for(let p of f)M(p,i)}g.trim()&&M(g,i)}function M(a,e){let t="message",n=[];for(let o of a.split(`
-`))o.startsWith("event:")?t=o.slice(6).trim():o.startsWith("data:")&&n.push(o.slice(5).replace(/^ /,""));let r=n.join(`
-`);if(!r)return;let i;try{i=JSON.parse(r)}catch{return}if(t==="verdict"){let o=i,s=o.verdict;e.onVerdict({verdict:s&&typeof s=="object"?{status:h(s.status),meaning:h(s.meaning),service:h(s.service)}:null,citations:N(o.citations),notes:N(o.notes),needsAHuman:!!o.needsAHuman,awaitingAnswer:!!o.awaitingAnswer,candidates:Array.isArray(o.candidates)?o.candidates:[],actions:Array.isArray(o.actions)?o.actions:[]})}else if(t==="text"){let o=h(i.text);o&&e.onText(o)}else if(t==="done"){let o=i;e.onDone({...o,text:h(o.text),source:h(o.source)||"deterministic",degraded:!!o.degraded,truncated:!!o.truncated})}}function h(a){return typeof a!="string"||a==="[object Object]"?"":a}function N(a){return Array.isArray(a)?a.map(e=>h(e)).filter(Boolean):[]}async function j(a){try{let e=await a.json();return $(e.detail)}catch{return""}}function $(a){return typeof a=="string"?a:Array.isArray(a)?a.map(t=>{if(typeof t=="string")return t;if(t&&typeof t=="object"&&"msg"in t){let n=t.msg,r=t.loc,i=Array.isArray(r)?r.join("."):"";return typeof n=="string"?i?`${i}: ${n}`:n:""}return""}).filter(Boolean).join("; ")||"Request failed validation.":a&&typeof a=="object"?"Request failed.":""}var O={"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"};function b(a){return a.replace(/[&<>"']/g,e=>O[e]??e)}function k(a){return b(typeof a=="string"?a:"").replace(/\*\*(.+?)\*\*/g,"<strong>$1</strong>").replace(/(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)/g,"<em>$1</em>").replace(/_(.+?)_/g,"<em>$1</em>").replace(/\n/g,"<br>")}function v(a){try{let e=sessionStorage.getItem(a);return e?JSON.parse(e):null}catch{return null}}function y(a,e){try{sessionStorage.setItem(a,JSON.stringify(e))}catch{}}function w(a){try{sessionStorage.removeItem(a)}catch{}}var A=`
+`);g=b.pop()??"";for(let u of b)N(u,r)}g.trim()&&N(g,r)}function N(c,e){let t="message",n=[];for(let o of c.split(`
+`))o.startsWith("event:")?t=o.slice(6).trim():o.startsWith("data:")&&n.push(o.slice(5).replace(/^ /,""));let a=n.join(`
+`);if(!a)return;let r;try{r=JSON.parse(a)}catch{return}if(t==="verdict"){let o=r,i=o.verdict;e.onVerdict({verdict:i&&typeof i=="object"?{status:m(i.status),meaning:m(i.meaning),service:m(i.service)}:null,citations:q(o.citations),notes:q(o.notes),needsAHuman:!!o.needsAHuman,awaitingAnswer:!!o.awaitingAnswer,candidates:Array.isArray(o.candidates)?o.candidates:[],actions:Array.isArray(o.actions)?o.actions:[]})}else if(t==="text"){let o=m(r.text);o&&e.onText(o)}else if(t==="done"){let o=r;e.onDone({...o,text:m(o.text),source:m(o.source)||"deterministic",degraded:!!o.degraded,truncated:!!o.truncated})}}function m(c){return typeof c!="string"||c==="[object Object]"?"":c}function q(c){return Array.isArray(c)?c.map(e=>m(e)).filter(Boolean):[]}async function k(c){try{let e=await c.json();return I(e.detail)}catch{return""}}function I(c){return typeof c=="string"?c:Array.isArray(c)?c.map(t=>{if(typeof t=="string")return t;if(t&&typeof t=="object"&&"msg"in t){let n=t.msg,a=t.loc,r=Array.isArray(a)?a.join("."):"";return typeof n=="string"?r?`${r}: ${n}`:n:""}return""}).filter(Boolean).join("; ")||"Request failed validation.":c&&typeof c=="object"?"Request failed.":""}async function $(c,e){let t={};e&&(t.Authorization=`Bearer ${e}`);let n=await fetch(`${c}/api/catalog`,{headers:t});if(!n.ok)throw new Error(await k(n));let a=await n.json();return Array.isArray(a.categories)?a.categories:[]}var R={"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"};function h(c){return c.replace(/[&<>"']/g,e=>R[e]??e)}function C(c){return h(typeof c=="string"?c:"").replace(/\*\*(.+?)\*\*/g,"<strong>$1</strong>").replace(/(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)/g,"<em>$1</em>").replace(/_(.+?)_/g,"<em>$1</em>").replace(/\n/g,"<br>")}function v(c){try{let e=sessionStorage.getItem(c);return e?JSON.parse(e):null}catch{return null}}function y(c,e){try{sessionStorage.setItem(c,JSON.stringify(e))}catch{}}function w(c){try{sessionStorage.removeItem(c)}catch{}}var A=`
 :host {
   /* One palette. The assistant used to ship navy and light with a toggle in
      the header; Acme uses light, so the choice was noise on every screen for a
@@ -331,6 +331,170 @@ button.new-chat:focus-visible {
    the reply: inline, it sat under a wall of text and people scrolled past it,
    then wondered why nothing sent. Covering the conversation makes the one
    remaining step the only thing on screen. */
+/* The service list, as a drawer beside the conversation rather than over it.
+   Different job from the context dialog, so deliberately a different pattern:
+   that one blocks because it is a step you must finish, this one is reference
+   you read while looking at the reply that raised the question. */
+.catalog {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: min(380px, 100%);
+  z-index: 6;
+  display: grid;
+  grid-template-rows: auto 1fr;
+  background: var(--panel);
+  border-left: 1px solid var(--line);
+  box-shadow: -14px 0 34px rgba(16, 26, 51, 0.16);
+  animation: catalog-in 160ms ease-out;
+}
+
+@keyframes catalog-in {
+  from { transform: translateX(12px); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .catalog { animation: none; }
+}
+
+.catalog-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--hair);
+}
+
+.catalog-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.catalog-close {
+  appearance: none;
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--text-soft);
+  font: inherit;
+  font-size: 18px;
+  line-height: 1;
+  padding: 4px 10px;
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.catalog-close:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.catalog-body {
+  overflow-y: auto;
+  padding: 10px 12px 16px;
+}
+
+.catalog-group + .catalog-group {
+  margin-top: 6px;
+}
+
+.catalog-toggle {
+  appearance: none;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 11px 13px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
+
+.catalog-toggle:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.catalog-count {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-faint);
+}
+
+/* display: flex on a class beats the browser's own [hidden] rule, so without
+   this the first category renders expanded and the accordion looks broken. */
+.catalog-items[hidden] {
+  display: none;
+}
+
+.catalog-items {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 12px 4px 6px 13px;
+}
+
+.catalog-item .name {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.catalog-item .where {
+  display: block;
+  font-size: 11px;
+  color: var(--text-faint);
+  margin-top: 1px;
+}
+
+.catalog-item .what {
+  display: block;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--text-soft);
+  margin-top: 3px;
+}
+
+.catalog-empty {
+  padding: 16px 13px;
+  font-size: 13px;
+  color: var(--text-soft);
+}
+
+/* The way in from the empty state, before there is a header button. */
+.list-link {
+  appearance: none;
+  border: 0;
+  padding: 0;
+  background: none;
+  font: inherit;
+  color: var(--accent);
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+.list-link:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+@media (max-width: 640px) {
+  .catalog { width: 100%; }
+}
+
 .note-overlay {
   position: absolute;
   inset: 0;
@@ -726,7 +890,7 @@ button.send:focus-visible {
     animation: none;
   }
 }
-`;var S="acme.session",F="acme.state",C="acme.history",B=12,R=[{label:"Merch for a launch",message:"Can we order merch for a branch opening?"},{label:"Billboard advert",message:"Can we put an advert on a billboard?"},{label:"Translate web pages",message:"Can you translate our web pages into Spanish?"}],I={in_scope:"In scope",out_of_scope:"Out of scope",local:"Local",quote_required:"Quote required"},T=class extends HTMLElement{#e;#i;#a=!1;#t=null;#r=null;#n=[];#l=!1;#d=null;constructor(){super(),this.#e=this.attachShadow({mode:"open"}),this.#i=(this.getAttribute("api-base")||"").replace(/\/$/,"")}connectedCallback(){this.#t=v(S),this.#r=v(F),this.#n=this.#S(),this.#m()}disconnectedCallback(){this.#d?.abort()}async#m(){try{let e=await fetch(`${this.#i}/api/health`).then(t=>t.json());this.#a=!!e.authRequired}catch{this.#a=!1}if(this.#a&&!this.#b()){this.#p();return}this.#c()}#b(){return!!(this.#t?.token&&this.#t.expiresAt*1e3>Date.now())}#p(){this.#e.innerHTML=`
+`;var S="acme.session",T="acme.state",F="acme.history",B=12,O=[{label:"Merch for a launch",message:"Can we order merch for a branch opening?"},{label:"Billboard advert",message:"Can we put an advert on a billboard?"},{label:"Translate web pages",message:"Can you translate our web pages into Spanish?"}],P={in_scope:"In scope",out_of_scope:"Out of scope",local:"Local",quote_required:"Quote required"},L=class extends HTMLElement{#e;#a;#r=!1;#t=null;#i=null;#n=[];#l=null;#c=!1;#d=null;constructor(){super(),this.#e=this.attachShadow({mode:"open"}),this.#a=(this.getAttribute("api-base")||"").replace(/\/$/,"")}connectedCallback(){this.#t=v(S),this.#i=v(T),this.#n=this.#F(),this.#f()}disconnectedCallback(){this.#d?.abort()}async#f(){try{let e=await fetch(`${this.#a}/api/health`).then(t=>t.json());this.#r=!!e.authRequired}catch{this.#r=!1}if(this.#r&&!this.#b()){this.#u();return}this.#p()}#b(){return!!(this.#t?.token&&this.#t.expiresAt*1e3>Date.now())}#u(){this.#e.innerHTML=`
       <style>${A}</style>
       <div class="shell login-wrap">
         <header>
@@ -743,22 +907,24 @@ button.send:focus-visible {
           <button type="submit">Continue</button>
         </form>
       </div>
-    `;let e=this.#e.querySelector("form");e?.addEventListener("submit",t=>{t.preventDefault(),this.#f(new FormData(e))})}async#f(e){let t=this.#e.querySelector("[data-error]");t&&(t.textContent="");let n=String(e.get("subject")||"").trim();if(n.length<2){t&&(t.textContent="Enter your name so we can log who asked.");return}try{this.#t=await q(this.#i,String(e.get("password")||""),{subject:n,branch:String(e.get("branch")||"")||void 0}),y(S,this.#t),this.#c()}catch(r){t&&(t.textContent=r instanceof Error?r.message:"Sign-in failed.")}}#c(){let e=this.#t?.branch?b(this.#t.branch):"";this.#e.innerHTML=`
+    `;let e=this.#e.querySelector("form");e?.addEventListener("submit",t=>{t.preventDefault(),this.#x(new FormData(e))})}async#x(e){let t=this.#e.querySelector("[data-error]");t&&(t.textContent="");let n=String(e.get("subject")||"").trim();if(n.length<2){t&&(t.textContent="Enter your name so we can log who asked.");return}try{this.#t=await z(this.#a,String(e.get("password")||""),{subject:n,branch:String(e.get("branch")||"")||void 0}),y(S,this.#t),this.#p()}catch(a){t&&(t.textContent=a instanceof Error?a.message:"Sign-in failed.")}}#p(){let e=this.#t?.branch?h(this.#t.branch):"";this.#e.innerHTML=`
       <style>${A}</style>
       <div class="shell">
         <header>
           <div class="brand">Acme <span>Scoping Assistant</span></div>
           <div class="header-actions">
             ${e?`<div class="branch">${e}</div>`:""}
+            <button type="button" class="new-chat" data-open-catalog hidden>Services</button>
             <button type="button" class="new-chat" data-reset>New chat</button>
           </div>
         </header>
         <div class="messages" data-messages role="log">
           <div class="empty" data-empty>
             <p class="empty-intro">
-              Central marketing covers a lot of the list, and not all of it. Ask before you brief,
-              and you will know in one turn whether a job is covered, handled locally, out of scope,
-              or needs a quote.
+              Central marketing covers a lot of
+              <button type="button" class="list-link" data-open-catalog>the list</button>,
+              and not all of it. Ask before you brief, and you will know in one turn whether a job
+              is covered, handled locally, out of scope, or needs a quote.
             </p>
             <h2 class="empty-headline">
               So \u2014 what are you trying <span class="accent">to get made?</span>
@@ -773,11 +939,15 @@ button.send:focus-visible {
           </div>
         </form>
       </div>
-    `;let t=this.#e.querySelector("[data-cards]");R.forEach((i,o)=>{let s=document.createElement("button");s.type="button",s.className="card",s.innerHTML=`
+    `;let t=this.#e.querySelector("[data-cards]");O.forEach((r,o)=>{let i=document.createElement("button");i.type="button",i.className="card",i.innerHTML=`
         <span class="num">${String(o+1).padStart(2,"0")}</span>
-        <span class="label">${b(i.label)}</span>
-        <span class="hint">${b(i.message)}</span>
-      `,s.addEventListener("click",()=>{this.#o(i.message)}),t?.append(s)}),this.#e.querySelector("[data-reset]")?.addEventListener("click",()=>{this.#r=null,this.#n=[],w(F),w(C),this.#c()});let n=this.#e.querySelector("form.composer"),r=this.#e.querySelector("textarea");n?.addEventListener("submit",i=>{i.preventDefault();let o=r instanceof HTMLTextAreaElement?r.value.trim():"";o&&(r instanceof HTMLTextAreaElement&&(r.value="",this.#u(r)),this.#o(o))}),r?.addEventListener("keydown",i=>{i.key==="Enter"&&!i.shiftKey&&(i.preventDefault(),n?.requestSubmit())}),r?.addEventListener("input",()=>{r instanceof HTMLTextAreaElement&&this.#u(r)})}#u(e){e.style.height="auto",e.style.height=`${Math.min(e.scrollHeight,96)}px`}#x(){this.#e.querySelector("[data-empty]")?.remove()}async#o(e,t){if(this.#l)return;this.#l=!0,this.#h(!0),this.#x(),this.#k(t?.trim()||e);let n=this.#A();this.#d=new AbortController;let r="",i=()=>{n.body.querySelector(".caret")?.remove()},o=null,s=!1,u=()=>{!s&&o&&(this.#v(n,o),s=!0),n.row.classList.remove("pending")},d=this.#n.slice();try{await z(this.#i,e,this.#r,d,this.#a?this.#t?.token??null:null,{onVerdict:l=>{o=l},onText:l=>{r+=l,u(),n.body.innerHTML=k(r);let c=document.createElement("span");c.className="caret",c.setAttribute("aria-hidden","true"),n.body.append(c),this.#s()},onDone:l=>{typeof l.text=="string"&&l.text.length>0&&(r=l.text),u(),n.body.innerHTML=k(r),this.#r=l.state,y(F,this.#r),this.#F(e,r),l.degraded&&(n.notes.textContent=(n.notes.textContent?n.notes.textContent+" ":"")+"Answered without the language model."),l.truncated&&(n.notes.textContent=(n.notes.textContent?n.notes.textContent+" ":"")+"The reply was cut short.")}},this.#d.signal,t)}catch(l){i(),u();let c=l instanceof Error?l.message:"Something went wrong.";if(c.toLowerCase().includes("unauthorised")){w(S),this.#t=null,this.#p();return}n.body.textContent=c}finally{this.#l=!1,this.#h(!1),this.#s()}}#v(e,t){if(e.status.replaceChildren(),e.banner.replaceChildren(),e.bubble.classList.toggle("handover",t.needsAHuman),t.needsAHuman){let i=document.createElement("div");i.className="handover-banner",i.textContent="Handover to a person",e.banner.append(i)}else if(t.verdict?.status&&t.verdict.service){let i=String(t.verdict.status);e.status.append(this.#g(i,I[i]??i));let o=document.createElement("div");o.className="service-title",o.textContent=String(t.verdict.service),e.status.append(o)}else t.awaitingAnswer&&e.status.append(this.#g("ask","Needs clarification"));let n=Array.isArray(t.citations)?t.citations.filter(i=>typeof i=="string"):[];n.length&&(e.citations.textContent=`Read from ${n.join("; ")}`);let r=Array.isArray(t.notes)?t.notes.filter(i=>typeof i=="string"):[];r.length&&(e.notes.textContent=r.join(" ")),t.awaitingAnswer&&t.candidates?.length?this.#y(e.candidates,t.candidates):t.actions?.length&&this.#w(e.candidates,t.actions)}#y(e,t){e.replaceChildren(),e.className="candidates",t.forEach((n,r)=>{let i=document.createElement("button");i.type="button",i.className="candidate",i.innerHTML=`
-        <span class="num">${r+1}</span>
-        <span class="label">${b(n.label)}</span>
-      `,i.addEventListener("click",()=>{e.querySelectorAll("button").forEach(o=>{o.disabled=!0}),this.#o(n.label)}),e.append(i)})}#w(e,t){e.replaceChildren(),e.className="candidates actions",t.forEach(n=>{if(n.kind==="link"&&n.url){let s=document.createElement("a");s.className="candidate action",s.href=n.url,s.target="_blank",s.rel="noopener noreferrer",s.textContent=n.label,e.append(s);return}let r=document.createElement("button");r.type="button",r.className="candidate action";let i=typeof n.label=="string"?n.label:"Continue",o=typeof n.message=="string"&&n.message?n.message:i;r.textContent=i,r.addEventListener("click",()=>{if(n.kind==="note"){this.#E(e,n,o);return}e.querySelectorAll("button").forEach(s=>{s.disabled=!0}),this.#o(o)}),e.append(r)})}#E(e,t,n){let r=this.#e.querySelector(".shell");if(!r)return;[...e.querySelectorAll("button")].forEach(p=>p.disabled=!0);let o=document.createElement("div");o.className="note-overlay",o.setAttribute("role","dialog"),o.setAttribute("aria-modal","true");let s=document.createElement("div");s.className="note-card";let u=document.createElement("label");u.className="note-prompt",u.id=`note-prompt-${t.id}`,u.textContent=t.prompt||"Add some context for this request",o.setAttribute("aria-labelledby",u.id);let d=document.createElement("textarea");d.className="note-input",d.rows=4,d.placeholder=t.placeholder||"",d.maxLength=1e3,u.htmlFor=d.id=`note-${t.id}`;let l=document.createElement("button");l.type="button",l.className="candidate action note-send",l.textContent="Send it",l.disabled=!0;let c=document.createElement("button");c.type="button",c.className="candidate action note-cancel",c.textContent="Cancel";let g=document.createElement("div");g.className="note-actions",g.append(l,c);let m=()=>{o.remove(),document.removeEventListener("keydown",f,!0)},E=()=>[d,l,c].filter(p=>!p.hasAttribute("disabled"));function f(p){if(p.key==="Escape"){p.preventDefault(),c.click();return}if(p.key!=="Tab")return;let x=E(),D=o.contains(document.activeElement)?o.getRootNode().activeElement:null,H=x.indexOf(D),L=p.shiftKey?H-1:H+1;(L<0||L>=x.length)&&(p.preventDefault(),x[p.shiftKey?x.length-1:0].focus())}d.addEventListener("input",()=>{l.disabled=d.value.trim().length===0}),d.addEventListener("keydown",p=>{p.key==="Enter"&&!p.shiftKey&&(p.preventDefault(),l.disabled||l.click())}),l.addEventListener("click",()=>{let p=d.value.trim();p&&(m(),this.#o(n,p))}),c.addEventListener("click",()=>{m(),this.#o("No")}),document.addEventListener("keydown",f,!0),s.append(u,d,g),o.append(s),r.append(o),d.focus()}#k(e){let t=this.#e.querySelector("[data-messages]"),n=document.createElement("div");n.className="row user";let r=document.createElement("div");r.className="bubble",r.textContent=e,n.append(r),t?.append(n),this.#s()}#A(){let e=this.#e.querySelector("[data-messages]"),t=document.createElement("div");t.className="row assistant pending";let n=document.createElement("div");n.className="bubble";let r=document.createElement("div");r.className="live-banner",r.setAttribute("aria-live","polite");let i=document.createElement("div");i.className="bubble-inner";let o=document.createElement("div");o.className="live",o.setAttribute("aria-live","polite");let s=document.createElement("div");s.className="prose";let u=document.createElement("div"),d=document.createElement("div");d.className="citations";let l=document.createElement("div");l.className="note";let c=document.createElement("div");return c.className="waiting",c.textContent="Looking that up\u2026",c.setAttribute("aria-hidden","true"),i.append(o,s,u,d,l),n.append(r,i,c),t.append(n),e?.append(t),this.#s(),{row:t,bubble:n,banner:r,status:o,body:s,candidates:u,citations:d,notes:l}}#g(e,t){let n=document.createElement("div");return n.className=`verdict ${e}`,n.textContent=t,n}#h(e){let t=this.#e.querySelector("[data-send]"),n=this.#e.querySelector("textarea");t&&(t.disabled=e),n&&(n.disabled=e)}#s(){let e=this.#e.querySelector("[data-messages]");e&&(e.scrollTop=e.scrollHeight)}#S(){let e=v(C);return Array.isArray(e)?e.filter(t=>!!t&&(t.role==="user"||t.role==="assistant")&&typeof t.content=="string"&&t.content.trim().length>0).slice(-B):[]}#F(e,t){let n=(i,o=11e3)=>i.length<=o?i:`${i.slice(0,o-1)}\u2026`,r=[...this.#n,{role:"user",content:n(e,2e3)},{role:"assistant",content:n(t)}];this.#n=r.slice(-B),y(C,this.#n)}};customElements.get("acme-chat")||customElements.define("acme-chat",T);export{T as AcmeChat,b as escapeHtml,k as renderMarkdown};
+        <span class="label">${h(r.label)}</span>
+        <span class="hint">${h(r.message)}</span>
+      `,i.addEventListener("click",()=>{this.#o(r.message)}),t?.append(i)}),this.#e.querySelectorAll("[data-open-catalog]").forEach(r=>{r.addEventListener("click",()=>void this.#C())}),this.#e.querySelector("[data-reset]")?.addEventListener("click",()=>{this.#i=null,this.#n=[],w(T),w(F),this.#p()});let n=this.#e.querySelector("form.composer"),a=this.#e.querySelector("textarea");n?.addEventListener("submit",r=>{r.preventDefault();let o=a instanceof HTMLTextAreaElement?a.value.trim():"";o&&(a instanceof HTMLTextAreaElement&&(a.value="",this.#g(a)),this.#o(o))}),a?.addEventListener("keydown",r=>{r.key==="Enter"&&!r.shiftKey&&(r.preventDefault(),n?.requestSubmit())}),a?.addEventListener("input",()=>{a instanceof HTMLTextAreaElement&&this.#g(a)})}#g(e){e.style.height="auto",e.style.height=`${Math.min(e.scrollHeight,96)}px`}#v(){let e=this.#e.querySelector("[data-empty]");e&&(e.remove(),this.#e.querySelector("[data-open-catalog]")?.removeAttribute("hidden"))}async#o(e,t){if(this.#c)return;this.#c=!0,this.#m(!0),this.#v(),this.#S(t?.trim()||e);let n=this.#T();this.#d=new AbortController;let a="",r=()=>{n.body.querySelector(".caret")?.remove()},o=null,i=!1,p=()=>{!i&&o&&(this.#y(n,o),i=!0),n.row.classList.remove("pending")},s=this.#n.slice();try{await j(this.#a,e,this.#i,s,this.#r?this.#t?.token??null:null,{onVerdict:l=>{o=l},onText:l=>{a+=l,p(),n.body.innerHTML=C(a);let d=document.createElement("span");d.className="caret",d.setAttribute("aria-hidden","true"),n.body.append(d),this.#s()},onDone:l=>{typeof l.text=="string"&&l.text.length>0&&(a=l.text),p(),n.body.innerHTML=C(a),this.#i=l.state,y(T,this.#i),this.#L(e,a),l.degraded&&(n.notes.textContent=(n.notes.textContent?n.notes.textContent+" ":"")+"Answered without the language model."),l.truncated&&(n.notes.textContent=(n.notes.textContent?n.notes.textContent+" ":"")+"The reply was cut short.")}},this.#d.signal,t)}catch(l){r(),p();let d=l instanceof Error?l.message:"Something went wrong.";if(d.toLowerCase().includes("unauthorised")){w(S),this.#t=null,this.#u();return}n.body.textContent=d}finally{this.#c=!1,this.#m(!1),this.#s()}}#y(e,t){if(e.status.replaceChildren(),e.banner.replaceChildren(),e.bubble.classList.toggle("handover",t.needsAHuman),t.needsAHuman){let r=document.createElement("div");r.className="handover-banner",r.textContent="Handover to a person",e.banner.append(r)}else if(t.verdict?.status&&t.verdict.service){let r=String(t.verdict.status);e.status.append(this.#h(r,P[r]??r));let o=document.createElement("div");o.className="service-title",o.textContent=String(t.verdict.service),e.status.append(o)}else t.awaitingAnswer&&e.status.append(this.#h("ask","Needs clarification"));let n=Array.isArray(t.citations)?t.citations.filter(r=>typeof r=="string"):[];n.length&&(e.citations.textContent=`Read from ${n.join("; ")}`);let a=Array.isArray(t.notes)?t.notes.filter(r=>typeof r=="string"):[];a.length&&(e.notes.textContent=a.join(" ")),t.awaitingAnswer&&t.candidates?.length?this.#w(e.candidates,t.candidates):t.actions?.length&&this.#E(e.candidates,t.actions)}#w(e,t){e.replaceChildren(),e.className="candidates",t.forEach((n,a)=>{let r=document.createElement("button");r.type="button",r.className="candidate",r.innerHTML=`
+        <span class="num">${a+1}</span>
+        <span class="label">${h(n.label)}</span>
+      `,r.addEventListener("click",()=>{e.querySelectorAll("button").forEach(o=>{o.disabled=!0}),this.#o(n.label)}),e.append(r)})}#E(e,t){e.replaceChildren(),e.className="candidates actions",t.forEach(n=>{if(n.kind==="link"&&n.url){let i=document.createElement("a");i.className="candidate action",i.href=n.url,i.target="_blank",i.rel="noopener noreferrer",i.textContent=n.label,e.append(i);return}let a=document.createElement("button");a.type="button",a.className="candidate action";let r=typeof n.label=="string"?n.label:"Continue",o=typeof n.message=="string"&&n.message?n.message:r;a.textContent=r,a.addEventListener("click",()=>{if(n.kind==="note"){this.#k(e,n,o);return}e.querySelectorAll("button").forEach(i=>{i.disabled=!0}),this.#o(o)}),e.append(a)})}#k(e,t,n){let a=this.#e.querySelector(".shell");if(!a)return;[...e.querySelectorAll("button")].forEach(u=>u.disabled=!0);let o=document.createElement("div");o.className="note-overlay",o.setAttribute("role","dialog"),o.setAttribute("aria-modal","true");let i=document.createElement("div");i.className="note-card";let p=document.createElement("label");p.className="note-prompt",p.id=`note-prompt-${t.id}`,p.textContent=t.prompt||"Add some context for this request",o.setAttribute("aria-labelledby",p.id);let s=document.createElement("textarea");s.className="note-input",s.rows=4,s.placeholder=t.placeholder||"",s.maxLength=1e3,p.htmlFor=s.id=`note-${t.id}`;let l=document.createElement("button");l.type="button",l.className="candidate action note-send",l.textContent="Send it",l.disabled=!0;let d=document.createElement("button");d.type="button",d.className="candidate action note-cancel",d.textContent="Cancel";let g=document.createElement("div");g.className="note-actions",g.append(l,d);let f=()=>{o.remove(),document.removeEventListener("keydown",b,!0)},E=()=>[s,l,d].filter(u=>!u.hasAttribute("disabled"));function b(u){if(u.key==="Escape"){u.preventDefault(),d.click();return}if(u.key!=="Tab")return;let x=E(),D=o.contains(document.activeElement)?o.getRootNode().activeElement:null,H=x.indexOf(D),M=u.shiftKey?H-1:H+1;(M<0||M>=x.length)&&(u.preventDefault(),x[u.shiftKey?x.length-1:0].focus())}s.addEventListener("input",()=>{l.disabled=s.value.trim().length===0}),s.addEventListener("keydown",u=>{u.key==="Enter"&&!u.shiftKey&&(u.preventDefault(),l.disabled||l.click())}),l.addEventListener("click",()=>{let u=s.value.trim();u&&(f(),this.#o(n,u))}),d.addEventListener("click",()=>{f(),this.#o("No")}),document.addEventListener("keydown",b,!0),i.append(p,s,g),o.append(i),a.append(o),s.focus()}async#C(){let e=this.#e.querySelector(".shell");if(!e||this.#e.querySelector(".catalog"))return;let t=document.createElement("aside");t.className="catalog",t.setAttribute("aria-label","Service list");let n=document.createElement("div");n.className="catalog-head";let a=document.createElement("div");a.className="catalog-title",a.textContent="What we cover";let r=document.createElement("button");r.type="button",r.className="catalog-close",r.setAttribute("aria-label","Close the service list"),r.textContent="\xD7",n.append(a,r);let o=document.createElement("div");o.className="catalog-body",o.textContent="Loading\u2026";let i=()=>{t.remove(),document.removeEventListener("keydown",p,!0)};function p(s){s.key==="Escape"&&(s.preventDefault(),i())}r.addEventListener("click",i),document.addEventListener("keydown",p,!0),t.append(n,o),e.append(t),r.focus();try{this.#l||(this.#l=await $(this.#a,this.#r?this.#t?.token??null:null)),this.#A(o,this.#l)}catch{o.replaceChildren();let s=document.createElement("p");s.className="catalog-empty",s.textContent="Couldn't load the list just now. Close this and try again.",o.append(s)}}#A(e,t){e.replaceChildren();let n=[];t.forEach(a=>{let r=document.createElement("div");r.className="catalog-group";let o=document.createElement("button");o.type="button",o.className="catalog-toggle",o.setAttribute("aria-expanded","false");let i=document.createElement("span");i.textContent=a.label;let p=document.createElement("span");p.className="catalog-count",p.textContent=String(a.count),o.append(i,p);let s=document.createElement("div");s.className="catalog-items",s.hidden=!0,a.items.forEach(l=>{let d=document.createElement("div");d.className="catalog-item",d.innerHTML=`
+          <span class="name">${h(l.name)}</span>
+          <span class="where">${h(l.section)}</span>
+          <span class="what">${h(l.summary)}</span>
+        `,s.append(d)}),o.addEventListener("click",()=>{let l=s.hidden;n.forEach(d=>{d.items.hidden=!0,d.toggle.setAttribute("aria-expanded","false")}),s.hidden=!l,o.setAttribute("aria-expanded",l?"true":"false"),l&&o.scrollIntoView({block:"nearest"})}),n.push({toggle:o,items:s}),r.append(o,s),e.append(r)})}#S(e){let t=this.#e.querySelector("[data-messages]"),n=document.createElement("div");n.className="row user";let a=document.createElement("div");a.className="bubble",a.textContent=e,n.append(a),t?.append(n),this.#s()}#T(){let e=this.#e.querySelector("[data-messages]"),t=document.createElement("div");t.className="row assistant pending";let n=document.createElement("div");n.className="bubble";let a=document.createElement("div");a.className="live-banner",a.setAttribute("aria-live","polite");let r=document.createElement("div");r.className="bubble-inner";let o=document.createElement("div");o.className="live",o.setAttribute("aria-live","polite");let i=document.createElement("div");i.className="prose";let p=document.createElement("div"),s=document.createElement("div");s.className="citations";let l=document.createElement("div");l.className="note";let d=document.createElement("div");return d.className="waiting",d.textContent="Looking that up\u2026",d.setAttribute("aria-hidden","true"),r.append(o,i,p,s,l),n.append(a,r,d),t.append(n),e?.append(t),this.#s(),{row:t,bubble:n,banner:a,status:o,body:i,candidates:p,citations:s,notes:l}}#h(e,t){let n=document.createElement("div");return n.className=`verdict ${e}`,n.textContent=t,n}#m(e){let t=this.#e.querySelector("[data-send]"),n=this.#e.querySelector("textarea");t&&(t.disabled=e),n&&(n.disabled=e)}#s(){let e=this.#e.querySelector("[data-messages]");e&&(e.scrollTop=e.scrollHeight)}#F(){let e=v(F);return Array.isArray(e)?e.filter(t=>!!t&&(t.role==="user"||t.role==="assistant")&&typeof t.content=="string"&&t.content.trim().length>0).slice(-B):[]}#L(e,t){let n=(r,o=11e3)=>r.length<=o?r:`${r.slice(0,o-1)}\u2026`,a=[...this.#n,{role:"user",content:n(e,2e3)},{role:"assistant",content:n(t)}];this.#n=a.slice(-B),y(F,this.#n)}};customElements.get("acme-chat")||customElements.define("acme-chat",L);export{L as AcmeChat,h as escapeHtml,C as renderMarkdown};

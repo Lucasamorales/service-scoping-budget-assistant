@@ -40,6 +40,9 @@ __all__ = [
     "MAX_NOTE_CHARS",
     "ActionModel",
     "CandidateOption",
+    "CatalogCategory",
+    "CatalogItem",
+    "CatalogResponse",
     "ChatRequest",
     "ChatResponse",
     "HealthResponse",
@@ -161,6 +164,44 @@ class HistoryMessage(Base):
 
     def to_turn(self) -> HistoryTurn:
         return HistoryTurn(role=self.role, content=self.content)
+
+
+
+class CatalogItem(Base):
+    """One service, as the reference panel shows it."""
+
+    id: str
+    name: str
+    section: str
+    summary: str
+    """One sentence describing what the service is.
+
+    Taken from the document's "What This Item Covers", not its Summary. The
+    Summary field mostly restates the section and the verdict — "is part of the
+    X section, meaning it is included in our services" — which is exactly what
+    the category heading above the item already says.
+    """
+
+
+class CatalogCategory(Base):
+    """Every service sharing one verdict."""
+
+    status: Status
+    label: str
+    count: int
+    items: tuple[CatalogItem, ...]
+
+
+class CatalogResponse(Base):
+    """The whole service breakdown, grouped by what happens to a request.
+
+    Grouped by verdict rather than by section because that is the question the
+    panel answers — what is covered, what costs, what is ours — and it means an
+    item needs no badge of its own: the heading it sits under is the verdict.
+    """
+
+    categories: tuple[CatalogCategory, ...]
+    total: int
 
 
 class ChatRequest(Base):

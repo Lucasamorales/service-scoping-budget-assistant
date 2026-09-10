@@ -236,3 +236,30 @@ function formatDetail(detail: unknown): string {
   if (detail && typeof detail === "object") return "Request failed.";
   return "";
 }
+
+
+export type CatalogItem = {
+  id: string;
+  name: string;
+  section: string;
+  summary: string;
+};
+
+export type CatalogCategory = {
+  status: string;
+  label: string;
+  count: number;
+  items: CatalogItem[];
+};
+
+export async function fetchCatalog(
+  apiBase: string,
+  token: string | null,
+): Promise<CatalogCategory[]> {
+  const headers: Record<string, string> = {};
+  if (token) headers.Authorization = `Bearer ${token}`;
+  const response = await fetch(`${apiBase}/api/catalog`, { headers });
+  if (!response.ok) throw new Error(await safeDetail(response));
+  const body = (await response.json()) as { categories?: CatalogCategory[] };
+  return Array.isArray(body.categories) ? body.categories : [];
+}
