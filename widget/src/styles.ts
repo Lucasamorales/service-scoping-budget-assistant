@@ -141,23 +141,48 @@ header {
   white-space: nowrap;
 }
 
-button.new-chat {
+/* Two buttons in the navy band, deliberately unequal.
+
+   Both used to be the same transparent pill with a translucent border, which
+   made the one that ends a conversation look exactly like the one that opens a
+   reference panel, and neither read as a control at a glance against the navy. */
+button.header-button {
   appearance: none;
   font: inherit;
   font-size: 12px;
-  font-weight: 500;
-  padding: 7px 13px;
+  font-weight: 600;
+  padding: 8px 15px;
   border-radius: 999px;
-  border: 1px solid var(--toggle-line);
-  background: transparent;
-  color: inherit;
+  /* A brighter edge and a little fill, so it sits on the band rather than
+     dissolving into it. Still clearly the quieter of the two. */
+  border: 1px solid rgba(255, 255, 255, 0.55);
+  background: rgba(255, 255, 255, 0.1);
+  color: #FFFFFF;
   cursor: pointer;
   white-space: nowrap;
   flex-shrink: 0;
+  transition: background-color 150ms ease, border-color 150ms ease;
 }
 
-button.new-chat:focus-visible {
-  outline: 2px solid var(--accent);
+button.header-button:hover {
+  background: rgba(255, 255, 255, 0.18);
+  border-color: #FFFFFF;
+}
+
+/* New chat carries the brand red and no border: it is the one that throws work
+   away, so it should be the button somebody finds without looking. */
+button.header-button.primary {
+  background: var(--red);
+  border-color: var(--red);
+}
+
+button.header-button.primary:hover {
+  background: #D8262F;
+  border-color: #D8262F;
+}
+
+button.header-button:focus-visible {
+  outline: 2px solid #FFFFFF;
   outline-offset: 2px;
 }
 
@@ -807,6 +832,15 @@ button.send {
   cursor: pointer;
   display: grid;
   place-items: center;
+}
+
+.send-icon {
+  width: 19px;
+  height: 19px;
+  display: block;
+  /* Nudged off-centre: the plane's mass sits to its left, so a circle that
+     centres the box looks like it leans. */
+  margin-left: 1px;
 }
 
 button.send:disabled {

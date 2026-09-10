@@ -45,6 +45,17 @@ const BRAND_MARK = `<svg class="brand-mark" viewBox="46 353 2294 482" xmlns="htt
    that word the assistant asks which service is meant, and it is right to: an
    asset on a screen is a still graphic, which is covered, or a video, which is
    chargeable. Correct behaviour, wrong thing to greet somebody with. */
+/** Send, as a paper plane.
+ *
+ * The arrow it replaced was ambiguous in a chat window: a bare ↑ is scroll-up
+ * or back-to-top as often as it is send. A plane means one thing and is the
+ * shape people have already learnt from every messaging app they use.
+ *
+ * Drawn rather than typed, because an arrow glyph is a font's business and a
+ * missing one leaves an empty red circle. This ships with the bundle.
+ */
+const SEND_ICON = `<svg class="send-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M3.3 20.7 21.5 12 3.3 3.3 3.3 10.1 15.4 12 3.3 13.9Z" fill="currentColor"/></svg>`;
+
 const STARTERS = [
   { label: "Merch for a launch", message: "Can we order merch for a branch opening?" },
   { label: "Billboard advert", message: "Can we put an advert on a billboard?" },
@@ -166,8 +177,8 @@ class AcmeChat extends HTMLElement {
           <div class="brand">${BRAND_MARK}</div>
           <div class="header-actions">
             ${branch ? `<div class="branch">${branch}</div>` : ""}
-            <button type="button" class="new-chat" data-open-catalog hidden>Services</button>
-            <button type="button" class="new-chat" data-reset>New chat</button>
+            <button type="button" class="header-button" data-open-catalog hidden>Services</button>
+            <button type="button" class="header-button primary" data-reset>New chat</button>
           </div>
         </header>
         <div class="messages" data-messages role="log">
@@ -179,15 +190,15 @@ class AcmeChat extends HTMLElement {
               is covered, handled locally, out of scope, or needs a quote.
             </p>
             <h2 class="empty-headline">
-              So — what are you trying <span class="accent">to get made?</span>
+              What do you <span class="accent">need making?</span>
             </h2>
             <div class="cards" data-cards></div>
           </div>
         </div>
         <form class="composer">
           <div class="composer-pill">
-            <textarea name="message" rows="1" placeholder="e.g. Can we do a billboard for the new branch?" required></textarea>
-            <button type="submit" class="send" data-send aria-label="Send">↑</button>
+            <textarea name="message" rows="1" placeholder="Can't find what you need? Type it here." required></textarea>
+            <button type="submit" class="send" data-send aria-label="Send">${SEND_ICON}</button>
           </div>
         </form>
       </div>
