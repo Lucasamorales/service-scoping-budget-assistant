@@ -170,7 +170,7 @@ def answer_budget(
         return BudgetToolResult(
             text=_format_rollups("All branches", month, snapshots, group_by_country=True),
             snapshots=snapshots,
-            citations=(f"Budget tracker (all branches, {month})",),
+            citations=(f"Read from the budget tracker (all branches, {month}).",),
             resolved_country=None,
             resolved_branch=None,
             resolved_month=month,
@@ -268,7 +268,7 @@ def _country_result(
     return BudgetToolResult(
         text=_format_rollups(country, month, snapshots),
         snapshots=snapshots,
-        citations=(f"Budget tracker ({country}, {month})",),
+        citations=(f"Read from the budget tracker ({country}, {month}).",),
         resolved_country=country,
         resolved_branch=None,
         resolved_month=month,

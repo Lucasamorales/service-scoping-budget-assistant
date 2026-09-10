@@ -408,10 +408,18 @@ class AcmeChat extends HTMLElement {
     }
 
     const citations = Array.isArray(payload.citations)
-      ? payload.citations.filter((item): item is string => typeof item === "string")
+      ? payload.citations
+          .filter((item): item is string => typeof item === "string")
+          .map((item) => item.trim())
+          .filter(Boolean)
       : [];
     if (citations.length) {
-      assistant.citations.textContent = `Read from ${citations.join("; ")}`;
+      // Rendered exactly as sent. This used to prefix "Read from " and join on
+      // semicolons, which turned a shortlist of service names into a sentence.
+      // Now each line is a whole sentence composed on the server — what the
+      // documentation says the matched item is, and where a figure came from —
+      // so a prefix here would only make them ungrammatical.
+      assistant.citations.textContent = citations.join(" ");
     }
     const notes = Array.isArray(payload.notes)
       ? payload.notes.filter((item): item is string => typeof item === "string")

@@ -139,11 +139,28 @@ class TestCitations:
         for question in ("can we order some merch", "a customer is threatening legal action"):
             assert pipeline.prepare(question).citations
 
-    def test_the_document_the_resolver_required_is_cited_first(self, pipeline) -> None:
+    def test_the_item_the_resolver_required_is_described_first(self, pipeline) -> None:
         """The service the verdict came from leads, so the basis of the answer is
         the first thing a reader checks."""
         turn = pipeline.prepare("can we order some merch")
-        assert turn.citations[0] == "Merch"
+        assert turn.citations[0].startswith("Merch includes")
+
+    def test_the_citation_says_what_the_item_is_not_what_it_is_called(
+        self, pipeline
+    ) -> None:
+        """The name is already on the verdict badge above it. Repeating it there
+        told a reader nothing they could not see; a sentence from the
+        documentation is how they tell Billboards from Hoarding."""
+        (citation,) = pipeline.prepare("can we order some merch").citations
+        assert len(citation.split()) > 5
+        assert citation.endswith((".", "…"))
+
+    def test_rejected_candidates_are_never_cited(self, pipeline) -> None:
+        """The line used to be built from the whole retrieval shortlist, so it
+        named services the resolver had considered and thrown away — sources the
+        answer did not come from, which is worse than citing nothing."""
+        turn = pipeline.prepare("can we put an advert on a billboard")
+        assert len(turn.citations) == 1
 
 
 def test_no_question_ever_produces_a_briefing_without_an_instruction(pipeline) -> None:

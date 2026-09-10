@@ -18,6 +18,7 @@ existing behaviour tests assert, so the two paths cannot drift apart unnoticed.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, replace
 
 import structlog
@@ -74,6 +75,37 @@ _GREETING = (
 )
 
 _ACKNOWLEDGED = "No problem. Anything else you need checking?"
+
+
+_SENTENCE_END = re.compile(r"(?<=[.!?])\s+(?=[A-Z])")
+
+_DESCRIPTION_MIN = 45
+"""Below this a "sentence" is almost certainly an abbreviation — "Int. goals
+dashboards" splits after "Int." — so short pieces join the next one."""
+
+_DESCRIPTION_CAP = 190
+"""Longer than this stops being a glance and becomes a paragraph."""
+
+
+def describe(item: ServiceItem) -> str:
+    """One sentence on what this service is, from the documentation.
+
+    Takes "What This Item Covers" rather than the document's own Summary:
+    the Summary restates the section and the verdict — "is part of X,
+    meaning it is included in our services" — which the badge and the reply
+    above it have already said.
+    """
+    body = (item.sections.get("What This Item Covers") or item.summary).strip()
+    if not body:
+        return ""
+    out = ""
+    for piece in _SENTENCE_END.split(body):
+        out = f"{out} {piece}".strip() if out else piece
+        if len(out) >= _DESCRIPTION_MIN:
+            break
+    if len(out) > _DESCRIPTION_CAP:
+        out = out[:_DESCRIPTION_CAP].rsplit(" ", 1)[0].rstrip(",;:") + "…"
+    return out
 
 
 @dataclass(frozen=True, slots=True)
@@ -185,9 +217,6 @@ class Executor:
             pack = replace(
                 pack,
                 evidence=tuple(hit.chunk for hit in retrieval.hits),
-                citations=tuple(
-                    hit.chunk.section_title or hit.chunk.source for hit in retrieval.hits
-                ),
             )
 
         if resolution.outcome is Outcome.AMBIGUOUS:
@@ -211,6 +240,18 @@ class Executor:
             branch=identity.branch or plan.slots.branch or route.branch,
         )
         satisfied = (*pack.satisfied, Capability.SCOPE)
+        # What the documentation says this item is, so somebody can tell at a
+        # glance whether the assistant matched the thing they meant. With names
+        # as close as Billboards, Hoarding and In-venue signage, the title alone
+        # does not settle that.
+        #
+        # This replaced the retrieval shortlist — "Read from Billboards;
+        # Hoarding; Radio ads" — which named three services the answer did not
+        # come from. They were candidates the resolver rejected, and a citation
+        # naming places an answer did not come from is worse than none.
+        described = describe(item)
+        if described:
+            pack = replace(pack, citations=(described,))
 
         if item.status is Status.QUOTE_REQUIRED:
             outcome = quote_for(

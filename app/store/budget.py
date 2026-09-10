@@ -138,7 +138,7 @@ class BudgetSnapshot:
 
     @property
     def citation(self) -> str:
-        return f"Budget tracker ({self.branch.name}, {self.month})"
+        return f"Read from the budget tracker ({self.branch.name}, {self.month})."
 
     @property
     def cap_known(self) -> bool:
