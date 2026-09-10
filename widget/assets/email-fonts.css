@@ -1,0 +1,47 @@
+/* The brand faces for the request emails, kept apart from the widget's own
+   fonts.css on purpose.
+
+   Two differences, both of which matter to a mail client and to nothing else:
+
+   * The display family is named "Inter Display Black" here and "Inter Display
+     Cond" in the widget. The email templates ask for the first, so an alias in
+     the widget's file would only make one of the two wrong.
+   * A mail client fetches this over the wire from an absolute URL, so the face
+     files are addressed relative to this stylesheet rather than to a page.
+
+   Gmail strips stylesheet links outright, so for most readers none of this
+   arrives. That is by design: every size, weight and colour in the templates
+   works in the Segoe UI fallback, and the brand faces are a bonus where a
+   client allows them. */
+
+@font-face {
+  font-family: "Inter";
+  src: url("fonts/inter-400.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Inter";
+  src: url("fonts/inter-500.woff2") format("woff2");
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Inter";
+  src: url("fonts/inter-700.woff2") format("woff2");
+  font-weight: 600 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Inter Display Black";
+  src: url("fonts/inter-display-900.woff2") format("woff2");
+  font-weight: 400 900;
+  font-style: normal;
+  font-display: swap;
+}

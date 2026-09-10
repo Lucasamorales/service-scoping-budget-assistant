@@ -1,0 +1,31 @@
+Subject: Quote needed: {{service_name}} · {{branch}}
+
+Hi {{recipient_name}},
+
+QUOTE REQUIRED -- NOT ON THE RATE CARD
+{{service_name}} ({{service_category}})
+
+PLEASE PRICE THIS BY HAND.
+There is no rate-card figure for this one, so the quote has to come from you.
+What they need is below.
+
+WHY THEY ARE ASKING
+{{context}}
+-- {{requester_name}}, {{requester_role}}
+
+DETAILS
+Service    {{service}}
+Status     {{status_raw}} -- {{status_meaning}}
+Requester  {{requester_name}}, {{requester_role}}
+Venue      {{branch}}, {{country}}
+
+ATTACHED
+{{attachment_filename}} -- the whole conversation that produced this request.
+
+--
+Sent automatically by the Acme Scoping Assistant. Nobody typed this message:
+the verdict comes from the marketing scope documentation and the price from the
+central rate card. Replies to this address are not read.
+
+Reference {{reference}}
+Sent from {{from_address}}

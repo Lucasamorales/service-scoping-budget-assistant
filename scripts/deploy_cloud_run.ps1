@@ -124,6 +124,21 @@ $password = $envMap["INTERNAL_ACCESS_PASSWORD"]
 $allowedOrigins = $envMap["ALLOWED_ORIGINS"]
 $budgetTtl = $envMap["BUDGET_CACHE_TTL_SECONDS"]
 $quoteTtl = $envMap["QUOTE_CACHE_TTL_SECONDS"]
+$publicBaseUrl = $envMap["PUBLIC_BASE_URL"]
+
+# Where the request emails fetch their logo and brand faces from. An email has
+# no origin to resolve a relative path against, so both have to be absolute.
+#
+# Taken from .env when it is set, and otherwise from the service itself: a
+# Cloud Run URL is stable for a service in a region, so after the first deploy
+# it can simply be read back. Only the very first deploy has nowhere to read it
+# from, and that one is patched after the service exists.
+if ([string]::IsNullOrWhiteSpace($publicBaseUrl)) {
+    $publicBaseUrl = (Invoke-GCloud run services describe $Service `
+        --project $ProjectId --region $Region --format="value(status.url)" 2>$null) |
+        Select-Object -Last 1
+    if ($LASTEXITCODE -ne 0) { $publicBaseUrl = "" }
+}
 
 # The HMAC that signs session tokens. Every deploy used to mint a fresh one
 # when .env had none, which silently logged out everyone still using the app.
@@ -224,6 +239,9 @@ if (-not [string]::IsNullOrWhiteSpace($budgetTtl)) {
 if (-not [string]::IsNullOrWhiteSpace($quoteTtl)) {
     $envVars += "QUOTE_CACHE_TTL_SECONDS=$quoteTtl"
 }
+if (-not [string]::IsNullOrWhiteSpace($publicBaseUrl)) {
+    $envVars += "PUBLIC_BASE_URL=$publicBaseUrl"
+}
 
 # Build the knowledge index here rather than inside the image.
 #
@@ -288,6 +306,18 @@ if ($deployCode -ne 0) {
 }
 
 $url = (Invoke-GCloud run services describe $Service --project $ProjectId --region $Region --format="value(status.url)") | Select-Object -Last 1
+# First deploy only: the service had no URL to read before it existed, so the
+# emails would have gone out with no logo and no brand faces. Every later
+# deploy finds it already set and skips this, so it costs one extra revision
+# once rather than one per deploy.
+if ([string]::IsNullOrWhiteSpace($publicBaseUrl) -and -not [string]::IsNullOrWhiteSpace($url)) {
+    Write-Host ""
+    Write-Host "Setting PUBLIC_BASE_URL to $url (first deploy)."
+    Invoke-GCloud run services update $Service `
+        --project $ProjectId --region $Region `
+        --update-env-vars "PUBLIC_BASE_URL=$url" --quiet | Out-Null
+}
+
 Write-Host ""
 Write-Host "Deployed: $url"
 Write-Host "Health:   $url/api/health"

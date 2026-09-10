@@ -268,3 +268,74 @@ class TestRequestContext:
 
         yes = next(a for a in answer.actions if a.id == "confirm_yes")
         assert yes.kind == "note"
+
+
+class TestTheEmailIsWiredToItsEnvironment:
+    """Two values reach the templates from outside the orchestrator.
+
+    Both are easy to leave dangling — nothing in between has any use for them,
+    and the mail still sends without them, so a broken wire shows up only as a
+    missing logo and an empty "Sent from" line in somebody's inbox. Driven
+    through ``answer`` rather than around it, because the wiring is the thing
+    under test.
+    """
+
+    ALEX = SessionIdentity(subject="Alex", role="marketing", country="United Kingdom")
+
+    @pytest.fixture(scope="class")
+    @classmethod
+    def sent(cls, corpus, tmp_path_factory):
+        from app.store.mail import MailMessage, MailResult
+
+        class Capturing:
+            from_address = "Acme Scoping <sender@example.org>"
+
+            def __init__(self) -> None:
+                self.messages: list[MailMessage] = []
+
+            def send(self, message: MailMessage) -> MailResult:
+                self.messages.append(message)
+                return MailResult(sent=True, provider_id="x", detail="sent")
+
+        mailer = Capturing()
+        chunks = [chunk for item in corpus.catalog for chunk in chunk_service_item(item)]
+        pipeline = Pipeline(
+            corpus.catalog,
+            KnowledgeIndex.build(chunks),
+            model=RecordingModel("ignored"),
+            quote_store=load_quote_store(RATE_CARD),
+            contacts=load_contacts(CONTACTS),
+            mailer=mailer,
+            audit_log=JsonlAuditStore(tmp_path_factory.mktemp("audit")),
+            asset_base_url="https://assistant.example.com",
+        )
+        first = pipeline.answer("campaign wrap-ups", identity=cls.ALEX)
+        assert first.next_state.pending_action_kind == "email_am"
+        pipeline.answer(
+            "Yes",
+            first.next_state,
+            identity=cls.ALEX,
+            note="Needed before the country review on the 3rd.",
+        )
+        assert mailer.messages, "the confirmation never reached the mailer"
+        return mailer.messages[0]
+
+    def test_the_asset_urls_are_absolute_and_point_at_this_service(self, sent) -> None:
+        base = "https://assistant.example.com/widget/assets"
+        assert f"{base}/acme-logo-email.png" in sent.html
+        assert f"{base}/email-fonts.css" in sent.html
+
+    def test_the_sending_identity_reaches_the_footer(self, sent) -> None:
+        """It is the mailer's own fact, and the footer is where the design puts
+        it — so a reader can see the mail came from a machine, not a person."""
+        assert "sender@example.org" in sent.body
+        assert "sender@example.org" in sent.html
+
+    def test_the_requesters_context_travels(self, sent) -> None:
+        assert "country review on the 3rd" in sent.body
+        assert "country review on the 3rd" in sent.html
+
+    def test_both_parts_and_the_pdf_go_together(self, sent) -> None:
+        assert sent.body.strip()
+        assert sent.html.strip()
+        assert sent.attachments[0].content.startswith(b"%PDF")

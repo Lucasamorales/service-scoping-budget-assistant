@@ -1,0 +1,30 @@
+Subject: {{amount}} PO: {{service}} · {{branch}}
+
+Hi {{recipient_name}},
+
+QUOTE REQUIRED
+{{service_name}} ({{service_category}})
+
+{{amount}} -- PLEASE RAISE A PURCHASE ORDER FOR THIS AMOUNT.
+Priced from the central rate card. It is a quote, not an invoice.
+
+WHY THEY ARE ASKING
+{{context}}
+-- {{requester_name}}, {{requester_role}}
+
+DETAILS
+Service    {{service}}
+Status     {{status_raw}} -- {{status_meaning}}
+Requester  {{requester_name}}, {{requester_role}}
+Venue      {{branch}}, {{country}}
+
+ATTACHED
+{{attachment_filename}} -- the whole conversation that produced this request.
+
+--
+Sent automatically by the Acme Scoping Assistant. Nobody typed this message:
+the verdict comes from the marketing scope documentation and the price from the
+central rate card. Replies to this address are not read.
+
+Reference {{reference}}
+Sent from {{from_address}}

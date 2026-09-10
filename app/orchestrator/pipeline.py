@@ -197,6 +197,7 @@ class Pipeline:
         roster: RosterStore | None = None,
         mailer: Mailer | None = None,
         audit_log: AuditStore | None = None,
+        asset_base_url: str = "",
         use_semantic_inventory: bool = False,
         use_llm_planner: bool = True,
         use_llm_composer: bool = True,
@@ -230,6 +231,7 @@ class Pipeline:
             quote_store=quote_store,
             roster=roster,
             audit_log=audit_log,
+            asset_base_url=asset_base_url,
         )
 
     @classmethod
@@ -316,6 +318,7 @@ class Pipeline:
             roster=roster,
             mailer=mailer,
             audit_log=audit_log,
+            asset_base_url=settings.public_base_url,
             use_semantic_inventory=settings.use_semantic_inventory,
             use_llm_planner=settings.use_llm_planner,
             use_llm_composer=settings.use_llm_composer,

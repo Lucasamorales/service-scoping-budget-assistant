@@ -34,6 +34,13 @@ dev = [
     "pytest-asyncio>=0.24",
     "ruff>=0.7",
     "mypy>=1.13",
+    # Reads back the PDF the request emails attach. The layout tests assert
+    # what actually landed on each page — a pagination rule can only be checked
+    # by looking at the pages it produced.
+    "pypdfium2>=4.30",
+    # Converts the brand woff2 files to the TrueType fpdf2 embeds. Build-time
+    # only: the .ttf files are committed, so the service never needs it.
+    "fonttools[woff]>=4.55",
 ]
 
 [build-system]

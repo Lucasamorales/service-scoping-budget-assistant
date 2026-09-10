@@ -129,6 +129,17 @@ class Settings(BaseSettings):
     mail_api_key: str = ""
     mail_from_address: str = ""
 
+    public_base_url: str = ""
+    """Where this service answers from, as a mail client would reach it.
+
+    The request emails carry a logo and a stylesheet, and an email has no
+    origin to resolve a relative path against — every asset URL has to be
+    absolute and publicly fetchable. Empty means the HTML part is still built
+    and still correct, only without the logo image and the brand faces; the
+    templates are designed to survive exactly that, because Gmail strips
+    stylesheet links and proxies or blocks images regardless.
+    """
+
     allowed_origins: str = ""
     session_token_secret: str = ""
     session_token_ttl_seconds: int = 3600

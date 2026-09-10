@@ -1,0 +1,30 @@
+Subject: In scope: {{service_name}} · {{branch}}
+
+Hi {{recipient_name}},
+
+IN SCOPE -- NO CHARGE
+{{service_name}} ({{service_category}})
+
+PLEASE PICK THIS UP. CENTRAL MARKETING COVERS IT.
+Free of charge to the venue. Nothing to approve and no PO to raise.
+
+WHY THEY ARE ASKING
+{{context}}
+-- {{requester_name}}, {{requester_role}}
+
+DETAILS
+Service    {{service}}
+Status     {{status_raw}} -- {{status_meaning}}
+Requester  {{requester_name}}, {{requester_role}}
+Venue      {{branch}}, {{country}}
+
+ATTACHED
+{{attachment_filename}} -- the whole conversation that produced this request.
+
+--
+Sent automatically by the Acme Scoping Assistant. Nobody typed this message:
+the verdict comes from the marketing scope documentation and the price from the
+central rate card. Replies to this address are not read.
+
+Reference {{reference}}
+Sent from {{from_address}}

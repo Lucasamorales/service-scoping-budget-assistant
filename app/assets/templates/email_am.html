@@ -1,0 +1,152 @@
+<!--
+  Acme Scoping Assistant — request email, variant: email_am (Account Manager, in scope / free of charge)
+
+  Tokens (double braces, substitute as plain strings — no template engine required):
+    {{subject}}              e.g. "In scope: Campaign wrap-ups · Acme Basingstoke"
+    {{preheader}}            one line, phone inbox preview
+    {{recipient_name}}       "Charlie"
+    {{requester_name}}       "Robin Morrison"
+    {{requester_role}}       "Marketing Executive"
+    {{country}}              "United Kingdom"
+    {{branch}}               "Acme Basingstoke"
+    {{service_name}}         "Billboards"          (item.name — headline)
+    {{service_category}}     "Photography"         (item.section — the bracketed part)
+    {{service}}              "Billboards (Photography)"
+    {{status_raw}}           "On demand"
+    {{status_meaning}}       "This is something we need to quote"
+    {{context}}              free text from the requester — MUST BE HTML-ESCAPED (see note)
+    {{reference}}            conversation id (UUID)
+    {{attachment_filename}}  "conversation-8f21c0a4.pdf"
+    {{from_address}}         sending identity, never hardcoded
+    {{logo_url}}             hosted PNG of the Acme lockup, 304x64, matted to #232F55 (displayed 152x32)
+    {{font_css_url}}         hosted @font-face CSS for Inter / Inter Display Black. Optional
+                             bonus only — every size, weight and colour here works in Segoe UI.
+
+  {{context}} is untrusted input typed into a web form. Escape &, <, >, " before
+  substitution (html.escape(value, quote=True)) and convert newlines to <br>.
+  Everything else in this file is system-generated, but escape it all anyway.
+-->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="light only">
+<meta name="supported-color-schemes" content="light only">
+<title>{{subject}}</title>
+<link href="{{font_css_url}}" rel="stylesheet">
+</head>
+<body style="margin:0;padding:0;width:100%;background-color:#E4EBF2;-webkit-text-size-adjust:100%;-ms-text-size-adjust:100%;">
+<div style="display:none;font-size:1px;line-height:1px;max-height:0;max-width:0;opacity:0;overflow:hidden;color:#E4EBF2;">{{preheader}}</div>
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#E4EBF2;">
+<tr>
+<td align="center" style="padding:24px 12px 36px;">
+
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%;max-width:600px;">
+
+<!-- navy band -->
+<tr>
+<td style="background-color:#232F55;padding:18px 24px;" bgcolor="#232F55">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+<tr>
+<td align="left" style="vertical-align:middle;"><img src="{{logo_url}}" width="152" height="32" alt="Acme" style="display:block;border:0;width:152px;height:32px;"></td>
+<td align="right" style="vertical-align:middle;font-family:'Inter','Segoe UI',Tahoma,sans-serif;font-size:11px;font-weight:700;letter-spacing:0.14em;text-transform:uppercase;color:#8FA3C8;">Scoping Assistant</td>
+</tr>
+</table>
+</td>
+</tr>
+
+<!-- card -->
+<tr>
+<td style="background-color:#FFFFFF;border-left:1px solid #D7E0EA;border-right:1px solid #D7E0EA;border-bottom:1px solid #D7E0EA;" bgcolor="#FFFFFF">
+
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+
+<!-- greeting + verdict + headline -->
+<tr>
+<td style="padding:26px 26px 22px;">
+<p style="margin:0 0 18px;font-family:'Inter','Segoe UI',Tahoma,sans-serif;font-size:15px;line-height:1.5;color:#5A6E85;">Hi {{recipient_name}},</p>
+<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 12px;">
+<tr><td style="background-color:#E6F5EC;border:1px solid #A9DCC1;border-radius:999px;padding:5px 11px;font-family:'Inter','Segoe UI',Tahoma,sans-serif;font-size:11px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;white-space:nowrap;color:#1F7A4D;" bgcolor="#E6F5EC">In scope</td></tr>
+</table>
+<h1 style="margin:0 0 6px;font-family:'Inter Display Black','Inter','Segoe UI',Tahoma,sans-serif;font-size:34px;line-height:1.06;font-weight:900;letter-spacing:-0.005em;text-transform:uppercase;color:#14213B;">{{service_name}}</h1>
+<p style="margin:0;font-family:'Inter','Segoe UI',Tahoma,sans-serif;font-size:14px;line-height:1.45;color:#5A6E85;">{{service_category}} &middot; asked for by {{requester_name}} at {{branch}}</p>
+</td>
+</tr>
+
+<!-- the decision -->
+<tr>
+<td style="background-color:#F0F4F8;border-top:1px solid #D7E0EA;border-bottom:1px solid #D7E0EA;padding:22px 26px 24px;" bgcolor="#F0F4F8">
+<p style="margin:0 0 6px;font-family:'Inter','Segoe UI',Tahoma,sans-serif;font-size:11px;font-weight:700;letter-spacing:0.12em;text-transform:uppercase;color:#5A6E85;">In scope &mdash; no charge</p>
+<p style="margin:0 0 8px;font-family:'Inter','Segoe UI',Tahoma,sans-serif;font-size:22px;line-height:1.3;font-weight:700;color:#14213B;">Please pick this up. Central marketing covers it.</p>
+<p style="margin:0;font-family:'Inter','Segoe UI',Tahoma,sans-serif;font-size:13px;line-height:1.5;color:#5A6E85;">Free of charge to the venue. Nothing to approve and no PO to raise.</p>
+</td>
+</tr>
+
+<!-- context from the requester -->
+<tr>
+<td style="padding:24px 26px 4px;">
+<p style="margin:0 0 9px;font-family:'Inter','Segoe UI',Tahoma,sans-serif;font-size:11px;font-weight:700;letter-spacing:0.12em;text-transform:uppercase;color:#5A6E85;">Why they are asking</p>
+<p style="margin:0 0 10px;font-family:'Inter','Segoe UI',Tahoma,sans-serif;font-size:16px;line-height:1.6;color:#14213B;">{{context}}</p>
+<p style="margin:0;font-family:'Inter','Segoe UI',Tahoma,sans-serif;font-size:13px;line-height:1.5;color:#8A9BAD;">{{requester_name}}, {{requester_role}}</p>
+</td>
+</tr>
+
+<!-- details -->
+<tr>
+<td style="padding:22px 26px 4px;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-top:1px solid #E8EEF4;">
+<tr>
+<td width="112" style="padding:11px 12px 11px 0;border-bottom:1px solid #E8EEF4;font-family:'Inter','Segoe UI',Tahoma,sans-serif;font-size:13px;line-height:1.4;color:#8A9BAD;">Service</td>
+<td style="padding:11px 0;border-bottom:1px solid #E8EEF4;font-family:'Inter','Segoe UI',Tahoma,sans-serif;font-size:14px;line-height:1.4;color:#2C3D50;">{{service}}</td>
+</tr>
+<tr>
+<td width="112" style="padding:11px 12px 11px 0;border-bottom:1px solid #E8EEF4;font-family:'Inter','Segoe UI',Tahoma,sans-serif;font-size:13px;line-height:1.4;color:#8A9BAD;">Status</td>
+<td style="padding:11px 0;border-bottom:1px solid #E8EEF4;font-family:'Inter','Segoe UI',Tahoma,sans-serif;font-size:14px;line-height:1.4;color:#2C3D50;">{{status_raw}} &mdash; {{status_meaning}}</td>
+</tr>
+<tr>
+<td width="112" style="padding:11px 12px 11px 0;border-bottom:1px solid #E8EEF4;font-family:'Inter','Segoe UI',Tahoma,sans-serif;font-size:13px;line-height:1.4;color:#8A9BAD;">Requester</td>
+<td style="padding:11px 0;border-bottom:1px solid #E8EEF4;font-family:'Inter','Segoe UI',Tahoma,sans-serif;font-size:14px;line-height:1.4;color:#2C3D50;">{{requester_name}}, {{requester_role}}</td>
+</tr>
+<tr>
+<td width="112" style="padding:11px 12px 11px 0;border-bottom:1px solid #E8EEF4;font-family:'Inter','Segoe UI',Tahoma,sans-serif;font-size:13px;line-height:1.4;color:#8A9BAD;">Venue</td>
+<td style="padding:11px 0;border-bottom:1px solid #E8EEF4;font-family:'Inter','Segoe UI',Tahoma,sans-serif;font-size:14px;line-height:1.4;color:#2C3D50;">{{branch}}, {{country}}</td>
+</tr>
+</table>
+</td>
+</tr>
+
+<!-- attachment -->
+<tr>
+<td style="padding:20px 26px 28px;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#F4F7FA;border:1px solid #D7E0EA;" bgcolor="#F4F7FA">
+<tr>
+<td style="padding:16px 18px;">
+<p style="margin:0 0 5px;font-family:'Inter','Segoe UI',Tahoma,sans-serif;font-size:11px;font-weight:700;letter-spacing:0.12em;text-transform:uppercase;color:#5A6E85;">Attached</p>
+<p style="margin:0 0 4px;font-family:'Inter','Segoe UI',Tahoma,sans-serif;font-size:15px;font-weight:700;line-height:1.4;color:#14213B;">{{attachment_filename}}</p>
+<p style="margin:0;font-family:'Inter','Segoe UI',Tahoma,sans-serif;font-size:13px;line-height:1.5;color:#5A6E85;">The whole conversation that produced this request, including which scope document the answer came from.</p>
+</td>
+</tr>
+</table>
+</td>
+</tr>
+
+</table>
+</td>
+</tr>
+
+<!-- footer -->
+<tr>
+<td style="padding:20px 4px 0;">
+<p style="margin:0 0 8px;font-family:'Inter','Segoe UI',Tahoma,sans-serif;font-size:12px;line-height:1.65;color:#8A9BAD;">Sent automatically by the Acme Scoping Assistant. Nobody typed this message: the verdict comes from the marketing scope documentation and the price from the central rate card. Replies to this address are not read.</p>
+<p style="margin:0;font-family:'Inter','Segoe UI',Tahoma,sans-serif;font-size:12px;line-height:1.65;color:#8A9BAD;">Reference {{reference}}<br>Sent from {{from_address}}</p>
+</td>
+</tr>
+
+</table>
+
+</td>
+</tr>
+</table>
+</body>
+</html>

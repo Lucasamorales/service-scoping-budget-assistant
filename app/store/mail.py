@@ -35,6 +35,14 @@ class MailMessage:
     to_email: str
     subject: str
     body: str
+    html: str = ""
+    """The designed HTML part. Empty sends plain text alone.
+
+    Both parts are always built from the same values, so a client that shows
+    one is never told something the other does not say. Plain text is not a
+    courtesy here: it is what several of these recipients will actually read.
+    """
+
     attachments: tuple[MailAttachment, ...] = field(default_factory=tuple)
 
 
@@ -53,17 +61,32 @@ class MailResult:
 
 
 class Mailer(Protocol):
+    @property
+    def from_address(self) -> str:
+        """Who the mail will appear to come from.
+
+        On the protocol because the templates print it in their footer, and the
+        mailer is the only thing that knows it. Threading it from configuration
+        through the orchestrator instead would have carried a value nobody in
+        between had any use for.
+        """
+
     def send(self, message: MailMessage) -> MailResult: ...
 
 
 class NullMailer:
     """Used when mail credentials are missing — never pretends a send succeeded."""
 
+    @property
+    def from_address(self) -> str:
+        return ""
+
     def send(self, message: MailMessage) -> MailResult:
         logger.info(
             "mail.skipped",
             to=message.to_email,
             subject=message.subject,
+            html=bool(message.html),
             attachments=[item.filename for item in message.attachments],
             reason="mail not configured",
         )
@@ -75,6 +98,10 @@ class ResendMailer:
         self._api_key = api_key
         self._from = from_address
 
+    @property
+    def from_address(self) -> str:
+        return self._from
+
     def send(self, message: MailMessage) -> MailResult:
         payload: dict[str, object] = {
             "from": self._from,
@@ -82,6 +109,8 @@ class ResendMailer:
             "subject": message.subject,
             "text": message.body,
         }
+        if message.html:
+            payload["html"] = message.html
         if message.attachments:
             payload["attachments"] = [
                 {

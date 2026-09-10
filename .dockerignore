@@ -38,3 +38,8 @@ tests
 # Meeting transcript, not catalog. Filename is not ASCII; Cloud Run
 # refuses to import an image that contains it.
 documents/Meeting started*
+
+# Design source for the request emails and the PDF. The drop-in templates and
+# assets from it are committed under app/assets and widget/assets; the mockups,
+# previews and uploads are reference material and stay out of the image.
+email and pdf from claude design

@@ -16,12 +16,14 @@ from app.tools.transcript import (
     build_transcript,
     render_transcript_pdf,
     render_transcript_text,
+    transcript_attachment,
 )
 
 
 class CapturingMailer:
-    def __init__(self) -> None:
+    def __init__(self, from_address: str = "Acme Scoping <sender@example.com>") -> None:
         self.messages: list[MailMessage] = []
+        self.from_address = from_address
 
     def send(self, message: MailMessage) -> MailResult:
         self.messages.append(message)
@@ -66,8 +68,7 @@ class TestResumeBody:
         assert "Alex" in draft.body
         assert "United Kingdom" in draft.body
         assert "Acme London" in draft.body
-        assert "attached as a PDF" in draft.body
-        assert "Reference: abc123def456" in draft.body
+        assert "abc123def456" in draft.body
         assert draft.attachments
         assert draft.attachments[0].filename.endswith(".pdf")
         assert draft.attachments[0].content.startswith(b"%PDF")
@@ -83,8 +84,103 @@ class TestResumeBody:
             quote_amount=100.0,
             currency="GBP",
         )
-        assert "100.00 GBP" in draft.body
+        # £100, not 100.00 GBP. This was the one place the shared money format
+        # never reached, so the email disagreed with every other surface.
+        assert "£100" in draft.body
+        assert "100.00 GBP" not in draft.body
         assert "purchase order" in draft.body.lower()
+
+    def test_the_amount_leads_the_subject_for_the_person_approving_it(self) -> None:
+        """A phone shows about thirty-five characters of a subject, and the
+        figure is what decides whether this gets opened now or later."""
+        draft = build_request_email(
+            kind="email_cm_po",
+            contact=_contact(),
+            item=_item(),
+            requester="Alex",
+            country="United Kingdom",
+            branch="Acme London",
+            quote_amount=100.0,
+            currency="GBP",
+        )
+        assert draft.subject.startswith("£100 PO:")
+        assert "Acme London" in draft.subject
+
+
+class TestBothPartsAgree:
+    """HTML and plain text are built from one set of values.
+
+    Several of these recipients will only ever see the text part — it is the
+    fallback, not a courtesy — so the two saying different things would be a
+    silent way for one reader to approve something another was never shown.
+    """
+
+    def _draft(self, note: str = "Reopening push, needs artwork by the 26th."):
+        return build_request_email(
+            kind="email_cm_po",
+            contact=_contact(),
+            item=_item(),
+            requester="Alex",
+            country="United Kingdom",
+            branch="Acme London",
+            quote_amount=100.0,
+            currency="GBP",
+            note=note,
+            conversation_id="abc123def456",
+            from_address="Acme Scoping <sender@example.com>",
+        )
+
+    def test_both_parts_are_produced(self) -> None:
+        draft = self._draft()
+        assert draft.body.strip()
+        assert draft.html.lstrip().startswith("<!--") or "<html" in draft.html
+
+    def test_the_figure_and_the_reference_appear_in_both(self) -> None:
+        draft = self._draft()
+        for part in (draft.body, draft.html):
+            assert "£100" in part
+            assert "abc123def456" in part
+            assert "Alex" in part
+
+    def test_the_requesters_words_survive_into_both(self) -> None:
+        draft = self._draft("Radio deal collapses without outdoor support.")
+        assert "Radio deal collapses" in draft.body
+        assert "Radio deal collapses" in draft.html
+
+    def test_the_requesters_words_cannot_become_markup(self) -> None:
+        """The context is typed into a web form by a person. Substituted raw it
+        would be live HTML in somebody's mail client."""
+        draft = self._draft('<script>alert("x")</script> & "quoted"')
+        assert "<script>" not in draft.html
+        assert "&lt;script&gt;" in draft.html
+        assert "&amp;" in draft.html
+        # The plain-text part is not markup, so it is left exactly as typed.
+        assert '<script>alert("x")</script>' in draft.body
+
+    def test_a_line_break_in_the_context_survives_as_one(self) -> None:
+        draft = self._draft("First line.\nSecond line.")
+        assert "First line.<br>Second line." in draft.html
+
+    def test_no_placeholder_ever_reaches_a_reader(self) -> None:
+        """An absent value renders as nothing. A recipient who reads
+        "{{branch}}" learns nothing and distrusts the rest of the mail."""
+        draft = build_request_email(
+            kind="email_am",
+            contact=_contact(),
+            item=_item(),
+            requester=None,
+            country=None,
+            branch=None,
+            quote_amount=None,
+            currency="GBP",
+        )
+        assert "{{" not in draft.html
+        assert "{{" not in draft.body
+
+    def test_the_html_part_reaches_the_provider(self) -> None:
+        mailer = CapturingMailer()
+        send_request_email(mailer, self._draft())
+        assert mailer.messages[0].html
 
 
 class TestTranscriptSource:
@@ -177,3 +273,120 @@ class TestSendAttaches:
         )
         result = send_request_email(NullMailer(), draft)
         assert not result.sent
+
+
+class TestVerdictsInTheTranscript:
+    def test_a_verdict_rides_along_with_the_turn_that_reached_it(
+        self, tmp_path: Path
+    ) -> None:
+        store = JsonlAuditStore(tmp_path)
+        store.append(
+            AuditEvent(
+                conversation_id="c1",
+                kind="turn",
+                payload={
+                    "user_message": "can we do a billboard",
+                    "assistant_message": "That one needs a quote.",
+                    "status": "quote_required",
+                },
+            )
+        )
+        turns = build_transcript(conversation_id="c1", audit_log=store)
+        user, assistant = turns
+        assert assistant.verdict == "quote_required"
+        # The question carries none. A verdict is what the answer reached, and
+        # putting it on the asking turn would credit the person with it.
+        assert user.verdict is None
+
+    def test_a_turn_that_reached_no_verdict_carries_none(self, tmp_path: Path) -> None:
+        """The common case, not the exception. Budget answers, clarifying
+        questions and greetings all resolve no service, so a transcript with
+        pills on some turns and nothing on others is the normal rendering."""
+        store = JsonlAuditStore(tmp_path)
+        store.append(
+            AuditEvent(
+                conversation_id="c2",
+                kind="turn",
+                payload={
+                    "user_message": "what is left in the budget",
+                    "assistant_message": "£1,240 of £2,000.",
+                    "status": None,
+                },
+            )
+        )
+        _, assistant = build_transcript(conversation_id="c2", audit_log=store)
+        assert assistant.verdict is None
+
+    def test_the_client_history_fallback_claims_no_verdicts(self) -> None:
+        """It never held any — only the audit log records them."""
+        turns = build_transcript(
+            conversation_id=None,
+            audit_log=None,
+            history=(HistoryTurn("assistant", "That one needs a quote."),),
+        )
+        assert all(turn.verdict is None for turn in turns)
+
+
+class TestPdfRendering:
+    def _turns(self, count: int = 4) -> tuple[TranscriptTurn, ...]:
+        return tuple(
+            TranscriptTurn(
+                at=f"2026-08-20T1{4 + index // 6}:{index:02d}:00+00:00",
+                role="user" if index % 2 == 0 else "assistant",
+                content=f"Message {index}. " + "Some words to fill the block out. " * 4,
+                verdict="quote_required" if index % 2 else None,
+            )
+            for index in range(count)
+        )
+
+    def test_the_pound_sign_survives(self) -> None:
+        """The brand faces are embedded, so the document is Unicode.
+
+        It used to be rendered with fpdf2's core fonts, which are Latin-1: the
+        pound sign came through only because cp1252 happens to contain it, and
+        an em dash or a curly quote was replaced with a question mark.
+        """
+        data = render_transcript_pdf(
+            (TranscriptTurn(at="", role="assistant", content="Priced at £350 — roughly."),),
+            title="t",
+        )
+        assert data.startswith(b"%PDF")
+
+    def test_an_em_dash_no_longer_breaks_the_render(self) -> None:
+        """A crash here is not cosmetic: the whole PDF is abandoned and the
+        email goes out with a .txt attachment instead."""
+        filename, data, mime = transcript_attachment(
+            (TranscriptTurn(at="", role="user", content="— dashes — everywhere —"),),
+            title="Quote needed — Photoshoots",
+            filename_stem="conversation-test",
+            kind="email_am",
+        )
+        assert filename.endswith(".pdf")
+        assert mime == "application/pdf"
+        assert data.startswith(b"%PDF")
+
+    def test_a_long_conversation_paginates(self) -> None:
+        import pypdfium2
+
+        data = render_transcript_pdf(self._turns(40), title="t", kind="email_cm_po")
+        assert len(pypdfium2.PdfDocument(data)) > 1
+
+    def test_the_closing_line_never_gets_a_page_to_itself(self) -> None:
+        """It used to. The conversation filled the page to within a few
+        millimetres and the only thing that moved was the line announcing the
+        conversation had finished, which read as a printing fault.
+        """
+        import pypdfium2
+
+        for count in range(2, 26):
+            doc = pypdfium2.PdfDocument(
+                render_transcript_pdf(self._turns(count), title="t", kind="email_cm_po")
+            )
+            last = doc[len(doc) - 1].get_textpage().get_text_range()
+            assert "REQUESTER" in last or "SCOPING ASSISTANT" in last, (
+                f"{count} turns left a page carrying only the closing line"
+            )
+
+    def test_an_empty_conversation_still_renders(self) -> None:
+        data = render_transcript_pdf((), title="t", kind="email_am")
+        assert data.startswith(b"%PDF")

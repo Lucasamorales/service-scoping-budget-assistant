@@ -175,6 +175,7 @@ def confirm_pending(
     conversation_id: str | None = None,
     audit_log: AuditStore | None = None,
     note: str | None = None,
+    asset_base_url: str = "",
 ) -> FlowResult:
     answer = is_affirmative(message)
     context = (note or "").strip()
@@ -191,6 +192,7 @@ def confirm_pending(
             audit_log=audit_log,
             message=message,
             note=context,
+            asset_base_url=asset_base_url,
         )
 
     if answer is False:
@@ -305,6 +307,7 @@ def _send_pending(
     audit_log: AuditStore | None = None,
     message: str | None = None,
     note: str | None = None,
+    asset_base_url: str = "",
 ) -> FlowResult:
     country = pending.recipient_country or identity.country
     role = (
@@ -332,6 +335,8 @@ def _send_pending(
         role=identity.role,
         current_message=message,
         note=note,
+        asset_base_url=asset_base_url,
+        from_address=mailer.from_address,
     )
     result = send_request_email(mailer, draft)
     attached = draft.attachments[0].filename if draft.attachments else None

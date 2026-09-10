@@ -119,6 +119,11 @@ class Executor:
     quote_store: RateCard | None = None
     roster: RosterStore | None = None
     audit_log: AuditStore | None = None
+    asset_base_url: str = ""
+    """Where a mail client should fetch the email's logo and fonts from.
+
+    Only the mail path uses it, and only to build absolute URLs — an email has
+    no origin of its own to resolve a relative one against."""
 
     def run(
         self,
@@ -460,6 +465,7 @@ class Executor:
             conversation_id=conversation_id,
             audit_log=self.audit_log,
             note=note,
+            asset_base_url=self.asset_base_url,
         )
         return self._apply_flow(pack.with_satisfied(Capability.MAIL), flow)
 
