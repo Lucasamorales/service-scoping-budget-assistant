@@ -193,7 +193,7 @@ class AcmeChat extends HTMLElement {
               is covered, handled locally, out of scope, or needs a quote.
             </p>
             <h2 class="empty-headline">
-              What do you <span class="accent">need making?</span>
+              What can we <span class="accent">help you with?</span>
             </h2>
             <div class="cards" data-cards></div>
           </div>
