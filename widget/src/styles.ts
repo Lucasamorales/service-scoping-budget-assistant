@@ -345,6 +345,21 @@ button.new-chat:focus-visible {
 
 .candidate:hover { border-color: var(--accent); }
 
+/* A used or retired offer. Without this a disabled Yes looked exactly like a
+   live one, which is the whole failure the expiry is there to prevent. */
+.candidate:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.candidate:disabled:hover { border-color: var(--line); }
+
+.actions-expired {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text-faint);
+}
+
 /* The context box. A dialog over the whole widget rather than a field below
    the reply: inline, it sat under a wall of text and people scrolled past it,
    then wondered why nothing sent. Covering the conversation makes the one

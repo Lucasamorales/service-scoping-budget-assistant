@@ -263,6 +263,7 @@ class AcmeChat extends HTMLElement {
   async #ask(message: string, note?: string): Promise<void> {
     if (this.#busy) return;
     this.#busy = true;
+    this.#expireOffers();
     this.#setSending(true);
     this.#clearEmpty();
     // The context, not the bare "Yes", because that is what the person
@@ -456,6 +457,34 @@ class AcmeChat extends HTMLElement {
         void this.#ask(candidate.label);
       });
       host.append(button);
+    });
+  }
+
+  /** Retire the offers left on earlier turns before sending a new message.
+   *
+   * A "Yes, request a PO" button does not carry what it is agreeing to. The
+   * service and the amount live in a sealed token held in the widget's state,
+   * the server keeps exactly one of those at a time, and each new turn
+   * replaces it. So the Yes still sitting under a 350 pound video quote would
+   * raise a PO for whatever was asked about after it — a real email, to a
+   * budget holder, for the wrong thing, with no error anywhere.
+   *
+   * Nothing is lost by retiring them: an offer that is still live is re-sent
+   * with the new turn and arrives with its own buttons.
+   *
+   * A row whose buttons are already disabled was used rather than superseded —
+   * the person clicked Yes or No, or opened the context box — so it keeps its
+   * own outcome and says nothing about expiry.
+   */
+  #expireOffers(): void {
+    this.#root.querySelectorAll(".candidates.actions").forEach((row) => {
+      const buttons = [...row.querySelectorAll("button")] as HTMLButtonElement[];
+      if (!buttons.length || buttons.every((el) => el.disabled)) return;
+      buttons.forEach((el) => (el.disabled = true));
+      const expired = document.createElement("p");
+      expired.className = "actions-expired";
+      expired.textContent = "No longer current — ask again if you still need it.";
+      row.append(expired);
     });
   }
 
