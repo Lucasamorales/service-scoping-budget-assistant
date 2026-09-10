@@ -279,6 +279,7 @@ class Pipeline:
             api_key=settings.mail_api_key,
             from_address=settings.mail_from_address,
             provider=settings.mail_provider,
+            redirect_to=settings.mail_redirect_to,
         )
         audit_log = build_audit_store(
             backend=settings.audit_backend,

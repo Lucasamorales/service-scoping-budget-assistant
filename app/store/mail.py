@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import base64
-from dataclasses import dataclass, field
+import re
+from dataclasses import dataclass, field, replace
+from html import escape
 from typing import Protocol
 
 import httpx
@@ -15,6 +17,7 @@ __all__ = [
     "MailResult",
     "Mailer",
     "NullMailer",
+    "RedirectingMailer",
     "ResendMailer",
     "build_mailer",
 ]
@@ -147,7 +150,77 @@ class ResendMailer:
         return MailResult(sent=True, provider_id=provider_id, detail="sent", attempted=True)
 
 
-def build_mailer(*, api_key: str, from_address: str, provider: str = "resend") -> Mailer:
+class RedirectingMailer:
+    """Sends every message to one address instead of its real recipient.
+
+    For testing the whole path — routing, rendering, the attachment — without
+    mail reaching a country manager. Resend also refuses any recipient but the
+    account owner until a domain is verified, so before that this is the only
+    way to see a request email arrive at all.
+
+    A redirected message says so in its subject and at the top of both bodies.
+    Silently rerouting mail is how a test gets mistaken for the real thing, and
+    the person holding a budget is the wrong person to confuse.
+    """
+
+    def __init__(self, inner: Mailer, address: str) -> None:
+        self._inner = inner
+        self._address = address
+
+    @property
+    def from_address(self) -> str:
+        return self._inner.from_address
+
+    def send(self, message: MailMessage) -> MailResult:
+        intended = f"{message.to_name} <{message.to_email}>"
+        logger.info("mail.redirected", intended=message.to_email, to=self._address)
+        return self._inner.send(
+            replace(
+                message,
+                to_email=self._address,
+                subject=f"[test] {message.subject}",
+                body="\n\n".join(
+                    (_REDIRECT_NOTE.format(intended=intended), message.body)
+                ),
+                html=_insert_banner(message.html, intended),
+            )
+        )
+
+
+_REDIRECT_NOTE = (
+    "TEST — this was addressed to {intended} and redirected here by "
+    "MAIL_REDIRECT_TO. Nobody else received it."
+)
+
+_BODY_TAG = re.compile(r"(<body\b[^>]*>)", re.IGNORECASE)
+
+_BANNER = (
+    '<div style="background-color:#FBF2E0;border-bottom:1px solid #E4C88A;'
+    "padding:12px 16px;font-family:Segoe UI,Tahoma,sans-serif;font-size:13px;"
+    'line-height:1.4;color:#A6741A;">{note}</div>'
+)
+
+
+def _insert_banner(html: str, intended: str) -> str:
+    """Put the notice where it is read first, not appended out of sight."""
+    if not html:
+        return html
+    banner = _BANNER.format(note=escape(_REDIRECT_NOTE.format(intended=intended)))
+    if _BODY_TAG.search(html):
+        return _BODY_TAG.sub(lambda m: m.group(1) + banner, html, count=1)
+    return banner + html
+
+
+def build_mailer(
+    *,
+    api_key: str,
+    from_address: str,
+    provider: str = "resend",
+    redirect_to: str = "",
+) -> Mailer:
+    mailer: Mailer = NullMailer()
     if api_key and from_address and provider.lower() == "resend":
-        return ResendMailer(api_key, from_address)
-    return NullMailer()
+        mailer = ResendMailer(api_key, from_address)
+    if redirect_to.strip():
+        return RedirectingMailer(mailer, redirect_to.strip())
+    return mailer

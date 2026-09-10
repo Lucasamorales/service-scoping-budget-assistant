@@ -64,6 +64,7 @@ async def _lifespan(application: FastAPI) -> AsyncIterator[None]:
         quote=pipeline.quote_store is not None,
         contacts=len(pipeline.contacts.contacts),
         mail=settings.mail_configured,
+        mail_redirect=settings.mail_redirect_to or None,
         origins=settings.origins or "unchecked (local only)",
         auth=settings.session_auth_enabled,
     )

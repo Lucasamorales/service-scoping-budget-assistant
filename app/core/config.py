@@ -129,6 +129,18 @@ class Settings(BaseSettings):
     mail_api_key: str = ""
     mail_from_address: str = ""
 
+    mail_redirect_to: str = ""
+    """Divert every request email to this address instead of its recipient.
+
+    For testing the whole path — routing, rendering, the attachment — without
+    mail reaching a country manager. Also the only way to see one arrive at all
+    while the sender is on the provider's sandbox domain, which refuses any
+    recipient but the account owner.
+
+    Empty in production. A redirected message says so in its subject and at the
+    top of both bodies, so a test cannot be mistaken for a real request.
+    """
+
     public_base_url: str = ""
     """Where this service answers from, as a mail client would reach it.
 

@@ -502,3 +502,66 @@ class TestTheTemplatesStayEmailSafe:
             assert len(blocks) == 1, kind
             assert "@font-face" in blocks[0]
             assert "{" in blocks[0] and "@media" not in blocks[0]
+
+
+class TestRedirectingMailer:
+    """Diverting mail for a test must never look like the real thing."""
+
+    def _sent(self, redirect_to: str = "tester@example.com"):
+        from app.store.mail import build_mailer
+
+        inner = CapturingMailer()
+        mailer = build_mailer(api_key="", from_address="", redirect_to=redirect_to)
+        # build_mailer has no real provider here, so wrap the capture directly.
+        from app.store.mail import RedirectingMailer
+
+        mailer = RedirectingMailer(inner, redirect_to)
+        draft = build_request_email(
+            kind="email_cm_po",
+            contact=_contact(),
+            item=_item(),
+            requester="Alex",
+            country="United Kingdom",
+            branch="Acme London",
+            quote_amount=100.0,
+            currency="GBP",
+            note="n",
+            asset_base_url="https://assistant.example.com",
+        )
+        send_request_email(mailer, draft)
+        return inner.messages[0], draft
+
+    def test_it_goes_to_the_tester_not_the_manager(self) -> None:
+        sent, draft = self._sent()
+        assert sent.to_email == "tester@example.com"
+        assert sent.to_email != draft.contact.email
+
+    def test_the_subject_says_it_is_a_test(self) -> None:
+        sent, _ = self._sent()
+        assert sent.subject.startswith("[test] ")
+
+    def test_both_bodies_name_who_it_was_for(self) -> None:
+        """A redirected purchase order that reads like a real one is worse than
+        no test at all — the reader has a budget and no way to tell."""
+        sent, draft = self._sent()
+        for part in (sent.body, sent.html):
+            assert "TEST" in part
+            assert draft.contact.email in part
+
+    def test_the_notice_is_at_the_top_of_the_page(self) -> None:
+        sent, _ = self._sent()
+        body_at = sent.html.lower().index("<body")
+        assert sent.html.index("TEST", body_at) - body_at < 400
+
+    def test_the_original_email_still_arrives_intact(self) -> None:
+        sent, _ = self._sent()
+        assert "£100" in sent.body
+        assert "purchase order" in sent.body.lower()
+        assert sent.attachments[0].content.startswith(b"%PDF")
+
+    def test_nothing_is_diverted_when_it_is_not_configured(self) -> None:
+        from app.store.mail import NullMailer, RedirectingMailer, build_mailer
+
+        plain = build_mailer(api_key="", from_address="", redirect_to="")
+        assert isinstance(plain, NullMailer)
+        assert not isinstance(plain, RedirectingMailer)

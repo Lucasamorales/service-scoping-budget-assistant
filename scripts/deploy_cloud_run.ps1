@@ -119,6 +119,7 @@ $gemini = $envMap["GEMINI_API_KEY"]
 $sheetId = $envMap["BUDGET_SPREADSHEET_ID"]
 $mailKey = $envMap["MAIL_API_KEY"]
 $mailFrom = $envMap["MAIL_FROM_ADDRESS"]
+$mailRedirect = $envMap["MAIL_REDIRECT_TO"]
 $sessionSecret = $envMap["SESSION_TOKEN_SECRET"]
 $password = $envMap["INTERNAL_ACCESS_PASSWORD"]
 $allowedOrigins = $envMap["ALLOWED_ORIGINS"]
@@ -220,6 +221,13 @@ if (-not [string]::IsNullOrWhiteSpace($sheetId)) {
 }
 if (-not [string]::IsNullOrWhiteSpace($mailFrom)) {
     $envVars += "MAIL_FROM_ADDRESS=$mailFrom"
+}
+# Diverts every request email to one address instead of the Account or Country
+# Manager. Announced rather than passed quietly, because a deploy that silently
+# stops delivering to the people the tool exists to email is worth noticing.
+if (-not [string]::IsNullOrWhiteSpace($mailRedirect)) {
+    $envVars += "MAIL_REDIRECT_TO=$mailRedirect"
+    Write-Host "MAIL_REDIRECT_TO is set: every request email goes to $mailRedirect, not to the AM or CM."
 }
 # Without this the CORS middleware is never installed, so the service answers
 # only same-origin callers and a widget embedded on another domain fails in the
