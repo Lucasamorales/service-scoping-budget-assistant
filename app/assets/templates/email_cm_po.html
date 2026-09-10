@@ -8,12 +8,13 @@
     {{requester_name}}       "Robin Morrison"
     {{requester_role}}       "Marketing Executive"
     {{country}}              "United Kingdom"
-    {{branch}}               "Acme Basingstoke"
+    {{branch}}               "Acme Basingstoke"    (falls back to the country)
+    {{venue_line}}           "Acme Basingstoke, United Kingdom"
+    {{requested_by}}         "Robin Morrison, Marketing Executive at Acme Basingstoke"
     {{service_name}}         "Billboards"          (item.name — headline)
     {{service_category}}     "Photography"         (item.section — the bracketed part)
     {{service}}              "Billboards (Photography)"
-    {{status_raw}}           "On demand"
-    {{status_meaning}}       "This is something we need to quote"
+    {{status_label}}         "Quote required"      (as the chat window names the verdict)
     {{amount}}               "£350"                (app.core.money.format_money — symbol, no trailing zeros)
     {{context}}              free text from the requester — MUST BE HTML-ESCAPED (see note)
     {{reference}}            conversation id (UUID)
@@ -71,7 +72,7 @@
 <tr><td style="background-color:#E7F1F9;border:1px solid #A9CFE8;border-radius:999px;padding:5px 11px;font-family:'Inter','Segoe UI',Tahoma,sans-serif;font-size:11px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;white-space:nowrap;color:#1D5D8C;" bgcolor="#E7F1F9">Quote required</td></tr>
 </table>
 <h1 style="margin:0 0 6px;font-family:'Inter Display Black','Inter','Segoe UI',Tahoma,sans-serif;font-size:34px;line-height:1.06;font-weight:900;letter-spacing:-0.005em;text-transform:uppercase;color:#14213B;">{{service_name}}</h1>
-<p style="margin:0;font-family:'Inter','Segoe UI',Tahoma,sans-serif;font-size:14px;line-height:1.45;color:#5A6E85;">{{service_category}} &middot; asked for by {{requester_name}} at {{branch}}</p>
+<p style="margin:0;font-family:'Inter','Segoe UI',Tahoma,sans-serif;font-size:14px;line-height:1.45;color:#5A6E85;">{{service_category}} &middot; asked for by {{requested_by}}</p>
 </td>
 </tr>
 
@@ -90,7 +91,7 @@
 <td style="padding:24px 26px 4px;">
 <p style="margin:0 0 9px;font-family:'Inter','Segoe UI',Tahoma,sans-serif;font-size:11px;font-weight:700;letter-spacing:0.12em;text-transform:uppercase;color:#5A6E85;">Why they are asking</p>
 <p style="margin:0 0 10px;font-family:'Inter','Segoe UI',Tahoma,sans-serif;font-size:16px;line-height:1.6;color:#14213B;">{{context}}</p>
-<p style="margin:0;font-family:'Inter','Segoe UI',Tahoma,sans-serif;font-size:13px;line-height:1.5;color:#8A9BAD;">{{requester_name}}, {{requester_role}}</p>
+<p style="margin:0;font-family:'Inter','Segoe UI',Tahoma,sans-serif;font-size:13px;line-height:1.5;color:#8A9BAD;">{{requester_line}}</p>
 </td>
 </tr>
 
@@ -104,15 +105,15 @@
 </tr>
 <tr>
 <td width="112" style="padding:11px 12px 11px 0;border-bottom:1px solid #E8EEF4;font-family:'Inter','Segoe UI',Tahoma,sans-serif;font-size:13px;line-height:1.4;color:#8A9BAD;">Status</td>
-<td style="padding:11px 0;border-bottom:1px solid #E8EEF4;font-family:'Inter','Segoe UI',Tahoma,sans-serif;font-size:14px;line-height:1.4;color:#2C3D50;">{{status_raw}} &mdash; {{status_meaning}}</td>
+<td style="padding:11px 0;border-bottom:1px solid #E8EEF4;font-family:'Inter','Segoe UI',Tahoma,sans-serif;font-size:14px;line-height:1.4;color:#2C3D50;">{{status_label}}</td>
 </tr>
 <tr>
 <td width="112" style="padding:11px 12px 11px 0;border-bottom:1px solid #E8EEF4;font-family:'Inter','Segoe UI',Tahoma,sans-serif;font-size:13px;line-height:1.4;color:#8A9BAD;">Requester</td>
-<td style="padding:11px 0;border-bottom:1px solid #E8EEF4;font-family:'Inter','Segoe UI',Tahoma,sans-serif;font-size:14px;line-height:1.4;color:#2C3D50;">{{requester_name}}, {{requester_role}}</td>
+<td style="padding:11px 0;border-bottom:1px solid #E8EEF4;font-family:'Inter','Segoe UI',Tahoma,sans-serif;font-size:14px;line-height:1.4;color:#2C3D50;">{{requester_line}}</td>
 </tr>
 <tr>
 <td width="112" style="padding:11px 12px 11px 0;border-bottom:1px solid #E8EEF4;font-family:'Inter','Segoe UI',Tahoma,sans-serif;font-size:13px;line-height:1.4;color:#8A9BAD;">Venue</td>
-<td style="padding:11px 0;border-bottom:1px solid #E8EEF4;font-family:'Inter','Segoe UI',Tahoma,sans-serif;font-size:14px;line-height:1.4;color:#2C3D50;">{{branch}}, {{country}}</td>
+<td style="padding:11px 0;border-bottom:1px solid #E8EEF4;font-family:'Inter','Segoe UI',Tahoma,sans-serif;font-size:14px;line-height:1.4;color:#2C3D50;">{{venue_line}}</td>
 </tr>
 </table>
 </td>

@@ -10,13 +10,13 @@ Free of charge to the venue. Nothing to approve and no PO to raise.
 
 WHY THEY ARE ASKING
 {{context}}
--- {{requester_name}}, {{requester_role}}
+-- {{requester_line}}
 
 DETAILS
 Service    {{service}}
-Status     {{status_raw}} -- {{status_meaning}}
-Requester  {{requester_name}}, {{requester_role}}
-Venue      {{branch}}, {{country}}
+Status     {{status_label}}
+Requester  {{requester_line}}
+Venue      {{venue_line}}
 
 ATTACHED
 {{attachment_filename}} -- the whole conversation that produced this request.

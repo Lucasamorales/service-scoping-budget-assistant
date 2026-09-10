@@ -100,6 +100,29 @@ def render_text(kind: str, values: dict[str, str]) -> str:
     return _fill(body, values, escape=False).strip() + "\n"
 
 
+_DOC_COMMENT = re.compile(r"\A\s*<!--.*?-->\s*", re.DOTALL)
+"""The token reference each template opens with.
+
+Written for whoever edits the file, and stripped before substitution rather
+than after: left in, it is filled with real values, so every email carried a
+second invisible copy of the requester's context and about 1.5KB of comment.
+"""
+
+_EMPTY_IMG = re.compile(r"<img\b[^>]*\bsrc=\"\"[^>]*>", re.IGNORECASE)
+_EMPTY_LINK = re.compile(r"<link\b[^>]*\bhref=\"\"[^>]*>\s*", re.IGNORECASE)
+
+
 def render_html(kind: str, values: dict[str, str]) -> str:
-    """The HTML body. Every substituted value is escaped."""
-    return _fill(_template(kind, "html"), values, escape=True)
+    """The HTML body. Every substituted value is escaped.
+
+    An asset with no URL is removed rather than left with an empty one. Both
+    are optional — the templates carry the whole hierarchy in text — but
+    ``src=""`` is not the absence of an image: a mail client draws a broken
+    icon for it, and one of those in the header band is worse than no logo at
+    all. ``href=""`` on the stylesheet resolves to the document itself, which
+    then gets fetched and parsed as CSS.
+    """
+    source = _DOC_COMMENT.sub("", _template(kind, "html"), count=1)
+    html_body = _fill(source, values, escape=True)
+    html_body = _EMPTY_IMG.sub("", html_body)
+    return _EMPTY_LINK.sub("", html_body)

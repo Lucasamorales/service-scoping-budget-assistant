@@ -33,7 +33,30 @@ _PREHEADER_CAP = 90
 first thing worth losing — everything before it has already said what the mail
 is."""
 
-_UNKNOWN = "unknown"
+_UNKNOWN = "Not recorded"
+"""What a value nobody supplied is called.
+
+Not "unknown" in lower case, which reads as though the system had looked and
+failed. Nobody typed it: the sign-in leaves the venue optional.
+"""
+
+_STATUS_LABEL = {
+    "in_scope": "In scope",
+    "quote_required": "Quote required",
+    "local": "Local",
+    "out_of_scope": "Out of scope",
+}
+"""How a verdict is named to the person receiving the mail.
+
+The documents carry two other forms and neither can go in front of a country
+manager. ``status_raw`` is the spreadsheet's own code — for two of the four
+verdicts that is the single letter ``Y`` or ``N``. ``status_meaning`` is the
+corpus's internal gloss, and the in-scope one does not parse: "We can do it and
+is within our scope".
+
+These are the same four words the chat window puts on its verdict pill, so a
+request reads the same wherever somebody meets it.
+"""
 
 
 @dataclass(frozen=True, slots=True)
@@ -143,15 +166,24 @@ def _values(
         "requester_name": requester or _UNKNOWN,
         "requester_role": role or "",
         "country": country or _UNKNOWN,
-        "branch": branch or _UNKNOWN,
+        # Falls back to the country so the subject still says where this came
+        # from. A subject reading "· Not recorded" tells nobody anything.
+        "branch": branch or country or _UNKNOWN,
         "service": service,
         # Split, because the design sets the item as the headline and the
         # section as the line beneath it. display_name joins the two for the
         # details table, where one line is what is wanted.
         "service_name": item.item if item else service,
         "service_category": item.section if item else "",
+        "status_label": _STATUS_LABEL.get(item.status.value, "") if item else "",
         "status_raw": item.status_raw.strip() if item else "",
         "status_meaning": item.status_meaning if item else "",
+        # The venue as a person would say it, rather than two fields joined by
+        # a comma whatever they happen to hold. Without this an unset branch
+        # printed "unknown, United Kingdom".
+        "venue_line": ", ".join(part for part in (branch, country) if part) or _UNKNOWN,
+        "requester_line": _requested_by(requester, role, None),
+        "requested_by": _requested_by(requester, role, branch or country),
         "context": (note or "").strip(),
         "reference": conversation_id or _UNKNOWN,
         "from_address": from_address,
@@ -165,6 +197,13 @@ def _values(
     if quote_amount is not None:
         values["amount"] = format_money(quote_amount, currency)
     return values
+
+
+def _requested_by(requester: str | None, role: str | None, where: str | None) -> str:
+    """"Alex Fenn, Marketing Executive at Acme Basingstoke", minus whatever is
+    missing — never "at unknown"."""
+    who = ", ".join(part for part in (requester, role) if part) or _UNKNOWN
+    return f"{who} at {where}" if where else who
 
 
 def _preheader(kind: str, values: dict[str, str]) -> str:

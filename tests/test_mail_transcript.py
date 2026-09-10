@@ -390,3 +390,67 @@ class TestPdfRendering:
     def test_an_empty_conversation_still_renders(self) -> None:
         data = render_transcript_pdf((), title="t", kind="email_am")
         assert data.startswith(b"%PDF")
+
+
+class TestNothingInternalReachesTheReader:
+    """The recipient is a country manager, not an operator of this system."""
+
+    def _draft(self, **kw):
+        base = dict(
+            kind="email_am",
+            contact=_contact(),
+            item=_item(),
+            requester="Alex",
+            role="Marketing Executive",
+            country="United Kingdom",
+            branch="Acme London",
+            quote_amount=None,
+            currency="GBP",
+            note="Needed for the reopening.",
+        )
+        return build_request_email(**{**base, **kw})
+
+    def test_the_verdict_is_named_the_way_the_chat_names_it(self) -> None:
+        """Not the spreadsheet's own code. Two of the four verdicts are stored
+        as the single letter "Y" or "N", and the in-scope gloss beside it does
+        not parse: "We can do it and is within our scope"."""
+        draft = self._draft()
+        for part in (draft.body, draft.html):
+            assert "In scope" in part
+            assert "Y —" not in part
+            assert "Y --" not in part
+            assert "and is within our scope" not in part
+
+    def test_a_missing_venue_is_not_called_unknown(self) -> None:
+        """The sign-in leaves the branch optional, so this is the common case,
+        and "unknown, United Kingdom" reads as a fault rather than a blank."""
+        draft = self._draft(branch=None)
+        for part in (draft.body, draft.html):
+            assert "unknown" not in part.lower()
+            assert "United Kingdom" in part
+        assert "at unknown" not in draft.html
+
+    def test_a_missing_role_leaves_no_dangling_punctuation(self) -> None:
+        draft = self._draft(role=None)
+        assert "Alex," not in draft.body
+
+    def test_an_absent_asset_is_removed_rather_than_left_empty(self) -> None:
+        """src="" is not the absence of an image — a mail client draws a broken
+        icon for it, and one of those in the header band is worse than no logo.
+        """
+        draft = self._draft(asset_base_url="")
+        assert 'src=""' not in draft.html
+        assert 'href=""' not in draft.html
+        assert "<img" not in draft.html
+
+    def test_an_asset_base_puts_the_logo_back(self) -> None:
+        draft = self._draft(asset_base_url="https://assistant.example.com")
+        assert "https://assistant.example.com/widget/assets/acme-logo-email.png" in draft.html
+
+    def test_the_templates_own_documentation_is_not_sent(self) -> None:
+        """It is a token reference for whoever edits the file. Left in, it gets
+        filled with real values — a second, invisible copy of everything the
+        requester typed."""
+        draft = self._draft()
+        assert "MUST BE HTML-ESCAPED" not in draft.html
+        assert draft.html.count("Needed for the reopening.") == 1
