@@ -328,3 +328,51 @@ class TestCors:
         )
         assert response.status_code == 403
         assert "access-control-allow-origin" not in response.headers
+
+
+class TestNoteOverHttp:
+    """The context box, across the wire.
+
+    Covered here as well as in the flow tests because this is the hop where a
+    field goes missing quietly: the pipeline can accept a note perfectly well
+    while the request model drops it, and every server-side test would still
+    pass.
+    """
+
+    def test_a_note_is_accepted_and_carried(self, client: TestClient) -> None:
+        first = ask(client, "can we order some merch")
+        assert any(a["kind"] == "note" for a in first["actions"]), (
+            "the send CTA should ask for context"
+        )
+
+        response = client.post(
+            "/api/chat",
+            json={
+                "message": "Yes",
+                "state": first["state"],
+                "note": "Launch event in March, we need these for the opening.",
+            },
+        )
+
+        assert response.status_code == 200, response.text
+
+    def test_the_action_carries_its_prompt_and_example(self, client: TestClient) -> None:
+        answer = ask(client, "can we order some merch")
+
+        yes = next(a for a in answer["actions"] if a["id"] == "confirm_yes")
+        assert yes["kind"] == "note"
+        assert yes["prompt"]
+        assert yes["placeholder"]
+        assert yes["message"] == "Yes", "the confirmation stays a plain yes"
+
+    def test_an_overlong_note_is_refused_rather_than_forwarded(
+        self, client: TestClient
+    ) -> None:
+        first = ask(client, "can we order some merch")
+
+        response = client.post(
+            "/api/chat",
+            json={"message": "Yes", "state": first["state"], "note": "x" * 5000},
+        )
+
+        assert response.status_code == 422

@@ -321,6 +321,55 @@ button.new-chat:focus-visible {
 
 .candidate:hover { border-color: var(--accent); }
 
+/* The context box, offered under a reply that can send an email. Sits where
+   the Yes/No pair was, because it replaces that decision rather than adding to
+   it: there is no way to send without filling it in. */
+.note-box {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.note-prompt {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--body);
+}
+
+.note-input {
+  width: 100%;
+  resize: vertical;
+  min-height: 68px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: var(--input-bg);
+  color: var(--text);
+  font: inherit;
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.note-input::placeholder {
+  color: var(--text-faint);
+}
+
+.note-input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.note-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.note-send[disabled] {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
 .candidate:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;

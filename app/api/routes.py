@@ -189,6 +189,7 @@ def chat(payload: ChatRequest, request: Request) -> ChatResponse:
         _state_from(payload, pipeline, settings),
         history=payload.history_turns(),
         identity=_session_identity(request),
+        note=payload.note,
     )
     return ChatResponse.from_answer(
         answer,
@@ -210,6 +211,7 @@ def chat_stream(payload: ChatRequest, request: Request) -> StreamingResponse:
             payload.history_turns(),
             identity=_session_identity(request),
             settings=settings,
+            note=payload.note,
         ),
         media_type="text/event-stream",
         headers={
@@ -257,12 +259,13 @@ def _events(
     *,
     identity: SessionIdentity | None = None,
     settings: Settings,
+    note: str | None = None,
 ) -> Iterator[str]:
     """Server-sent events for one turn."""
     start: StreamStart | None = None
     identity = identity or SessionIdentity()
 
-    for event in pipeline.stream(message, state, history, identity=identity):
+    for event in pipeline.stream(message, state, history, identity=identity, note=note):
         match event:
             case StreamStart():
                 start = event

@@ -392,6 +392,7 @@ class Pipeline:
         history: tuple[HistoryTurn, ...],
         identity: SessionIdentity,
         conversation_id: str | None = None,
+        note: str | None = None,
     ) -> _Turn:
         """Plan and execute one turn, with the real session identity."""
         route = self.router.route(question, state)
@@ -415,6 +416,7 @@ class Pipeline:
             confirm=confirm,
             mailer=self.mailer,
             conversation_id=conversation_id or state.conversation_id,
+            note=note,
         )
         return _Turn(route, plan, resolution, retrieval, facts)
 
@@ -425,12 +427,13 @@ class Pipeline:
         history: tuple[HistoryTurn, ...] = (),
         *,
         identity: SessionIdentity | None = None,
+        note: str | None = None,
     ) -> Answer:
         state = state or ConversationState()
         identity = identity or SessionIdentity()
         conversation_id = state.conversation_id or new_conversation_id(identity.subject)
 
-        turn = self._run_turn(question, state, history, identity, conversation_id)
+        turn = self._run_turn(question, state, history, identity, conversation_id, note)
         worded = word_answer(
             self._composer(),
             turn.facts,
@@ -466,6 +469,7 @@ class Pipeline:
         history: tuple[HistoryTurn, ...] = (),
         *,
         identity: SessionIdentity | None = None,
+        note: str | None = None,
     ) -> Iterator[StreamStart | TextPiece | StreamEnd]:
         """Answer incrementally: one :class:`StreamStart`, then text, then one
         :class:`StreamEnd`.
@@ -474,7 +478,7 @@ class Pipeline:
         identity = identity or SessionIdentity()
         conversation_id = state.conversation_id or new_conversation_id(identity.subject)
 
-        turn = self._run_turn(question, state, history, identity, conversation_id)
+        turn = self._run_turn(question, state, history, identity, conversation_id, note)
         next_state = _carry_forward(
             turn.route,
             turn.plan,

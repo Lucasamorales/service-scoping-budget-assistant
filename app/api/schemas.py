@@ -37,6 +37,7 @@ from app.tools.flows import PendingAction
 __all__ = [
     "MAX_HISTORY_MESSAGES",
     "MAX_MESSAGE_CHARS",
+    "MAX_NOTE_CHARS",
     "ActionModel",
     "CandidateOption",
     "ChatRequest",
@@ -48,6 +49,14 @@ __all__ = [
     "StateModel",
     "Verdict",
 ]
+
+MAX_NOTE_CHARS = 1000
+"""Cap on the context typed into a note action.
+
+Half a message, because this is a paragraph for a colleague to read in an
+email, not a document. Long enough that nobody hits it writing what a request
+is for; short enough that the email stays readable and a paste of the wrong
+thing is refused rather than forwarded."""
 
 MAX_MESSAGE_CHARS = 2000
 """Hard cap on a single user message."""
@@ -159,6 +168,17 @@ class ChatRequest(Base):
     state: StateModel | None = None
     history: tuple[HistoryMessage, ...] = Field(default=(), max_length=MAX_HISTORY_MESSAGES)
 
+    note: str | None = Field(default=None, max_length=MAX_NOTE_CHARS)
+    """Context typed into a ``note`` action, on its way to the email.
+
+    Separate from ``message`` on purpose. Confirmation is decided by reading
+    the message as a yes or a no, and free prose about a launch event is
+    neither — carrying the note here keeps that check meaning what it says.
+
+    It never reaches the sealed pending action, so nothing typed here can
+    change who is emailed or for how much.
+    """
+
     def history_turns(self) -> tuple[HistoryTurn, ...]:
         return tuple(message.to_turn() for message in self.history)
 
@@ -179,13 +199,20 @@ class CandidateOption(Base):
 
 
 class ActionModel(Base):
-    """Server-driven button. ``message`` actions send that text as the next turn."""
+    """Server-driven button.
+
+    ``message`` sends that text as the next turn. ``link`` opens a URL. ``note``
+    asks for context first and sends it beside the confirmation, so the message
+    itself stays a plain "Yes".
+    """
 
     id: str
     label: str
-    kind: Literal["message", "link"] = "message"
+    kind: Literal["message", "link", "note"] = "message"
     message: str | None = None
     url: str | None = None
+    prompt: str | None = None
+    placeholder: str | None = None
 
     @classmethod
     def from_action(cls, action: Action) -> ActionModel:
@@ -195,6 +222,8 @@ class ActionModel(Base):
             kind=action.kind,
             message=action.message,
             url=action.url,
+            prompt=action.prompt,
+            placeholder=action.placeholder,
         )
 
 

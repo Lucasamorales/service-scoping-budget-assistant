@@ -212,12 +212,14 @@ class AcmeChat extends HTMLElement {
     this.#root.querySelector("[data-empty]")?.remove();
   }
 
-  async #ask(message: string): Promise<void> {
+  async #ask(message: string, note?: string): Promise<void> {
     if (this.#busy) return;
     this.#busy = true;
     this.#setSending(true);
     this.#clearEmpty();
-    this.#appendUser(message);
+    // The context, not the bare "Yes", because that is what the person
+    // actually wrote and what the recipient will read.
+    this.#appendUser(note?.trim() || message);
     const assistant = this.#appendAssistantPlaceholder();
 
     this.#abort = new AbortController();
@@ -296,6 +298,7 @@ class AcmeChat extends HTMLElement {
           },
         },
         this.#abort.signal,
+        note,
       );
     } catch (err) {
       dropCaret();
@@ -424,6 +427,10 @@ class AcmeChat extends HTMLElement {
           : label;
       button.textContent = label;
       button.addEventListener("click", () => {
+        if (action.kind === "note") {
+          this.#openNoteBox(host, action, message);
+          return;
+        }
         host.querySelectorAll("button").forEach((el) => {
           (el as HTMLButtonElement).disabled = true;
         });
@@ -431,6 +438,69 @@ class AcmeChat extends HTMLElement {
       });
       host.append(button);
     });
+  }
+
+  /** Ask for context before sending, and refuse to send without it.
+   *
+   * The server enforces the same rule — this is the fast half of it, so nobody
+   * makes a round trip to be told they left the box empty.
+   */
+  #openNoteBox(host: HTMLElement, action: ChatAction, message: string): void {
+    host.replaceChildren();
+    host.className = "note-box";
+
+    const label = document.createElement("label");
+    label.className = "note-prompt";
+    label.textContent = action.prompt || "Add some context for this request";
+
+    const field = document.createElement("textarea");
+    field.className = "note-input";
+    field.rows = 3;
+    field.placeholder = action.placeholder || "";
+    field.maxLength = 1000;
+    label.htmlFor = field.id = `note-${action.id}`;
+
+    const send = document.createElement("button");
+    send.type = "button";
+    send.className = "candidate action note-send";
+    send.textContent = "Send it";
+    send.disabled = true;
+
+    const cancel = document.createElement("button");
+    cancel.type = "button";
+    cancel.className = "candidate action note-cancel";
+    cancel.textContent = "Cancel";
+
+    const row = document.createElement("div");
+    row.className = "note-actions";
+    row.append(send, cancel);
+
+    field.addEventListener("input", () => {
+      send.disabled = field.value.trim().length === 0;
+    });
+    field.addEventListener("keydown", (event) => {
+      // Enter sends, newline needs a modifier — a note is a sentence, not a
+      // document, and reaching for the mouse to send one is friction.
+      if (event.key === "Enter" && !event.shiftKey) {
+        event.preventDefault();
+        if (!send.disabled) send.click();
+      }
+    });
+    send.addEventListener("click", () => {
+      const note = field.value.trim();
+      if (!note) return;
+      send.disabled = true;
+      cancel.disabled = true;
+      field.disabled = true;
+      void this.#ask(message, note);
+    });
+    cancel.addEventListener("click", () => {
+      host.replaceChildren();
+      void this.#ask("No");
+    });
+
+    host.append(label, field, row);
+    field.focus();
   }
 
   #appendUser(message: string): void {

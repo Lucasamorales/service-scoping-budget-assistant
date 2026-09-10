@@ -41,7 +41,6 @@ from app.store.contacts import (
 from app.store.mail import Mailer
 from app.store.quote import RateCard
 from app.store.roster import RosterStore
-from app.tools.actions import yes_no_actions
 from app.tools.budget import answer_budget
 from app.tools.catalog import list_services
 from app.tools.flows import (
@@ -50,6 +49,7 @@ from app.tools.flows import (
     SessionIdentity,
     confirm_pending,
     enrich_scope_flow,
+    send_actions,
 )
 from app.tools.quote import QuoteOutcome, quote_for
 
@@ -101,6 +101,7 @@ class Executor:
         retrieval: RetrievalResult | None = None,
         confirm: PendingAction | None = None,
         mailer: Mailer | None = None,
+        note: str | None = None,
         conversation_id: str | None = None,
     ) -> FactPack:
         pack = FactPack(plan=plan)
@@ -123,7 +124,7 @@ class Executor:
 
         if plan.wants(Capability.MAIL) and confirm is not None and mailer is not None:
             pack = self._mail(
-                pack, question, confirm, identity, history, mailer, conversation_id
+                pack, question, confirm, identity, history, mailer, conversation_id, note
             )
 
         if plan.needs_a_service:
@@ -264,7 +265,7 @@ class Executor:
             contact = self.contacts.for_country(identity.country, role=ROLE_ACCOUNT_MANAGER)
             return FlowResult(
                 text=outcome.text,
-                actions=yes_no_actions(yes_label="Yes, email my AM"),
+                actions=send_actions("email_am_variable"),
                 pending=PendingAction(
                     kind="email_am_variable",
                     service_id=item.item_id,
@@ -275,7 +276,7 @@ class Executor:
         contact = self.contacts.for_country(identity.country, role=ROLE_COUNTRY_MANAGER)
         return FlowResult(
             text=outcome.text,
-            actions=yes_no_actions(yes_label="Yes, request a PO"),
+            actions=send_actions("email_cm_po"),
             pending=PendingAction(
                 kind="email_cm_po",
                 service_id=item.item_id,
@@ -405,6 +406,7 @@ class Executor:
         history: tuple[HistoryTurn, ...],
         mailer: Mailer,
         conversation_id: str | None,
+        note: str | None = None,
     ) -> FactPack:
         flow = confirm_pending(
             question,
@@ -416,6 +418,7 @@ class Executor:
             history=history,
             conversation_id=conversation_id,
             audit_log=self.audit_log,
+            note=note,
         )
         return self._apply_flow(pack.with_satisfied(Capability.MAIL), flow)
 

@@ -51,6 +51,7 @@ def build_request_email(
     audit_log: AuditStore | None = None,
     role: str | None = None,
     current_message: str | None = None,
+    note: str | None = None,
 ) -> MailDraft:
     service = item.display_name if item else "a marketing request"
     subject = {
@@ -97,11 +98,16 @@ def build_request_email(
         else "The full conversation is attached as a text file (PDF could not be built)."
     )
 
-    body_lines = [
-        *lines,
-        "",
-        ask,
-    ]
+    body_lines = [*lines]
+    if note and note.strip():
+        # Under its own heading, above the ask, because it is the one part of
+        # this email a person wrote deliberately for the reader.
+        #
+        # Inserted as plain text into a plain-text body — Resend is sent
+        # `"text"`, not `"html"`. If this email ever grows an HTML template,
+        # this value is untrusted user input and has to be escaped there.
+        body_lines.extend(["", "Context from the requester:", note.strip()])
+    body_lines.extend(["", ask])
     if conversation_id:
         body_lines.append(f"Reference: {conversation_id}")
     body_lines.extend(["", attached, "", "— Acme Scoping Assistant"])

@@ -14,9 +14,12 @@ export type ConversationState = {
 export type ChatAction = {
   id: string;
   label: string;
-  kind: "message" | "link";
+  /** `note` opens a box for context and sends it beside the confirmation. */
+  kind: "message" | "link" | "note";
   message?: string | null;
   url?: string | null;
+  prompt?: string | null;
+  placeholder?: string | null;
 };
 
 export type Verdict = {
@@ -106,6 +109,7 @@ export async function streamChat(
   token: string | null,
   handlers: StreamHandlers,
   signal?: AbortSignal,
+  note?: string | null,
 ): Promise<void> {
   const headers: Record<string, string> = { "Content-Type": "application/json" };
   if (token) headers.Authorization = `Bearer ${token}`;
@@ -113,7 +117,7 @@ export async function streamChat(
   const response = await fetch(`${apiBase}/api/chat/stream`, {
     method: "POST",
     headers,
-    body: JSON.stringify({ message, state, history }),
+    body: JSON.stringify({ message, state, history, note: note || null }),
     signal,
   });
 

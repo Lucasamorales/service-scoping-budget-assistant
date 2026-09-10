@@ -133,23 +133,37 @@ class TestQuoteFlow:
 
 
 class TestConfirmMail:
+    ALEX = SessionIdentity(
+        subject="Alex", country="United Kingdom", branch="Acme Milton Keynes"
+    )
+
+    def test_a_yes_without_context_asks_for_it_rather_than_sending(
+        self, flow_pipeline: Pipeline
+    ) -> None:
+        """Context is required, and the API is what enforces it.
+
+        The widget disables its own submit until something is typed, but the
+        widget is not the only way to reach this endpoint, and a rule kept only
+        by a browser is not a rule.
+        """
+        first = flow_pipeline.answer("campaign wrap-ups", identity=self.ALEX)
+        second = flow_pipeline.answer("Yes", first.next_state, identity=self.ALEX)
+
+        assert "context" in second.text.lower()
+        assert second.next_state.pending_action_kind == "email_am", "the CTA stays alive"
+        events = flow_pipeline.audit_log.read(second.next_state.conversation_id)  # type: ignore[union-attr]
+        assert not any(event.payload.get("email") for event in events), "nothing was sent"
+
     def test_yes_produces_draft_when_mail_not_configured(self, flow_pipeline: Pipeline) -> None:
         first = flow_pipeline.answer(
             "campaign wrap-ups",
-            identity=SessionIdentity(
-                subject="Alex",
-                country="United Kingdom",
-                branch="Acme Milton Keynes",
-            ),
+            identity=self.ALEX,
         )
         second = flow_pipeline.answer(
             "Yes",
             first.next_state,
-            identity=SessionIdentity(
-                subject="Alex",
-                country="United Kingdom",
-                branch="Acme Milton Keynes",
-            ),
+            identity=self.ALEX,
+            note="Launch event in March, need these for the opening.",
         )
         assert second.source == DETERMINISTIC
         assert second.next_state.pending_action_kind is None
@@ -199,3 +213,58 @@ class TestAudit:
         events = flow_pipeline.audit_log.read(answer.next_state.conversation_id)  # type: ignore[union-attr]
         assert events
         assert events[-1].kind == "turn"
+
+
+class TestRequestContext:
+    """The note typed into a send CTA, on its way to the email.
+
+    Carried beside the confirmation rather than as it: the message stays "Yes"
+    so the affirmative check keeps meaning what it says, and free prose about a
+    launch event never has to parse as consent.
+    """
+
+    ALEX = SessionIdentity(
+        subject="Alex", country="United Kingdom", branch="Acme Milton Keynes"
+    )
+    CONTEXT = "Launch event in March, we need these for the opening."
+
+    def test_the_context_reaches_the_email_body(self, flow_pipeline: Pipeline) -> None:
+        first = flow_pipeline.answer("campaign wrap-ups", identity=self.ALEX)
+        second = flow_pipeline.answer(
+            "Yes", first.next_state, identity=self.ALEX, note=self.CONTEXT
+        )
+
+        events = flow_pipeline.audit_log.read(second.next_state.conversation_id)  # type: ignore[union-attr]
+        email = next(e.payload["email"] for e in reversed(events) if e.payload.get("email"))
+        assert email["note"] == self.CONTEXT
+
+    def test_whitespace_alone_is_not_context(self, flow_pipeline: Pipeline) -> None:
+        """Otherwise the requirement is satisfied by pressing space."""
+        first = flow_pipeline.answer("campaign wrap-ups", identity=self.ALEX)
+        second = flow_pipeline.answer(
+            "Yes", first.next_state, identity=self.ALEX, note="   \n  "
+        )
+
+        assert "context" in second.text.lower()
+        assert second.next_state.pending_action_kind == "email_am"
+
+    def test_the_send_cta_offers_a_box_to_type_it_in(self, flow_pipeline: Pipeline) -> None:
+        answer = flow_pipeline.answer("campaign wrap-ups", identity=self.ALEX)
+
+        yes = next(a for a in answer.actions if a.id == "confirm_yes")
+        no = next(a for a in answer.actions if a.id == "confirm_no")
+        assert yes.kind == "note", "the yes opens a box rather than firing"
+        assert yes.prompt and "context" in yes.prompt.lower()
+        assert yes.placeholder, "an example, because people copy what they are shown"
+        assert yes.message == "Yes", "the confirmation itself stays a plain yes"
+        assert no.kind == "message", "declining needs no context"
+
+    def test_a_quote_cta_asks_for_context_too(self, flow_pipeline: Pipeline) -> None:
+        """Every path that sends an email, not just the purchase order."""
+        answer = flow_pipeline.answer(
+            "can we order some merch",
+            identity=SessionIdentity(country="Canada", branch="Acme Oakville"),
+        )
+
+        yes = next(a for a in answer.actions if a.id == "confirm_yes")
+        assert yes.kind == "note"

@@ -34,6 +34,7 @@ __all__ = [
     "confirm_pending",
     "enrich_scope_flow",
     "is_affirmative",
+    "send_actions",
 ]
 
 _YES_RE = re.compile(
@@ -47,6 +48,46 @@ _NO_RE = re.compile(
 _RETRACTION_RE = re.compile(r"\b(?:don'?t|do not|cancel|stop|wait|hold on|hold off)\b")
 """An affirmative followed by a retraction is treated as neither, so the
 assistant asks again rather than acting on "yes, but don't send it yet"."""
+
+
+_YES_LABEL = {
+    "email_am": "Yes, ping my AM",
+    "email_am_variable": "Yes, email my AM",
+    "email_cm_po": "Yes, request a PO",
+}
+
+_ROLE_WORD = {
+    "email_cm_po": "your Country Manager",
+    "email_am": "your Account Manager",
+    "email_am_variable": "your Account Manager",
+}
+
+_CONTEXT_PROMPT_DEFAULT = "Add some context for this request"
+
+_CONTEXT_PROMPT = {
+    "email_cm_po": "Add some context for this request",
+    "email_am": "Add some context for this request",
+    # A manual quote is the one where the reader has to act on the detail
+    # rather than just approve it, so the ask names what they need.
+    "email_am_variable": "Add some context — what do they need to know to price it?",
+}
+
+_CONTEXT_PLACEHOLDER = "e.g. New branch opening in March, we need these for the launch event"
+
+
+def send_actions(kind: str) -> tuple[Action, ...]:
+    """The Yes/No pair for a CTA that would send an email.
+
+    One place decides the label, the prompt and the example, because the labels
+    were previously written out at five call sites across two modules — and
+    adding the context box to four of them left the fifth, the purchase order
+    itself, still firing without asking.
+    """
+    return yes_no_actions(
+        yes_label=_YES_LABEL.get(kind, "Yes, send it"),
+        prompt=_CONTEXT_PROMPT.get(kind, _CONTEXT_PROMPT_DEFAULT),
+        placeholder=_CONTEXT_PLACEHOLDER,
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -133,8 +174,10 @@ def confirm_pending(
     history: tuple[HistoryTurn, ...],
     conversation_id: str | None = None,
     audit_log: AuditStore | None = None,
+    note: str | None = None,
 ) -> FlowResult:
     answer = is_affirmative(message)
+    context = (note or "").strip()
 
     def send(ready: PendingAction) -> FlowResult:
         return _send_pending(
@@ -147,6 +190,7 @@ def confirm_pending(
             conversation_id=conversation_id,
             audit_log=audit_log,
             message=message,
+            note=context,
         )
 
     if answer is False:
@@ -176,7 +220,30 @@ def confirm_pending(
             return _ask_country(pending, contacts, again=False)
         return send(replace(pending, recipient_country=matched, needs_country=False))
 
+    # Nothing goes out without context. Enforced here as well as in the client,
+    # because a rule the browser keeps is not a rule: the API is the thing that
+    # sends the email, and it is reachable without the widget.
+    #
+    # Checked after the country, so somebody who has to answer "which country?"
+    # is not also told off about a note in the same breath.
+    if not context:
+        return _ask_context(pending, contacts)
+
     return send(pending)
+
+
+def _ask_context(pending: PendingAction, contacts: ContactDirectory) -> FlowResult:
+    """Keep the CTA alive and ask for the context that has to travel with it."""
+    contact = _recipient_for(pending, contacts)
+    who = contact.name if contact else _ROLE_WORD.get(pending.kind, "them")
+    return FlowResult(
+        text=(
+            f"Before I send this, give {who} a line of context — what it's for, "
+            "and anything they need to know."
+        ),
+        actions=send_actions(pending.kind),
+        pending=pending,
+    )
 
 
 def _recipient_for(pending: PendingAction, contacts: ContactDirectory) -> Contact | None:
@@ -194,7 +261,7 @@ def _ask_confirm(pending: PendingAction, contacts: ContactDirectory) -> FlowResu
             f"I still have that email ready{who}. "
             "Reply **Yes** to send it, or **No** to cancel."
         ),
-        actions=yes_no_actions(yes_label="Yes, send it"),
+        actions=send_actions(pending.kind),
         pending=pending,
     )
 
@@ -237,6 +304,7 @@ def _send_pending(
     conversation_id: str | None = None,
     audit_log: AuditStore | None = None,
     message: str | None = None,
+    note: str | None = None,
 ) -> FlowResult:
     country = pending.recipient_country or identity.country
     role = (
@@ -263,6 +331,7 @@ def _send_pending(
         audit_log=audit_log,
         role=identity.role,
         current_message=message,
+        note=note,
     )
     result = send_request_email(mailer, draft)
     attached = draft.attachments[0].filename if draft.attachments else None
@@ -274,6 +343,7 @@ def _send_pending(
         "provider_id": result.provider_id,
         "detail": result.detail,
         "attachment": attached,
+        "note": note or None,
     }
     if result.sent:
         extra = f" Full conversation attached ({attached})." if attached else ""
@@ -352,7 +422,7 @@ def _flow_in_scope(
     )
     return FlowResult(
         text="\n\n".join(parts),
-        actions=yes_no_actions(yes_label="Yes, ping my AM"),
+        actions=send_actions("email_am"),
         pending=pending,
         citations=tuple(citations),
     )
@@ -387,7 +457,7 @@ def _flow_quote(
         )
         return FlowResult(
             text=outcome.text,
-            actions=yes_no_actions(yes_label="Yes, email my AM"),
+            actions=send_actions("email_am_variable"),
             pending=pending,
             citations=tuple(citations),
         )
@@ -403,7 +473,7 @@ def _flow_quote(
     )
     return FlowResult(
         text=outcome.text,
-        actions=yes_no_actions(yes_label="Yes, request a PO"),
+        actions=send_actions("email_cm_po"),
         pending=pending,
         citations=tuple(citations),
     )
