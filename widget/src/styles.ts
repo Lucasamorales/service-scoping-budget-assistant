@@ -65,6 +65,18 @@ export const STYLES = `
 
 * { box-sizing: border-box; }
 
+.frame {
+  /* Holds the conversation and, when it is open, the service list beside it.
+     Centred rather than stretched, so with the list closed the chat sits
+     exactly where it always did instead of drifting to one edge of a wider
+     container. */
+  display: flex;
+  justify-content: center;
+  align-items: stretch;
+  gap: 14px;
+  width: 100%;
+}
+
 .shell {
   display: grid;
   grid-template-rows: auto 1fr auto;
@@ -72,6 +84,9 @@ export const STYLES = `
      whole widget. overflow: hidden below then clips it to the rounded corners
      for free. */
   position: relative;
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: 760px;
   height: min(760px, calc(100vh - 80px));
   max-height: 100dvh;
   background: var(--panel);
@@ -334,17 +349,19 @@ button.new-chat:focus-visible {
    that one blocks because it is a step you must finish, this one is reference
    you read while looking at the reply that raised the question. */
 .catalog {
-  position: absolute;
-  top: 0;
-  right: 0;
-  bottom: 0;
-  width: min(380px, 100%);
-  z-index: 6;
+  /* Beside the conversation, not over it, so it can stay open while somebody
+     keeps typing. Below CATALOG_BESIDE_MIN there is not room for both and it
+     falls back to a drawer — see the media query at the end of this block. */
+  flex: 0 0 340px;
+  align-self: stretch;
+  height: min(760px, calc(100vh - 80px));
+  max-height: 100dvh;
   display: grid;
   grid-template-rows: auto 1fr;
   background: var(--panel);
-  border-left: 1px solid var(--line);
-  box-shadow: -14px 0 34px rgba(16, 26, 51, 0.16);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  overflow: hidden;
   animation: catalog-in 160ms ease-out;
 }
 
@@ -489,8 +506,32 @@ button.new-chat:focus-visible {
   outline-offset: 2px;
 }
 
+/* Not enough room for a conversation and a list side by side, so the list goes
+   back to covering the chat. 1140 is 760 of conversation, 340 of list, the gap
+   between them, and a little air. */
+@media (max-width: 1140px) {
+  .frame {
+    position: relative;
+  }
+
+  .catalog {
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    height: auto;
+    width: min(340px, 100%);
+    z-index: 6;
+    border-radius: 16px 0 0 16px;
+    box-shadow: -14px 0 34px rgba(16, 26, 51, 0.16);
+  }
+}
+
 @media (max-width: 640px) {
-  .catalog { width: 100%; }
+  .catalog {
+    width: 100%;
+    border-radius: 0;
+  }
 }
 
 .note-overlay {

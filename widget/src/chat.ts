@@ -82,6 +82,7 @@ class AcmeChat extends HTMLElement {
   #renderLogin(): void {
     this.#root.innerHTML = `
       <style>${STYLES}</style>
+      <div class="frame">
       <div class="shell login-wrap">
         <header>
           <div class="brand">Acme <span>Scoping Assistant</span></div>
@@ -96,6 +97,7 @@ class AcmeChat extends HTMLElement {
           <div class="error" data-error></div>
           <button type="submit">Continue</button>
         </form>
+      </div>
       </div>
     `;
     const form = this.#root.querySelector("form");
@@ -129,6 +131,7 @@ class AcmeChat extends HTMLElement {
     const branch = this.#session?.branch ? escapeHtml(this.#session.branch) : "";
     this.#root.innerHTML = `
       <style>${STYLES}</style>
+      <div class="frame">
       <div class="shell">
         <header>
           <div class="brand">Acme <span>Scoping Assistant</span></div>
@@ -158,6 +161,7 @@ class AcmeChat extends HTMLElement {
             <button type="submit" class="send" data-send aria-label="Send">↑</button>
           </div>
         </form>
+      </div>
       </div>
     `;
 
@@ -574,8 +578,8 @@ class AcmeChat extends HTMLElement {
    * means an item needs no badge: the heading it sits under is the verdict.
    */
   async #openCatalog(): Promise<void> {
-    const shell = this.#root.querySelector(".shell");
-    if (!shell || this.#root.querySelector(".catalog")) return;
+    const frame = this.#root.querySelector(".frame");
+    if (!frame || this.#root.querySelector(".catalog")) return;
 
     const panel = document.createElement("aside");
     panel.className = "catalog";
@@ -611,7 +615,7 @@ class AcmeChat extends HTMLElement {
     document.addEventListener("keydown", onKey, true);
 
     panel.append(head, body);
-    shell.append(panel);
+    frame.append(panel);
     close.focus();
 
     try {

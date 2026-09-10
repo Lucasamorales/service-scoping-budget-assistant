@@ -57,7 +57,10 @@
 
   .acme-q acme-chat {
     display: block;
-    width: min(760px, 100%);
+    /* Wide enough for the conversation and the service list beside it. The
+       assistant centres itself inside, so with the list closed the chat still
+       sits at its usual 760 and nothing looks different. */
+    width: min(1140px, 100%);
   }
 
   @media (max-width: 640px) {
