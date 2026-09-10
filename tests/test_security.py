@@ -239,3 +239,68 @@ class TestCorsPreflight:
             )
         )
         assert self._preflight(client, "/api/chat", self.ORIGIN).status_code == 200
+
+
+class TestSameOrigin:
+    """The service must never refuse its own page.
+
+    A module script is fetched in CORS mode, so the chat page served at ``/``
+    sends its own origin with the request for its own bundle. Once
+    ALLOWED_ORIGINS named only the Webflow site, the service answered 403 to
+    itself and that page loaded blank — in production, undetected, because the
+    embed it was set up for kept working.
+    """
+
+    ELSEWHERE = "https://www.example.com"
+
+    def _client(self) -> TestClient:
+        return TestClient(
+            create_app(
+                Settings(
+                    environment="production",
+                    allowed_origins=self.ELSEWHERE,
+                    session_token_secret="test-secret-not-real",
+                    budget_spreadsheet_id="",
+                )
+            )
+        )
+
+    def test_the_service_serves_its_own_bundle(self) -> None:
+        client = self._client()
+        host = client.base_url.host
+        response = client.get("/widget/acme-chat.js", headers={"Origin": f"http://{host}"})
+
+        assert response.status_code != 403, "the service refused its own page"
+
+    def test_https_page_on_a_tls_terminating_proxy_is_still_same_origin(self) -> None:
+        """Cloud Run terminates TLS, so the page is https while the request
+        reaches the app as http. Comparing whole origins would never match.
+
+        Asserts on a static path rather than the API, because what is under
+        test is the middleware's verdict; a route would drag the pipeline in
+        and fail for reasons that have nothing to do with origins."""
+        client = self._client()
+        host = client.base_url.host
+        response = client.get(
+            "/widget/acme-chat.js", headers={"Origin": f"https://{host}"}
+        )
+
+        assert response.status_code != 403
+
+    def test_a_foreign_origin_is_still_refused(self) -> None:
+        response = self._client().get(
+            "/widget/acme-chat.js", headers={"Origin": "https://evil.example"}
+        )
+
+        assert response.status_code == 403
+
+    def test_a_lookalike_host_is_not_the_same_origin(self) -> None:
+        """Matching on a suffix rather than the whole host would let
+        evil-testserver.example through."""
+        client = self._client()
+        host = client.base_url.host
+        response = client.get(
+            "/widget/acme-chat.js", headers={"Origin": f"https://evil-{host}.example"}
+        )
+
+        assert response.status_code == 403

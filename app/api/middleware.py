@@ -96,10 +96,9 @@ def _should_rate_limit(path: str) -> bool:
 def _check_origin(request: Request, settings: Settings) -> JSONResponse | None:
     """Reject a present-but-unknown Origin. Absent Origin is allowed.
 
-    Same-origin fetches and non-browser clients often omit the header. Blocking
-    those would break the internal page and every curl-based check. The
-    dangerous case is a browser on a foreign site sending a visitor's token,
-    and that always includes Origin.
+    Non-browser clients often omit the header. Blocking those would break every
+    curl-based check. The dangerous case is a browser on a foreign site sending
+    a visitor's token, and that always includes Origin.
     """
     if not settings.origins:
         return None
@@ -114,8 +113,36 @@ def _check_origin(request: Request, settings: Settings) -> JSONResponse | None:
     if normalised in set(settings.origins):
         return None
 
+    if _is_same_origin(request, normalised):
+        return None
+
     logger.info("origin.rejected", origin=origin)
     return JSONResponse(status_code=403, content={"detail": "Origin not allowed."})
+
+
+def _is_same_origin(request: Request, origin: str) -> bool:
+    """Whether the Origin names the very host this request was addressed to.
+
+    The service must never refuse its own page. A module script is fetched in
+    CORS mode, so the chat page this service serves at ``/`` sends its own
+    origin with the request for its own bundle — and once ALLOWED_ORIGINS named
+    only the Webflow site, the service answered 403 to itself and the page
+    loaded to a blank screen. The allowlist exists to admit *other* origins;
+    same-origin was never its business.
+
+    Compared by host rather than by whole origin because Cloud Run terminates
+    TLS. The page the browser loaded is https, the request reaches the app as
+    http, and the two schemes would never match.
+
+    This concedes nothing. A browser sets Origin itself and cannot be made to
+    lie about it, and any client that can forge the header could simply omit
+    it, which is already allowed. The bearer token is what actually guards a
+    turn.
+    """
+    host = request.headers.get("host", "").strip().casefold()
+    if not host:
+        return False
+    return origin.partition("://")[2] == host
 
 
 def _check_rate_limit(request: Request, limiter: RateLimiter) -> JSONResponse | None:
