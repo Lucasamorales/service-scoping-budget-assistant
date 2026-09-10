@@ -19,6 +19,22 @@ const STATE_KEY = "acme.state";
 const HISTORY_KEY = "acme.history";
 const MAX_HISTORY = 12;
 
+/** The Acme lockup, inlined rather than fetched.
+ *
+ * One request fewer, no cache-busting to remember, and no asset to serve
+ * across origins from the Webflow embed.
+ *
+ * Colours are the artwork's own — a red mark beside a white wordmark — so
+ * this is a knockout lockup and only works on a dark ground. The header band
+ * is navy in the one theme this ships, which is why it belongs there and
+ * nowhere else. A light header would erase the wordmark entirely.
+ *
+ * The viewBox is tightened to the artwork. The supplied file carries width
+ * and height but no viewBox at all, so as-is it cannot scale, and the
+ * lockup occupies 2294x482 of a 2454x1395 canvas.
+ */
+const BRAND_MARK = `<svg class="brand-mark" viewBox="46 353 2294 482" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Logo"><text x="46" y="760" font-family="sans-serif" font-weight="900" font-size="460" fill="#FFFFFF">LOGO</text></svg>`;
+
 const STARTERS = [
   { label: "Merch for a launch", message: "Can we order merch for a branch opening?" },
   { label: "Billboard advert", message: "Can we put an advert on a billboard?" },
@@ -85,7 +101,7 @@ class AcmeChat extends HTMLElement {
       <div class="frame">
       <div class="shell login-wrap">
         <header>
-          <div class="brand">Acme <span>Scoping Assistant</span></div>
+          <div class="brand">${BRAND_MARK}</div>
         </header>
         <div class="torn" aria-hidden="true"></div>
         <form class="login" part="login">
@@ -134,7 +150,7 @@ class AcmeChat extends HTMLElement {
       <div class="frame">
       <div class="shell">
         <header>
-          <div class="brand">Acme <span>Scoping Assistant</span></div>
+          <div class="brand">${BRAND_MARK}</div>
           <div class="header-actions">
             ${branch ? `<div class="branch">${branch}</div>` : ""}
             <button type="button" class="new-chat" data-open-catalog hidden>Services</button>
