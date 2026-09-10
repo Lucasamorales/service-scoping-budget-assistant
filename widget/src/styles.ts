@@ -53,8 +53,14 @@ export const STYLES = `
   --pill-ask-bg: #FCEEE2;
   --pill-ask-bd: #E8BE96;
 
-  --font-ui: "Archivo", "Segoe UI", sans-serif;
-  --font-display: "Caveat Brush", "Segoe Print", cursive;
+  /* The brand faces, served from this origin — see widget/assets/fonts.css,
+     which the host page has to link because font loading is document-scoped
+     and cannot reach into a shadow root.
+
+     Fallbacks are real rather than decorative: a licence problem or a failed
+     request leaves a working interface in a system sans, not a broken one. */
+  --font-ui: "Inter", "Segoe UI", system-ui, sans-serif;
+  --font-display: "Inter Display", "Inter", "Segoe UI", sans-serif;
 
   display: block;
   color: var(--text);

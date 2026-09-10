@@ -47,6 +47,8 @@ RUN pip install --no-cache-dir ".[cloud]" \
 
 COPY --from=widget /src/widget/dist ./widget/dist
 COPY widget/index.html ./widget/index.html
+# Brand faces, served from this origin rather than a font CDN.
+COPY widget/assets ./widget/assets
 
 EXPOSE 8080
 CMD ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port ${PORT}"]

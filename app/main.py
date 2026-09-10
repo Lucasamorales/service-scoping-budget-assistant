@@ -36,6 +36,7 @@ from app.orchestrator.pipeline import Pipeline
 
 WIDGET_DIR = Path("widget")
 WIDGET_DIST = WIDGET_DIR / "dist"
+WIDGET_ASSETS = WIDGET_DIR / "assets"
 WIDGET_INDEX = WIDGET_DIR / "index.html"
 
 __all__ = ["app", "create_app"]
@@ -109,6 +110,15 @@ def _mount_widget(application: FastAPI) -> None:
     Absent files are fine: the API still runs, and a missing widget just means
     the bundle has not been built yet (``npm run build`` in ``widget/``).
     """
+    # Before /widget, because routes match in the order they are added and
+    # /widget would otherwise swallow every path beneath it.
+    if WIDGET_ASSETS.is_dir():
+        application.mount(
+            "/widget/assets",
+            StaticFiles(directory=WIDGET_ASSETS),
+            name="widget-brand-assets",
+        )
+
     if WIDGET_DIST.is_dir():
         application.mount(
             "/widget",

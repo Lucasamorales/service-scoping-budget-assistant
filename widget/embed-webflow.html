@@ -18,18 +18,18 @@
   * Nothing here can reach the assistant itself. It is a shadow root, so its
     styling is sealed. That also means the page has to load the fonts: font
     loading is document-scoped, and without the <link> below the assistant
-    silently falls back to Segoe UI while otherwise looking fine.
+    silently falls back to Segoe UI while otherwise looking fine. The brand
+    faces are served from the assistant's own origin, so this page must be on
+    the ALLOWED_ORIGINS list or the browser refuses the font files — the
+    stylesheet loads either way, which is what makes that failure quiet.
 
   For no white at all, give this page a blank Webflow layout — no nav, no
   footer. Anything else Webflow renders sits above or below this section and
   will show.
 -->
 
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link
-  href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&family=Caveat+Brush&display=swap"
-  rel="stylesheet">
+<link rel="stylesheet"
+      href="https://your-service-url.a.run.app/widget/assets/fonts.css">
 
 <style>
   html,
@@ -52,7 +52,7 @@
     min-height: 100dvh;
     padding: 40px 24px;
     box-sizing: border-box;
-    font-family: "Archivo", "Segoe UI", system-ui, sans-serif;
+    font-family: "Inter", "Segoe UI", system-ui, sans-serif;
   }
 
   .acme-q acme-chat {
