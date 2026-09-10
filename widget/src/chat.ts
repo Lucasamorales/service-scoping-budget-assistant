@@ -222,7 +222,15 @@ class AcmeChat extends HTMLElement {
 
     this.#abort = new AbortController();
     let assembled = "";
-    let caret: HTMLElement | null = null;
+    // The caret lives in the DOM, not in a closure variable. Every onText
+    // rewrites body.innerHTML, which detaches it anyway, so holding a
+    // reference bought nothing — and it cost a type error: TypeScript cannot
+    // see the stream callbacks run, so by the catch block it had narrowed the
+    // variable back to its null initialiser and the optional call landed on
+    // never. Asking the DOM is both simpler and the actual source of truth.
+    const dropCaret = (): void => {
+      assistant.body.querySelector(".caret")?.remove();
+    };
     type VerdictPayload = {
       verdict: Verdict | null;
       citations: string[];
@@ -259,12 +267,10 @@ class AcmeChat extends HTMLElement {
           onText: (text) => {
             assembled += text;
             reveal();
-            if (!caret) {
-              caret = document.createElement("span");
-              caret.className = "caret";
-              caret.setAttribute("aria-hidden", "true");
-            }
             assistant.body.innerHTML = renderMarkdown(assembled);
+            const caret = document.createElement("span");
+            caret.className = "caret";
+            caret.setAttribute("aria-hidden", "true");
             assistant.body.append(caret);
             this.#scrollToEnd();
           },
@@ -273,8 +279,6 @@ class AcmeChat extends HTMLElement {
               assembled = payload.text;
             }
             reveal();
-            caret?.remove();
-            caret = null;
             assistant.body.innerHTML = renderMarkdown(assembled);
             this.#state = payload.state;
             writeJson(STATE_KEY, this.#state);
@@ -294,7 +298,7 @@ class AcmeChat extends HTMLElement {
         this.#abort.signal,
       );
     } catch (err) {
-      caret?.remove();
+      dropCaret();
       reveal();
       const text = err instanceof Error ? err.message : "Something went wrong.";
       if (text.toLowerCase().includes("unauthorised")) {
