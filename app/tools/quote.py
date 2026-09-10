@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from app.core.money import format_money
 from app.core.types import ServiceItem
 from app.store.budget import BudgetSnapshot, BudgetStore
 from app.store.quote import RateCard
@@ -24,25 +25,6 @@ class QuoteOutcome:
     over_budget: bool = False
     remaining: float | None = None
     budget: BudgetSnapshot | None = None
-
-
-_CURRENCY_SYMBOLS = {"GBP": "£", "USD": "$", "EUR": "€", "CAD": "CA$", "AUD": "A$"}
-
-
-def _money(amount: float, currency: str) -> str:
-    """Format a figure the way the approved quote copy writes it: £350.
-
-    Trailing zeros are dropped because every tier on the rate card is a whole
-    number and "£350.00" reads like an invoice rather than a ballpark. A price
-    that is not whole keeps its pence rather than being rounded into a figure
-    nobody will be charged.
-
-    An unknown currency falls back to its code, which is worse to read and
-    impossible to misread — the wrong symbol on a number is a lie about money.
-    """
-    symbol = _CURRENCY_SYMBOLS.get(currency.upper())
-    figure = f"{amount:,.0f}" if float(amount).is_integer() else f"{amount:,.2f}"
-    return f"{symbol}{figure}" if symbol else f"{figure} {currency.upper()}"
 
 
 def quote_for(
@@ -114,7 +96,7 @@ def quote_for(
             else:
                 over = amount > remaining
                 budget_text = (
-                    f" You currently have {_money(remaining, store.currency)} left in "
+                    f" You currently have {format_money(remaining, store.currency)} left in "
                     f"{snapshot.branch.name} for {snapshot.month}."
                 )
                 if over:
@@ -129,7 +111,7 @@ def quote_for(
     # because that is how the approved wording reads.
     text = (
         "This falls outside of the approved scope, and it's usually priced at "
-        f"{_money(amount, store.currency)}. If you'd like to go ahead with it, you'll "
+        f"{format_money(amount, store.currency)}. If you'd like to go ahead with it, you'll "
         "need a PO approved from your country manager. I can email your Country "
         f"Manager to kick things off.{budget_text}"
     )

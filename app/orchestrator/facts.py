@@ -17,6 +17,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, replace
 
+from app.core.money import format_money
 from app.core.types import Chunk, Status
 from app.orchestrator.plan import Capability, Plan
 from app.orchestrator.resolver import Outcome, Resolution
@@ -335,10 +336,13 @@ class FactPack:
             )
         lines = [
             "## Price (from the rate card — the only figure you may give)\n",
-            f"Tier {quote.tier}: {quote.price:,.2f} {quote.currency}",
+            f"Tier {quote.tier}: {format_money(quote.price, quote.currency)}",
         ]
         if quote.remaining is not None:
-            lines.append(f"Remaining budget at that site: {quote.remaining:,.2f}")
+            lines.append(
+                f"Remaining budget at that site: "
+                f"{format_money(quote.remaining, quote.currency)}"
+            )
         if quote.over_budget:
             lines.append(
                 "This price is ABOVE the remaining budget. Say so clearly and say the extra "
@@ -364,19 +368,21 @@ class FactPack:
             if snapshot.cap is None or snapshot.remaining is None:
                 lines.append(
                     f"- {snapshot.branch.name}, fiscal {snapshot.month}: "
-                    f"spent {snapshot.spent:,.2f}. The tracker has NO cap for this site "
+                    f"spent {format_money(snapshot.spent)}. The tracker has NO cap for this site "
                     "and month, so the remaining budget is unknown — say so, and do not "
                     "state or imply a balance."
                 )
                 continue
             lines.append(
                 f"- {snapshot.branch.name}, fiscal {snapshot.month}: "
-                f"cap {snapshot.cap:,.2f}, spent {snapshot.spent:,.2f}, "
-                f"remaining {snapshot.remaining:,.2f}"
+                f"cap {format_money(snapshot.cap)}, spent {format_money(snapshot.spent)}, "
+                f"remaining {format_money(snapshot.remaining)}"
             )
         known = [s.remaining for s in self.budget_snapshots if s.remaining is not None]
         if len(self.budget_snapshots) > 1 and known:
-            lines.append(f"- Total remaining across those sites: {sum(known):,.2f}")
+            lines.append(
+                f"- Total remaining across those sites: {format_money(sum(known))}"
+            )
         lines.append(
             "\nUse these numbers exactly as given. Lead with what they asked for rather "
             "than reciting the whole table, but never change a figure."
@@ -395,7 +401,8 @@ def _pending_sentence(pending: PendingAction) -> str:
         "email_am_variable": "their Account Manager, to price this by hand",
     }.get(pending.kind, "the right person")
     amount = (
-        f" The email would carry the {pending.quote_amount:,.2f} {pending.currency} figure."
+        f" The email would carry the "
+        f"{format_money(pending.quote_amount, pending.currency)} figure."
         if pending.quote_amount is not None
         else ""
     )

@@ -9,6 +9,7 @@ from datetime import date
 import structlog
 
 from app.core.keys import normalize_term
+from app.core.money import format_money
 from app.store.budget import (
     MONTHS,
     BudgetSnapshot,
@@ -376,9 +377,9 @@ def _format_snapshot(snapshot: BudgetSnapshot) -> str:
     site = snapshot.branch.name
     lines = [
         f"**{site}** — fiscal **{snapshot.month}**",
-        f"- Cap: {_money(snapshot.cap)}",
-        f"- Spent: {_money(snapshot.spent)}",
-        f"- Remaining: {_money(snapshot.remaining)}",
+        f"- Cap: {format_money(snapshot.cap)}",
+        f"- Spent: {format_money(snapshot.spent)}",
+        f"- Remaining: {format_money(snapshot.remaining)}",
     ]
     if not snapshot.cap_known:
         lines.append(
@@ -392,7 +393,7 @@ def _format_snapshot(snapshot: BudgetSnapshot) -> str:
             reverse=True,
         )[:3]
         detail = "; ".join(
-            f"{line.media_type or 'Spend'} {_money(line.amount)}"
+            f"{line.media_type or 'Spend'} {format_money(line.amount)}"
             + (f" ({line.description})" if line.description else "")
             for line in recent
         )
@@ -421,9 +422,9 @@ def _format_rollups(
     total_remaining = round(sum(s.remaining or 0.0 for s in capped), 2)
     lines = [
         f"**{title}** — fiscal **{month}** ({len(snapshots)} branches)",
-        f"- Cap: {_money(total_cap)}",
-        f"- Spent: {_money(total_spent)}",
-        f"- Remaining: {_money(total_remaining)}",
+        f"- Cap: {format_money(total_cap)}",
+        f"- Spent: {format_money(total_spent)}",
+        f"- Remaining: {format_money(total_remaining)}",
     ]
     if uncapped:
         lines.append(
@@ -452,14 +453,6 @@ def _format_rollups(
 def _rollup_line(snapshot: BudgetSnapshot) -> str:
     site = snapshot.branch.name.removeprefix("Acme ").strip() or snapshot.branch.name
     return (
-        f"- **{site}**: remaining {_money(snapshot.remaining)} "
-        f"(cap {_money(snapshot.cap)} / spent {_money(snapshot.spent)})"
+        f"- **{site}**: remaining {format_money(snapshot.remaining)} "
+        f"(cap {format_money(snapshot.cap)} / spent {format_money(snapshot.spent)})"
     )
-
-
-def _money(value: float | None) -> str:
-    if value is None:
-        return "unknown"
-    if abs(value - round(value)) < 0.001:
-        return f"{value:,.0f}"
-    return f"{value:,.2f}"
