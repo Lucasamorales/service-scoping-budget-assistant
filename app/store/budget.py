@@ -27,6 +27,7 @@ from typing import Protocol
 import structlog
 
 from app.core.keys import normalize_term, branch_key
+from app.store.sheets_client import REFRESH_WAIT_SECONDS
 
 __all__ = [
     "MONTHS",
@@ -42,6 +43,7 @@ __all__ = [
 ]
 
 logger = structlog.get_logger(__name__)
+
 
 MONTHS = (
     "Jan",
@@ -183,6 +185,7 @@ class _CachedWorkbook:
         self._ttl = max(int(ttl_seconds), 0)
         self._lock = threading.Lock()
         self._refreshing = False
+        self._thread: threading.Thread | None = None
         self._data = loader()
         now = time.monotonic()
         # Two clocks, deliberately. ``_read_at`` is when the figures being
@@ -196,7 +199,7 @@ class _CachedWorkbook:
     @property
     def data(self) -> _WorkbookData:
         if self._ttl and time.monotonic() - self._tried_at >= self._ttl:
-            self._start_refresh()
+            self._refresh_if_due()
         return self._data
 
     @property
@@ -209,31 +212,54 @@ class _CachedWorkbook:
         """
         return int(time.monotonic() - self._read_at)
 
-    def _start_refresh(self) -> None:
-        """Kick off a re-read and return immediately.
+    def _refresh_if_due(self) -> None:
+        """Re-read when the TTL has passed, waiting briefly for the answer.
 
-        A budget question must not wait on the spreadsheet. Refreshing inside
-        the request meant a slow sheet blocked the answer until Cloud Run
-        killed the turn at sixty seconds, and because the refresh held the
-        lock, one slow read stalled every other question on that instance too.
+        Two failures to avoid, pulling opposite ways.
 
-        The figures in hand are minutes old at worst, and :attr:`age_seconds`
-        says exactly how old, so serving them and catching up behind beats
-        making somebody wait to find out the sheet is unreachable.
+        Refreshing inside the request meant a slow sheet blocked the answer
+        until Cloud Run killed the turn at sixty seconds, and because the
+        refresh held the lock, one hung read stalled every other question on
+        that instance.
+
+        Returning immediately instead meant the person who triggered the
+        refresh was served the very figures it was replacing. On a quiet
+        service that is not minutes: nothing else touches the data, health
+        checks read only the timestamp, and the uptime probes keep the
+        container alive so it never restarts and re-reads. Production was found
+        holding budgets 38.7 hours old the day the caps changed, and the next
+        person to ask would have been told the old number.
+
+        So the read runs on a thread and the caller waits a bounded moment for
+        it. A sheet that answers normally — measured around two seconds —
+        yields current figures. One that hangs costs the ceiling below and then
+        gets served what is already in hand, with the refresh finishing behind.
+        Correct nearly always, late never.
         """
+        started: threading.Thread | None = None
         with self._lock:
             if self._refreshing:
-                return
-            if time.monotonic() - self._tried_at < self._ttl:
-                return
-            self._refreshing = True
-            # Stamped before the work, so a persistent failure retries on the
-            # TTL rather than on every single question.
-            self._tried_at = time.monotonic()
+                waiting = self._thread
+            elif time.monotonic() - self._tried_at >= self._ttl:
+                self._refreshing = True
+                # Stamped before the work, so a persistent failure retries on
+                # the TTL rather than on every single question.
+                self._tried_at = time.monotonic()
+                started = threading.Thread(
+                    target=self._refresh, name="acme-budget-refresh", daemon=True
+                )
+                self._thread = started
+                waiting = started
+            else:
+                waiting = None
 
-        threading.Thread(
-            target=self._refresh, name="acme-budget-refresh", daemon=True
-        ).start()
+        # Started outside the lock, and joined outside it, so a slow read
+        # delays only the callers willing to wait for it rather than every
+        # request arriving at this instance.
+        if started is not None:
+            started.start()
+        if waiting is not None:
+            waiting.join(REFRESH_WAIT_SECONDS)
 
     def _refresh(self) -> None:
         try:

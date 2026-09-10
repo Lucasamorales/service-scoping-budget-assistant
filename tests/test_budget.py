@@ -460,12 +460,12 @@ class TestCacheAge:
 
         cache = _CachedWorkbook(lambda: _load_workbook(FIXTURE), ttl_seconds=300)
         cache._read_at -= 900
+        cache._tried_at -= 301
 
-        # The worker directly, not through `data`: reading the property starts
-        # a thread and returns at once, so asserting on the result afterwards
-        # would be racing it.
-        cache._refresh()
-
+        # Through `data`, because that is the path a question takes and the
+        # whole point is that the caller waits for the fresh read rather than
+        # being handed the figures it replaces.
+        assert cache.data.branches
         assert cache.age_seconds < 5
 
     def test_a_slow_sheet_does_not_block_the_answer(self) -> None:
@@ -479,12 +479,13 @@ class TestCacheAge:
         import time as timing
 
         from app.store.budget import _CachedWorkbook, _load_workbook
+        from app.store.sheets_client import REFRESH_WAIT_SECONDS
 
         good = _load_workbook(FIXTURE)
         release = threading.Event()
 
         def slow() -> object:
-            release.wait(10)
+            release.wait(30)
             return good
 
         cache = _CachedWorkbook(lambda: good, ttl_seconds=1)
@@ -496,5 +497,5 @@ class TestCacheAge:
         elapsed = timing.monotonic() - started
         release.set()
 
-        assert elapsed < 0.5, "the answer waited on the spreadsheet"
+        assert elapsed < REFRESH_WAIT_SECONDS + 1.0, "the answer hung on the spreadsheet"
         assert served is good, "the figures already in hand are served meanwhile"

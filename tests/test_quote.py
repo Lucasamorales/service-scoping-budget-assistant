@@ -16,6 +16,7 @@ from app.store.quote import (
     _parse_scope_rows,
     load_quote_store,
 )
+from app.store.sheets_client import REFRESH_WAIT_SECONDS
 from app.tools.quote import quote_for
 
 
@@ -151,7 +152,15 @@ class TestCachedRateCard:
             services={"events--photoshoots": "3"},
         )
 
-    def test_a_reprice_is_picked_up_without_a_restart(self) -> None:
+    def test_a_reprice_reaches_the_person_who_triggered_the_refresh(self) -> None:
+        """Not the one after them.
+
+        A purely background refresh served the card it was replacing, so the
+        question that noticed the staleness got the old price and only the next
+        one got the new. On a quiet service that gap is not seconds: nothing
+        else touches the data, so production was found holding figures 38.7
+        hours old.
+        """
         cards = [self._card(400.0)]
         store = CachedQuoteStore(
             lambda: cards.pop(0) if cards else None,
@@ -160,10 +169,7 @@ class TestCachedRateCard:
         )
         assert store.lookup("events--photoshoots") == ("3", 350.0)
 
-        # The worker directly. Going through lookup() starts a thread and
-        # returns the card already in hand, so asserting on the new price
-        # straight after would be racing the refresh rather than testing it.
-        store._refresh()
+        store._tried_at -= 301  # the TTL lapsing, without waiting it out
 
         assert store.lookup("events--photoshoots") == ("3", 400.0)
 
@@ -177,7 +183,7 @@ class TestCachedRateCard:
         release = threading.Event()
 
         def slow() -> QuoteStore | None:
-            release.wait(10)
+            release.wait(30)
             return self._card(400.0)
 
         store = CachedQuoteStore(slow, ttl_seconds=1, initial=self._card(350.0))
@@ -188,7 +194,7 @@ class TestCachedRateCard:
         elapsed = time.monotonic() - started
         release.set()
 
-        assert elapsed < 0.5, "the quote waited on the spreadsheet"
+        assert elapsed < REFRESH_WAIT_SECONDS + 1.0, "the quote hung on the spreadsheet"
         assert answer == ("3", 350.0), "the card already in hand is served meanwhile"
 
     def test_a_failed_refresh_keeps_the_last_good_card(self) -> None:

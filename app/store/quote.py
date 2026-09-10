@@ -30,6 +30,7 @@ from typing import Literal, Protocol
 import structlog
 
 from app.core.keys import service_key
+from app.store.sheets_client import REFRESH_WAIT_SECONDS
 
 __all__ = [
     "ALLOWED_TIERS",
@@ -260,6 +261,7 @@ class CachedQuoteStore:
         self._ttl = max(int(ttl_seconds), 0)
         self._lock = threading.Lock()
         self._refreshing = False
+        self._thread: threading.Thread | None = None
         self._data = initial
         now = time.monotonic()
         self._read_at = now
@@ -271,35 +273,45 @@ class CachedQuoteStore:
 
     def _current(self) -> QuoteStore:
         if self._ttl and time.monotonic() - self._tried_at >= self._ttl:
-            self._start_refresh()
+            self._refresh_if_due()
         return self._data
 
-    def _start_refresh(self) -> None:
-        """Kick off a re-read and return immediately.
+    def _refresh_if_due(self) -> None:
+        """Re-read when the TTL has passed, waiting briefly for the answer.
 
-        Never make a person wait on a spreadsheet. Refreshing inside the
-        request is what turned a slow sheet into a dead turn: the read blocked,
-        Cloud Run killed the request at sixty seconds, and the user watched the
-        assistant stop after "Looking that up...". Worse, the lock meant one
-        slow read stalled every other question arriving at that instance.
+        The same balance the budget cache strikes, and for the same reason:
+        refreshing inside the request turned a slow sheet into a dead turn,
+        while refreshing purely behind it quoted the price the refresh was
+        replacing. A reprice on the sheet has to reach the next person who
+        asks, not the one after them.
 
-        The card in hand is minutes old at most, so serving it and catching up
-        behind is strictly better than making somebody wait to discover the
-        sheet is unreachable.
+        The read runs on a thread and the caller waits a bounded moment. A
+        healthy sheet answers inside it; a hung one costs the ceiling and then
+        gets served the card already in hand.
         """
+        started: threading.Thread | None = None
         with self._lock:
             if self._refreshing:
-                return
-            if time.monotonic() - self._tried_at < self._ttl:
-                return
-            self._refreshing = True
-            # Stamped before the work, so a persistent failure retries on the
-            # TTL rather than on every single question.
-            self._tried_at = time.monotonic()
+                waiting = self._thread
+            elif time.monotonic() - self._tried_at >= self._ttl:
+                self._refreshing = True
+                # Stamped before the work, so a persistent failure retries on
+                # the TTL rather than on every single question.
+                self._tried_at = time.monotonic()
+                started = threading.Thread(
+                    target=self._refresh, name="acme-quote-refresh", daemon=True
+                )
+                self._thread = started
+                waiting = started
+            else:
+                waiting = None
 
-        threading.Thread(
-            target=self._refresh, name="acme-quote-refresh", daemon=True
-        ).start()
+        # Started and joined outside the lock, so a slow read delays only the
+        # callers waiting on it rather than every request at this instance.
+        if started is not None:
+            started.start()
+        if waiting is not None:
+            waiting.join(REFRESH_WAIT_SECONDS)
 
     def _refresh(self) -> None:
         try:

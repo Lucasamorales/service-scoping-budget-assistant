@@ -40,6 +40,18 @@ network or auth problem rather than a big payload, and waiting longer only
 delays finding that out. Sized well under the Cloud Run request timeout so a
 slow sheet degrades the answer instead of killing the turn."""
 
+REFRESH_WAIT_SECONDS = 4.0
+"""How long a question will wait for figures newer than the ones in hand.
+
+Chosen against a measured spreadsheet read of about two seconds, so a healthy
+sheet lands inside it with room to spare, and against a chat turn that already
+takes three to six seconds, so the wait is noticeable at worst rather than
+disruptive. It is paid only on the first question after a cache TTL lapses.
+
+Far below both :data:`SHEETS_TIMEOUT_SECONDS` and the sixty seconds Cloud Run
+allows a request, so a hung sheet degrades to slightly stale figures rather
+than a dead turn."""
+
 # Spreadsheet body read only — no drive.file write scopes.
 _READONLY_SCOPES = ("https://www.googleapis.com/auth/spreadsheets.readonly",)
 
