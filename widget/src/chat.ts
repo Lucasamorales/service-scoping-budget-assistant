@@ -35,10 +35,23 @@ const MAX_HISTORY = 12;
  */
 const BRAND_MARK = `<svg class="brand-mark" viewBox="46 353 2294 482" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Logo"><text x="46" y="760" font-family="sans-serif" font-weight="900" font-size="460" fill="#FFFFFF">LOGO</text></svg>`;
 
+/* Three openers, chosen to land three different answers rather than three
+   variations of the same one: two that need quoting and one that is already
+   covered. The third used to be "translate our web pages", which asks a
+   clarifying question instead of answering — a poor first thing to show
+   somebody, and it demonstrated nothing the first two did not.
+
+   "Graphics" rather than "assets", though stakeholders said assets. Asked with
+   that word the assistant asks which service is meant, and it is right to: an
+   asset on a screen is a still graphic, which is covered, or a video, which is
+   chargeable. Correct behaviour, wrong thing to greet somebody with. */
 const STARTERS = [
   { label: "Merch for a launch", message: "Can we order merch for a branch opening?" },
   { label: "Billboard advert", message: "Can we put an advert on a billboard?" },
-  { label: "Translate web pages", message: "Can you translate our web pages into Spanish?" },
+  {
+    label: "Venue TV screens",
+    message: "Can we change the graphics on our venue TV screens?",
+  },
 ];
 
 const STATUS_LABEL: Record<string, string> = {
