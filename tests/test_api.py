@@ -437,3 +437,32 @@ class TestCatalogNeedsAuth:
         )
         with TestClient(create_app(settings)) as client:
             assert client.get("/api/catalog").status_code == 401
+
+
+class TestBrandAssetsAreReachableFromAnEmail:
+    """A request email's logo and faces are fetched by a mail client.
+
+    Its document has an opaque origin, so it sends ``Origin: null`` — and a
+    font is always fetched in CORS mode. Guarding these behind the API's origin
+    allowlist answered 403 to the one class of client that honours a webfont.
+    """
+
+    def test_a_font_is_served_to_an_opaque_origin(self, client) -> None:
+        response = client.get(
+            "/widget/assets/fonts/inter-400.woff2", headers={"Origin": "null"}
+        )
+        assert response.status_code == 200
+
+    def test_a_font_is_readable_by_the_document_that_asked(self, client) -> None:
+        """200 is not enough on its own — without this header the client
+        fetches the file and then refuses to use it."""
+        response = client.get(
+            "/widget/assets/fonts/inter-display-900.woff2", headers={"Origin": "null"}
+        )
+        assert response.headers.get("access-control-allow-origin") == "*"
+
+    def test_the_api_is_not_opened_up_with_them(self, client) -> None:
+        response = client.post(
+            "/api/chat", json={"message": "hi"}, headers={"Origin": "https://evil.example"}
+        )
+        assert response.status_code in {401, 403}

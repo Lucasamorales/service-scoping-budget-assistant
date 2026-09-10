@@ -41,6 +41,16 @@ nothing a competitor could not guess."""
 # Paths that never require a session and never consume rate-limit budget.
 _PUBLIC = frozenset({"/", "/api/health", "/docs", "/openapi.json", "/redoc"})
 
+_ASSETS = "/widget/assets/"
+"""Brand files — the logo and the four faces — served to anyone who asks.
+
+The origin allowlist guards the API, where a foreign page could spend a
+visitor's session. These are public brand assets with nothing behind them, and
+the allowlist was actively breaking them: a mail client renders HTML in an
+opaque origin, so it sends ``Origin: null``, and a font is always fetched in
+CORS mode. Every request email's faces were answered 403 — in the one class of
+client that honours a webfont at all."""
+
 
 def install_security(application: FastAPI, settings: Settings) -> None:
     limiter = RateLimiter(
@@ -109,6 +119,9 @@ def _check_origin(request: Request, settings: Settings) -> JSONResponse | None:
     a visitor's token, and that always includes Origin.
     """
     if not settings.origins:
+        return None
+
+    if request.url.path.startswith(_ASSETS):
         return None
 
     origin = request.headers.get("origin")
@@ -191,6 +204,15 @@ def _client_key(request: Request) -> str:
 
 
 def _apply_security_headers(response: Response, *, path: str) -> None:
+    if path.startswith(_ASSETS):
+        # Readable from anywhere, because a font is always fetched in CORS mode
+        # and the documents that want these have no origin the allowlist could
+        # ever name: a mail client's is opaque. Safe to open because there is
+        # nothing here but the logo and the four brand faces — no session, no
+        # data, and no credentials on the request (which is also why this can
+        # be "*" where the API's CORS policy cannot).
+        response.headers.setdefault("Access-Control-Allow-Origin", "*")
+
     response.headers.setdefault("X-Content-Type-Options", "nosniff")
     response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
     response.headers.setdefault("X-Frame-Options", "DENY")
