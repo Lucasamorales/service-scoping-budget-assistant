@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 from app.knowledge.catalog import load_catalog
@@ -10,6 +11,7 @@ from app.orchestrator.history import HistoryTurn
 from app.store.audit import AuditEvent, JsonlAuditStore
 from app.store.contacts import load_contacts
 from app.store.mail import MailMessage, MailResult, NullMailer
+from app.tools.email_template import TEMPLATE_DIR
 from app.tools.mail import build_request_email, send_request_email
 from app.tools.transcript import (
     TranscriptTurn,
@@ -454,3 +456,49 @@ class TestNothingInternalReachesTheReader:
         draft = self._draft()
         assert "MUST BE HTML-ESCAPED" not in draft.html
         assert draft.html.count("Needed for the reopening.") == 1
+
+
+class TestTheTemplatesStayEmailSafe:
+    def _html(self, base: str) -> str:
+        return build_request_email(
+            kind="email_cm_po",
+            contact=_contact(),
+            item=_item(),
+            requester="Alex",
+            country="United Kingdom",
+            branch="Acme London",
+            quote_amount=100.0,
+            currency="GBP",
+            note="n",
+            asset_base_url=base,
+        ).html
+
+    def test_the_faces_are_declared_twice_on_purpose(self) -> None:
+        """A <link> and an embedded block reach different clients — several
+        honour one and drop the other — so both together land more often."""
+        html_body = self._html("https://assistant.example.com")
+        assert '<link href="https://assistant.example.com' in html_body
+        assert "@font-face" in html_body
+        assert html_body.count("inter-display-900.woff2") >= 1
+
+    def test_every_face_url_is_absolute(self) -> None:
+        """An email has no origin, so a relative path resolves against nothing."""
+        html_body = self._html("https://assistant.example.com")
+        for face in re.findall(r"src:url\('([^']+)'\)", html_body):
+            assert face.startswith("https://"), face
+
+    def test_no_faces_are_declared_without_somewhere_to_fetch_them(self) -> None:
+        html_body = self._html("")
+        assert "@font-face" not in html_body
+        assert "<style" not in html_body
+
+    def test_the_only_stylesheet_is_the_faces(self) -> None:
+        """Everything else is inline CSS, which is what keeps Gmail from
+        stripping the design. The font block is the one exception, and it is
+        progressive enhancement — nothing depends on it arriving."""
+        for kind in ("email_am", "email_cm_po", "email_am_variable"):
+            source = (TEMPLATE_DIR / f"{kind}.html").read_text(encoding="utf-8")
+            blocks = re.findall(r"<style\b[^>]*>(.*?)</style>", source, re.DOTALL)
+            assert len(blocks) == 1, kind
+            assert "@font-face" in blocks[0]
+            assert "{" in blocks[0] and "@media" not in blocks[0]

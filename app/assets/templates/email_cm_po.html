@@ -21,6 +21,7 @@
     {{attachment_filename}}  "conversation-8f21c0a4.pdf"
     {{from_address}}         sending identity, never hardcoded
     {{logo_url}}             hosted PNG of the Acme lockup, 304x64, matted to #232F55 (displayed 152x32)
+    {{asset_base}}           origin serving the two above, no trailing slash
     {{font_css_url}}         hosted @font-face CSS for Inter / Inter Display Black. Optional
                              bonus only — every size, weight and colour here works in Segoe UI.
 
@@ -37,6 +38,17 @@
 <meta name="supported-color-schemes" content="light only">
 <title>{{subject}}</title>
 <link href="{{font_css_url}}" rel="stylesheet">
+<style>
+/* The same faces again, declared inline. Several clients honour an embedded
+   stylesheet but drop the <link> above, so the two together reach more inboxes
+   than either alone. Neither is relied on: every size, weight and colour in
+   this file works in the Segoe UI fallback. Gmail and Outlook strip web fonts
+   whichever way they arrive. */
+@font-face{font-family:'Inter';src:url('{{asset_base}}/widget/assets/fonts/inter-400.woff2') format('woff2');font-weight:400;font-style:normal}
+@font-face{font-family:'Inter';src:url('{{asset_base}}/widget/assets/fonts/inter-500.woff2') format('woff2');font-weight:500;font-style:normal}
+@font-face{font-family:'Inter';src:url('{{asset_base}}/widget/assets/fonts/inter-700.woff2') format('woff2');font-weight:700;font-style:normal}
+@font-face{font-family:'Inter Display Black';src:url('{{asset_base}}/widget/assets/fonts/inter-display-900.woff2') format('woff2');font-weight:900;font-style:normal}
+</style>
 </head>
 <body style="margin:0;padding:0;width:100%;background-color:#E4EBF2;-webkit-text-size-adjust:100%;-ms-text-size-adjust:100%;">
 <div style="display:none;font-size:1px;line-height:1px;max-height:0;max-width:0;opacity:0;overflow:hidden;color:#E4EBF2;">{{preheader}}</div>

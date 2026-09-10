@@ -191,6 +191,7 @@ def _values(
         # path against. Both are optional by design — the templates carry the
         # whole hierarchy in text, so a stripped stylesheet or a blocked image
         # costs the reader nothing.
+        "asset_base": base,
         "logo_url": f"{base}/widget/assets/acme-logo-email.png" if base else "",
         "font_css_url": f"{base}/widget/assets/email-fonts.css" if base else "",
     }

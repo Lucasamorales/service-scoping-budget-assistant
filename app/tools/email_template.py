@@ -110,6 +110,7 @@ second invisible copy of the requester's context and about 1.5KB of comment.
 
 _EMPTY_IMG = re.compile(r"<img\b[^>]*\bsrc=\"\"[^>]*>", re.IGNORECASE)
 _EMPTY_LINK = re.compile(r"<link\b[^>]*\bhref=\"\"[^>]*>\s*", re.IGNORECASE)
+_FONT_FACES = re.compile(r"<style\b[^>]*>.*?</style>\s*", re.IGNORECASE | re.DOTALL)
 
 
 def render_html(kind: str, values: dict[str, str]) -> str:
@@ -125,4 +126,10 @@ def render_html(kind: str, values: dict[str, str]) -> str:
     source = _DOC_COMMENT.sub("", _template(kind, "html"), count=1)
     html_body = _fill(source, values, escape=True)
     html_body = _EMPTY_IMG.sub("", html_body)
+    if not values.get("font_css_url"):
+        # The face declarations address the woff2 files absolutely, so with no
+        # origin to address them from they would point at nothing. The only
+        # <style> in these templates is that block — the design is otherwise
+        # inline CSS throughout, which TestTheTemplatesStayEmailSafe holds to.
+        html_body = _FONT_FACES.sub("", html_body)
     return _EMPTY_LINK.sub("", html_body)
