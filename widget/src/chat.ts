@@ -450,19 +450,24 @@ class AcmeChat extends HTMLElement {
     }
   }
 
-  #renderCandidates(
-    host: HTMLElement,
-    candidates: { id: string; label: string }[],
-  ): void {
+  #renderCandidates(host: HTMLElement, candidates: CandidateOption[]): void {
     host.replaceChildren();
     host.className = "candidates";
     candidates.forEach((candidate, index) => {
       const button = document.createElement("button");
       button.type = "button";
       button.className = "candidate";
+      // The description is what makes this a choice rather than a guess. Two
+      // names that both say "email" read the same to somebody who needs one
+      // sent; the sentence underneath is where writing the copy and running a
+      // one-off campaign come apart, and that difference is the price.
+      const summary = candidate.summary?.trim();
       button.innerHTML = `
         <span class="num">${index + 1}</span>
-        <span class="label">${escapeHtml(candidate.label)}</span>
+        <span class="text">
+          <span class="label">${escapeHtml(candidate.label)}</span>
+          ${summary ? `<span class="summary">${escapeHtml(summary)}</span>` : ""}
+        </span>
       `;
       button.addEventListener("click", () => {
         host.querySelectorAll("button").forEach((el) => {

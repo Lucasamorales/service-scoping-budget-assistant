@@ -770,6 +770,27 @@ button.header-button:focus-visible {
   line-height: 1.35;
 }
 
+/* Name and description stacked in one column, so the number stays level with
+   the name rather than drifting down to the middle of two lines. */
+.candidate .text {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.candidate .label {
+  display: block;
+}
+
+.candidate .summary {
+  display: block;
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 1.45;
+  color: var(--text-soft);
+}
+
 .citations {
   font-size: 13px;
   color: var(--text-faint);

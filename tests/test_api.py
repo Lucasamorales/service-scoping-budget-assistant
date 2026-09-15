@@ -90,7 +90,9 @@ class TestChat:
         assert body["verdict"] is None
         assert body["awaitingAnswer"] is True
         assert len(body["candidates"]) >= 2
-        assert {key for key in body["candidates"][0]} == {"id", "label"}
+        # summary was added so a question says what each option is, not only
+        # what it is called. Additive: a client that ignores it still works.
+        assert {key for key in body["candidates"][0]} == {"id", "label", "summary"}
 
     def test_a_handover_is_flagged(self, client: TestClient) -> None:
         body = ask(client, "a customer is threatening legal action")
@@ -512,3 +514,56 @@ class TestTheSealedActionHoldsTheContext:
         # And the client can hand it straight back.
         third = ask(client, "United Kingdom", second["state"])
         assert third["state"] is not None
+
+
+class TestAQuestionSaysWhatEachOptionIs:
+    """When the resolver has to ask, a list of names is not enough to choose
+    from. "Emails (Copywriting)" and "Ad hoc email requests" both read as what
+    somebody needs when they want an email sent; what separates them — writing
+    the copy, or running a one-off campaign — is what decides the price."""
+
+    # Two services named plainly and handled differently: this asks offline too.
+    ASKS = "do you handle translating our web pages"
+
+    def test_every_option_carries_its_own_description(self, client: TestClient) -> None:
+        body = ask(client, self.ASKS)
+        assert body["awaitingAnswer"] is True
+        assert len(body["candidates"]) > 1
+        for option in body["candidates"]:
+            assert option["summary"].strip(), option["label"]
+
+    def test_the_description_comes_from_the_document(self, client: TestClient) -> None:
+        """Not written in code: a question is only ever as right as the corpus,
+        and never says anything the corpus does not."""
+        from app.core.config import get_settings
+        from app.knowledge.catalog import load_catalog
+        from app.knowledge.manifest import Manifest
+        from app.knowledge.summary import one_line
+
+        catalog = load_catalog(Manifest.load(get_settings().documents_dir)).catalog
+        for option in ask(client, self.ASKS)["candidates"]:
+            item = catalog.get(option["id"])
+            assert item is not None
+            assert option["summary"] == one_line(item)
+
+    def test_the_stream_carries_the_same_descriptions(self, client: TestClient) -> None:
+        streamed = parse_sse(
+            client.post("/api/chat/stream", json={"message": self.ASKS}).text
+        )
+        verdict = next(data for name, data in streamed if name == "verdict")
+        answered = ask(client, self.ASKS)
+        assert verdict["candidates"] == answered["candidates"]
+
+    def test_a_question_does_not_claim_nothing_matched(self, client: TestClient) -> None:
+        """It used to. The clarifying question offered two services and then,
+        directly beneath them, said nothing had matched closely enough to cite."""
+        from app.orchestrator.pipeline import CHOICE_CITATION, NO_CITATIONS
+
+        citations = tuple(ask(client, self.ASKS)["citations"])
+        assert citations != NO_CITATIONS
+        assert citations == CHOICE_CITATION
+
+    def test_an_answer_that_is_not_a_question_carries_no_options(
+        self, client: TestClient
+    ) -> None:
+        assert ask(client, "can we order some merch")["candidates"] == []

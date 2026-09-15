@@ -28,6 +28,7 @@ from pydantic.alias_generators import to_camel
 
 from app.api.session import Role
 from app.core.types import Status
+from app.knowledge.summary import one_line
 from app.orchestrator.history import HistoryTurn
 from app.orchestrator.pipeline import Answer
 from app.orchestrator.router import ConversationState
@@ -76,7 +77,6 @@ MAX_PENDING_TOKEN_CHARS = 3072
 The context can run to MAX_NOTE_CHARS, and signing and base64 inflate it, so
 the old 1024 would have rejected the token for any note beyond a sentence or
 two — as a malformed request, on the turn that sends the email."""
-"""Generous ceiling on the sealed mail action. The real thing is ~300 chars."""
 
 MAX_CARRIED_IDS = 8
 """Ceiling on ids echoed back in state. The resolver never produces more than
@@ -247,6 +247,15 @@ class CandidateOption(Base):
 
     id: str
     label: str
+    summary: str = ""
+    """What the service is, in one sentence from its own document.
+
+    A name alone does not let anyone choose. "Emails (Copywriting)" and "Ad hoc
+    email requests" read as the same thing to somebody who needs an email sent,
+    and the difference between them — writing the copy, or running a one-off
+    campaign — is exactly what decides whether it is free. Taken from the corpus
+    rather than written here, so the question is only ever as right as the
+    documents, and never says anything the documents do not."""
 
 
 class ActionModel(Base):
@@ -283,7 +292,7 @@ def candidates_from(answer: Answer) -> tuple[CandidateOption, ...]:
     if not answer.awaiting_answer:
         return ()
     return tuple(
-        CandidateOption(id=item.item_id, label=item.display_name)
+        CandidateOption(id=item.item_id, label=item.display_name, summary=one_line(item))
         for item in answer.resolution.items
     )
 

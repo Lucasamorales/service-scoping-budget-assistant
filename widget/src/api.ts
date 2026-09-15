@@ -31,6 +31,8 @@ export type Verdict = {
 export type CandidateOption = {
   id: string;
   label: string;
+  /** One sentence from the service's own document. Absent from an older server. */
+  summary?: string;
 };
 
 export type HistoryMessage = {

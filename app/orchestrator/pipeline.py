@@ -70,6 +70,16 @@ NO_CITATIONS = ("Searched the corpus; nothing matched closely enough to cite.",)
 """Even "nothing was retrieved" is a citation: the alternative is an answer
 whose basis nobody can check."""
 
+CHOICE_CITATION = ("Each option is described from its own scope document.",)
+"""For a turn that asks which service was meant.
+
+It used to fall through to :data:`NO_CITATIONS`, so the clarifying question for
+"send an email about an event" offered two services and then, directly beneath
+them, claimed nothing had matched closely enough to cite. The basis of a question
+is the options it offers, and each one's description is read from its document.
+Makes no claim about where the options are drawn, which differs between the
+widget and plain text."""
+
 CATALOG_CITATION = ("Answered from the service catalog, not from retrieved prose.",)
 """For turns answered from structured data rather than from prose.
 
@@ -680,6 +690,10 @@ class _Turn:
         # The catalogue answers these outright; no search was involved.
         if {Capability.LIST, Capability.CAPABILITIES} & set(self.facts.satisfied):
             return CATALOG_CITATION
+        # A question found several services. Saying "nothing matched" under it
+        # contradicted the options sitting just above.
+        if self.resolution.outcome is Outcome.AMBIGUOUS:
+            return CHOICE_CITATION
         return NO_CITATIONS
 
     def briefing(self) -> str:

@@ -51,6 +51,10 @@
     <div class="frame">
       <acme-chat></acme-chat>
     </div>
-      <script type="module" src="/widget/acme-chat.js?v=20260819a"></script>
+      <!-- Bump ?v= whenever the widget changes. The bundle URL is otherwise
+           constant, so a browser that has loaded it once keeps its copy: this
+           stayed at 20260819a through a month of widget changes, and a returning
+           visitor could still be running August's bundle. -->
+      <script type="module" src="/widget/acme-chat.js?v=20260915a"></script>
   </body>
 </html>
