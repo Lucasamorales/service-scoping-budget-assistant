@@ -28,6 +28,7 @@ CatalogGet = Callable[[str], ServiceItem | None]
 confirm can be tested without building one."""
 
 __all__ = [
+    "NOT_COVERED",
     "FlowResult",
     "PendingAction",
     "SessionIdentity",
@@ -54,12 +55,14 @@ _YES_LABEL = {
     "email_am": "Yes, ping my AM",
     "email_am_variable": "Yes, email my AM",
     "email_cm_po": "Yes, request a PO",
+    "email_am_out_of_scope": "Yes, put me in touch with my AM",
 }
 
 _ROLE_WORD = {
     "email_cm_po": "your Country Manager",
     "email_am": "your Account Manager",
     "email_am_variable": "your Account Manager",
+    "email_am_out_of_scope": "your Account Manager",
 }
 
 _CONTEXT_PROMPT_DEFAULT = "Add some context for this request"
@@ -70,9 +73,25 @@ _CONTEXT_PROMPT = {
     # A manual quote is the one where the reader has to act on the detail
     # rather than just approve it, so the ask names what they need.
     "email_am_variable": "Add some context — what do they need to know to price it?",
+    # Out of scope has no standard route, so the Account Manager is being asked
+    # to think of one. They can only do that knowing what the requester is
+    # actually trying to achieve, not just the service that was ruled out.
+    "email_am_out_of_scope": "What are you trying to get done? Your AM will look for another way.",
 }
 
 _CONTEXT_PLACEHOLDER = "e.g. New branch opening in March, we need these for the launch event"
+
+NOT_COVERED = "isn't something central marketing covers"
+"""How an out-of-scope answer is said, in the offer and in the model's briefing.
+
+Plain, and deliberately without a reason. The corpus gives one — "can't include
+as it would require additional resources" — and a reply that repeats it reads as
+a budget complaint ("it would need extra resources we don't currently have").
+Also without a time: every reply the model wrote said "right now", which quietly
+suggests central marketing might take it on later, and it will not.
+
+Lives here rather than beside the briefing because the offer below needs it and
+the briefing module already imports this one."""
 
 
 def send_actions(kind: str) -> tuple[Action, ...]:
@@ -101,7 +120,7 @@ class SessionIdentity:
 @dataclass(frozen=True, slots=True)
 class PendingAction:
     kind: str
-    """``email_am`` | ``email_cm_po`` | ``email_am_variable``."""
+    """``email_am`` | ``email_cm_po`` | ``email_am_variable`` | ``email_am_out_of_scope``."""
 
     service_id: str | None = None
     quote_amount: float | None = None
@@ -174,6 +193,8 @@ def enrich_scope_flow(
         return _flow_in_scope(item, contacts, budget_store, identity, question)
     if item.status is Status.QUOTE_REQUIRED:
         return _flow_quote(item, contacts, quote_store, budget_store, identity, question)
+    if item.status is Status.OUT_OF_SCOPE:
+        return _flow_out_of_scope(item, contacts, identity)
     return None
 
 
@@ -408,6 +429,42 @@ def _send_pending(
         ),
         audit_outcome=OUTCOME_EMAIL_DRAFTED,
         email=email_meta,
+    )
+
+
+def _flow_out_of_scope(
+    item: ServiceItem,
+    contacts: ContactDirectory,
+    identity: SessionIdentity,
+) -> FlowResult:
+    """A no from central marketing, with an offer to reach someone who might help.
+
+    Out of scope used to end the conversation: a verdict and nothing to do about
+    it. The stakeholder's ask was the reverse — say it's out of scope, say we
+    might still be able to help, and offer to put them in touch with their
+    Account Manager — because an out-of-scope request is often a real need
+    phrased as the wrong service, and the Account Manager is the person who can
+    tell the difference.
+
+    The no is still said plainly and without a reason; see NOT_COVERED. "Might
+    still be able to help" is about the person, not the verdict: it never
+    suggests central marketing will take this on.
+    """
+    contact = contacts.for_country(identity.country, role="account_manager")
+    who = f"**{contact.name}**, your Account Manager" if contact else "your Account Manager"
+    text = (
+        f"**{item.display_name}** {NOT_COVERED}, but we might still be able to help. "
+        f"Want me to put you in touch with {who}?"
+    )
+    return FlowResult(
+        text=text,
+        actions=send_actions("email_am_out_of_scope"),
+        pending=PendingAction(
+            kind="email_am_out_of_scope",
+            service_id=item.item_id,
+            recipient_country=identity.country,
+            recipient_name=contact.name if contact else None,
+        ),
     )
 
 

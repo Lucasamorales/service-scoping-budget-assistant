@@ -204,11 +204,17 @@ class TestANoPointsSomewhereReal:
     OUT = "can someone send me the QR report"
     LOCAL = "who looks after our instagram posts"
 
-    def test_an_out_of_scope_briefing_names_the_account_manager(self, pipeline) -> None:
+    def test_an_out_of_scope_briefing_offers_to_reach_the_account_manager(
+        self, pipeline
+    ) -> None:
+        """It used to point them to the Account Manager in words only. The ask
+        was for the assistant to put them in touch, so the briefing now carries
+        an offer to email the Account Manager, and no competing next step."""
         text = briefing(pipeline, self.OUT)
         assert "Status code: out_of_scope" in text
-        assert "Next step: point them to their Account Manager" in text
-        assert "never invent a role or a contact" in text
+        assert "## The next step you are offering" in text
+        assert "email their Account Manager, who might still find another way to help" in text
+        assert "Next step: point them to" not in text
 
     def test_an_out_of_scope_briefing_asks_for_a_plain_no(self, pipeline) -> None:
         from app.orchestrator.facts import NOT_COVERED

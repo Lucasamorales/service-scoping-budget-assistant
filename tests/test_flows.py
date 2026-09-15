@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 
+from app.core.types import Status
 from app.knowledge.chunking import chunk_service_item
 from app.knowledge.index import KnowledgeIndex
 from app.orchestrator.llm import DETERMINISTIC
@@ -351,3 +352,99 @@ class TestTheEmailIsWiredToItsEnvironment:
         assert sent.body.strip()
         assert sent.html.strip()
         assert sent.attachments[0].content.startswith(b"%PDF")
+
+
+class TestAnOutOfScopeAnswerOffersTheAccountManager:
+    """Out of scope used to end the conversation. The stakeholder's ask: say it
+    is out of scope, say we might still be able to help, and offer to put them
+    in touch with an Account Manager — who then gets an email, not a mention."""
+
+    UK = SessionIdentity(subject="Remy", role="am", country="United Kingdom", branch="O2")
+    ASK = "Can someone send me the QR report?"
+    CONTEXT = "We want to track how many people scan the QR codes on our reopening posters."
+
+    @pytest.fixture
+    def run(self, corpus, tmp_path):
+        from app.store.mail import MailMessage, MailResult
+
+        class Capturing:
+            from_address = "Acme Scoping <sender@example.org>"
+
+            def __init__(self) -> None:
+                self.messages: list[MailMessage] = []
+
+            def send(self, message: MailMessage) -> MailResult:
+                self.messages.append(message)
+                return MailResult(sent=True, provider_id="x", detail="sent")
+
+        mailer = Capturing()
+        chunks = [chunk for item in corpus.catalog for chunk in chunk_service_item(item)]
+        pipeline = Pipeline(
+            corpus.catalog,
+            KnowledgeIndex.build(chunks),
+            # No model: these assert the offer itself, which is the wording that
+            # ships whenever the model is off or its reply is rejected.
+            model=None,
+            quote_store=load_quote_store(RATE_CARD),
+            contacts=load_contacts(CONTACTS),
+            mailer=mailer,
+            audit_log=JsonlAuditStore(tmp_path),
+        )
+        return pipeline, mailer
+
+    def test_the_verdict_stays_out_of_scope(self, run) -> None:
+        """The offer is about the person, not the verdict. Nothing here may
+        suggest central marketing takes it on."""
+        pipeline, _ = run
+        answer = pipeline.answer(self.ASK, identity=self.UK)
+        assert answer.resolution.status is Status.OUT_OF_SCOPE
+
+    def test_it_offers_to_put_them_in_touch(self, run) -> None:
+        pipeline, mailer = run
+        answer = pipeline.answer(self.ASK, identity=self.UK)
+        assert answer.next_state.pending_action_kind == "email_am_out_of_scope"
+        assert "Yes, put me in touch with my AM" in [a.label for a in answer.actions]
+        assert "Account Manager" in answer.text
+        assert "might still be able to help" in answer.text
+        assert not mailer.messages, "nothing is sent before they say yes"
+
+    def test_yes_sends_the_account_manager_an_out_of_scope_email(self, run) -> None:
+        pipeline, mailer = run
+        first = pipeline.answer(self.ASK, identity=self.UK)
+        pipeline.answer("Yes", first.next_state, identity=self.UK, note=self.CONTEXT)
+
+        assert len(mailer.messages) == 1
+        sent = mailer.messages[0]
+        am = load_contacts(CONTACTS).for_country("United Kingdom", role="account_manager")
+        assert am is not None
+        assert sent.to_email == am.email, "the Account Manager, not the Country Manager"
+        assert sent.subject.startswith("Out of scope:")
+        assert self.CONTEXT in sent.body
+        assert "CAN YOU HELP THEM FIND ANOTHER WAY?" in sent.body
+        assert "Can you help them find another way?" in sent.html
+        assert "Out of scope</td>" in sent.html
+
+    def test_the_email_does_not_mention_a_price(self, run) -> None:
+        """There is none, and the footer used to credit the rate card for one."""
+        pipeline, mailer = run
+        first = pipeline.answer(self.ASK, identity=self.UK)
+        pipeline.answer("Yes", first.next_state, identity=self.UK, note=self.CONTEXT)
+        sent = mailer.messages[0]
+        assert "rate card" not in sent.body.lower()
+        assert "£" not in sent.body
+
+    def test_no_thanks_sends_nothing(self, run) -> None:
+        pipeline, mailer = run
+        first = pipeline.answer(self.ASK, identity=self.UK)
+        pipeline.answer("No", first.next_state, identity=self.UK)
+        assert not mailer.messages
+
+    def test_every_kind_that_can_be_sent_has_both_templates(self) -> None:
+        """A kind the confirm path accepts but no template renders would fail on
+        the one turn that matters — after the person has already said yes."""
+        from app.api.pending import PENDING_KINDS
+        from app.tools.email_template import TEMPLATE_DIR
+
+        for kind in PENDING_KINDS:
+            assert (TEMPLATE_DIR / f"{kind}.html").is_file(), kind
+            assert (TEMPLATE_DIR / f"{kind}.txt").is_file(), kind

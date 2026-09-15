@@ -26,7 +26,7 @@ from app.store.budget import BudgetSnapshot
 from app.store.contacts import Contact
 from app.tools.actions import Action
 from app.tools.budget import BudgetToolResult
-from app.tools.flows import PendingAction
+from app.tools.flows import NOT_COVERED, PendingAction
 from app.tools.quote import QuoteOutcome
 
 __all__ = ["FactPack", "figures_in"]
@@ -40,20 +40,7 @@ _STATUS_SENTENCE: dict[Status, str] = {
     Status.OUT_OF_SCOPE: "central marketing will not take this on",
 }
 
-NOT_COVERED = "isn't something central marketing covers"
-"""How an out-of-scope answer is said, in the briefing and in the fallback alike.
-
-Plain, and deliberately without a reason. The corpus gives one — "can't include
-as it would require additional resources" — and a reply that repeats it reads as
-a budget complaint ("it would need extra resources we don't currently have").
-Also without a time: every reply the model wrote said "right now", which quietly
-suggests the answer might change, and a no must never suggest that."""
-
 NEXT_STEP: dict[Status, tuple[str, str]] = {
-    Status.OUT_OF_SCOPE: (
-        "their Account Manager, who can talk through other ways to get this done",
-        "Your Account Manager is the best person to talk to about other ways to get this done.",
-    ),
     Status.LOCAL: (
         "their local site or operations team, who own this",
         "Your local site or operations team is the one to speak to.",
@@ -65,9 +52,10 @@ Each entry is the same routing said twice: an instruction for the model, and the
 sentence the deterministic reply uses when there is no model. Kept together so
 the two cannot drift apart.
 
-In scope and quote required are absent on purpose. They carry their own next
-step, an offer to email the Account or Country Manager, and a second one would
-compete with it.
+In scope, quote required and out of scope are absent on purpose. Each carries
+its own next step, an offer to email the Account or Country Manager, and a
+second one would compete with it. Out of scope used to be here, pointing to the
+Account Manager in words only; it now offers to put them in touch.
 
 This exists because the verdicts above had no next step at all, while the
 system prompt asks for one after every answer. With nothing to go on, the model
@@ -353,8 +341,10 @@ class FactPack:
         if status is Status.OUT_OF_SCOPE:
             header += (
                 f"\nThis is a no from central marketing. Say plainly that it {NOT_COVERED}. "
-                "Give no reason, no apology, and nothing that suggests it could change later "
-                "— no 'right now', 'at the moment' or 'currently'.\n"
+                "Give no reason, no apology, and nothing that suggests central marketing could "
+                "take it on later — no 'right now', 'at the moment' or 'currently'. "
+                "Their Account Manager might still find another way to help, and it is "
+                "fine to say so as you make the offer below.\n"
             )
         if status in NEXT_STEP and self.pending is None:
             header += (
@@ -453,6 +443,9 @@ def _pending_sentence(pending: PendingAction) -> str:
         "email_am": "their Account Manager",
         "email_cm_po": "their Country Manager, to request a purchase order",
         "email_am_variable": "their Account Manager, to price this by hand",
+        "email_am_out_of_scope": (
+            "their Account Manager, who might still find another way to help"
+        ),
     }.get(pending.kind, "the right person")
     amount = (
         f" The email would carry the "

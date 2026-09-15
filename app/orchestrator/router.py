@@ -301,7 +301,8 @@ class ConversationState:
     """Stable id for audit logging across client-carried turns."""
 
     pending_action_kind: str | None = None
-    """``email_am`` / ``email_cm_po`` / ``email_am_variable`` while awaiting Yes/No."""
+    """``email_am`` / ``email_cm_po`` / ``email_am_variable`` / ``email_am_out_of_scope``
+    while awaiting Yes/No."""
 
     pending_service_id: str | None = None
     pending_quote_amount: float | None = None

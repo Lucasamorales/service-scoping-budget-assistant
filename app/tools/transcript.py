@@ -102,6 +102,7 @@ _DECISION = {
     "email_cm_po": "PURCHASE ORDER REQUESTED",
     "email_am": "IN SCOPE — NO CHARGE",
     "email_am_variable": "NOT ON THE RATE CARD",
+    "email_am_out_of_scope": "ASKING FOR ANOTHER WAY",
 }
 
 

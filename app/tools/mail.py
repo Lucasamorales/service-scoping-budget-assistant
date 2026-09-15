@@ -26,6 +26,7 @@ _PREHEADER_LEAD = {
     "email_am": "In scope, free of charge",
     "email_cm_po": "{amount} purchase order",
     "email_am_variable": "Manual quote needed",
+    "email_am_out_of_scope": "Out of scope, asking for help",
 }
 
 _PREHEADER_CAP = 90

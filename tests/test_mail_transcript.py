@@ -496,7 +496,7 @@ class TestTheTemplatesStayEmailSafe:
         """Everything else is inline CSS, which is what keeps Gmail from
         stripping the design. The font block is the one exception, and it is
         progressive enhancement — nothing depends on it arriving."""
-        for kind in ("email_am", "email_cm_po", "email_am_variable"):
+        for kind in ("email_am", "email_cm_po", "email_am_variable", "email_am_out_of_scope"):
             source = (TEMPLATE_DIR / f"{kind}.html").read_text(encoding="utf-8")
             blocks = re.findall(r"<style\b[^>]*>(.*?)</style>", source, re.DOTALL)
             assert len(blocks) == 1, kind

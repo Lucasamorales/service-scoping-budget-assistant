@@ -1,0 +1,31 @@
+Subject: Out of scope: {{service_name}} · {{branch}}
+
+Hi {{recipient_name}},
+
+OUT OF SCOPE -- NOT COVERED BY CENTRAL MARKETING
+{{service_name}} ({{service_category}})
+
+CAN YOU HELP THEM FIND ANOTHER WAY?
+There is no standard route for this one, so they asked to talk it through
+with you. What they are trying to do is below.
+
+WHAT THEY ARE TRYING TO DO
+{{context}}
+-- {{requester_line}}
+
+DETAILS
+Service    {{service}}
+Status     {{status_label}}
+Requester  {{requester_line}}
+Venue      {{venue_line}}
+
+ATTACHED
+{{attachment_filename}} -- the whole conversation that produced this request.
+
+--
+Sent automatically by the Acme Scoping Assistant. Nobody typed this message:
+the verdict comes from the marketing scope documentation. Replies to this
+address are not read.
+
+Reference {{reference}}
+Sent from {{from_address}}

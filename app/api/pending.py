@@ -29,7 +29,9 @@ __all__ = ["PENDING_KINDS", "open_pending", "seal_pending"]
 
 logger = structlog.get_logger(__name__)
 
-PENDING_KINDS = frozenset({"email_am", "email_cm_po", "email_am_variable"})
+PENDING_KINDS = frozenset(
+    {"email_am", "email_cm_po", "email_am_variable", "email_am_out_of_scope"}
+)
 """The only actions a sealed token may ask for. Anything else is discarded."""
 
 _fallback_secret = ""

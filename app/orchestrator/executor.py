@@ -26,7 +26,7 @@ from app.core.types import ServiceItem, Status
 from app.knowledge.catalog import ServiceCatalog
 from app.knowledge.retriever import RetrievalResult
 from app.knowledge.summary import one_line
-from app.orchestrator.facts import NEXT_STEP, NOT_COVERED, FactPack
+from app.orchestrator.facts import NEXT_STEP, FactPack
 from app.orchestrator.history import HistoryTurn
 from app.orchestrator.plan import Capability, Plan
 from app.orchestrator.resolver import Outcome, Resolution, ScopeResolver
@@ -245,10 +245,12 @@ class Executor:
             )
             return self._apply_flow(pack, quote_flow)
 
-        if item.status is Status.IN_SCOPE:
-            # Named apart from the quote branch above: that one always produces
-            # a flow, this one may not, and sharing a name gave the pair a type
-            # narrower than the second assignment.
+        if item.status in (Status.IN_SCOPE, Status.OUT_OF_SCOPE):
+            # Both end in an offer to email the Account Manager: in scope to pick
+            # it up, out of scope to look for another way. Named apart from the
+            # quote branch above: that one always produces a flow, this one may
+            # not, and sharing a name gave the pair a type narrower than the
+            # second assignment.
             scope_flow = enrich_scope_flow(
                 item,
                 contacts=self.contacts,
@@ -260,17 +262,12 @@ class Executor:
             pack = replace(pack, satisfied=satisfied)
             return self._apply_flow(pack, scope_flow) if scope_flow is not None else pack
 
-        # Local / out of scope: a verdict, the corpus's reason, and where to go
-        # instead. The verdict is still described in the documents' own words;
-        # the next step comes from the same table the model is briefed from, so
-        # a reply without a model points somewhere real too.
+        # Local: a verdict, the corpus's reason, and where to go instead. The
+        # verdict is still described in the documents' own words; the next step
+        # comes from the same table the model is briefed from, so a reply
+        # without a model points somewhere real too.
         meaning = resolution.status_meaning or ""
-        if item.status is Status.OUT_OF_SCOPE:
-            # Said the way the model is told to say it, not with the corpus's
-            # reason — see NOT_COVERED for why the reason is left out.
-            verdict_line = f"**{item.display_name}** {NOT_COVERED}."
-        else:
-            verdict_line = f"**{item.display_name}** — {meaning}".strip()
+        verdict_line = f"**{item.display_name}** — {meaning}".strip()
         if item.status in NEXT_STEP:
             verdict_line = f"{verdict_line.rstrip('.')}. {NEXT_STEP[item.status][1]}"
         return replace(
