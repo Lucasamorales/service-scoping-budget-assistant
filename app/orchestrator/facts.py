@@ -40,6 +40,42 @@ _STATUS_SENTENCE: dict[Status, str] = {
     Status.OUT_OF_SCOPE: "central marketing will not take this on",
 }
 
+NOT_COVERED = "isn't something central marketing covers"
+"""How an out-of-scope answer is said, in the briefing and in the fallback alike.
+
+Plain, and deliberately without a reason. The corpus gives one — "can't include
+as it would require additional resources" — and a reply that repeats it reads as
+a budget complaint ("it would need extra resources we don't currently have").
+Also without a time: every reply the model wrote said "right now", which quietly
+suggests the answer might change, and a no must never suggest that."""
+
+NEXT_STEP: dict[Status, tuple[str, str]] = {
+    Status.OUT_OF_SCOPE: (
+        "their Account Manager, who can talk through other ways to get this done",
+        "Your Account Manager is the best person to talk to about other ways to get this done.",
+    ),
+    Status.LOCAL: (
+        "their local site or operations team, who own this",
+        "Your local site or operations team is the one to speak to.",
+    ),
+}
+"""Where to send somebody when a verdict leaves nothing for central marketing to do.
+
+Each entry is the same routing said twice: an instruction for the model, and the
+sentence the deterministic reply uses when there is no model. Kept together so
+the two cannot drift apart.
+
+In scope and quote required are absent on purpose. They carry their own next
+step, an offer to email the Account or Country Manager, and a second one would
+compete with it.
+
+This exists because the verdicts above had no next step at all, while the
+system prompt asks for one after every answer. With nothing to go on, the model
+invented one: "QR code reports" came back out of scope with a suggestion to
+chat to "your project manager", a role these venues do not have. The people
+worth sending somebody to are a business fact, so they are written down here
+rather than left to be guessed."""
+
 
 def figures_in(text: str) -> frozenset[str]:
     """Every number in a piece of text, normalised for comparison.
@@ -312,9 +348,27 @@ class FactPack:
                 f"\nThe request could also mean {also}, and they all carry this same "
                 "status, so the answer is the same either way. Do not ask them to choose.\n"
             )
+        # Only when no offer is already on the table: an in-scope or quoted
+        # answer arrives with its own email offer, and that is its next step.
+        if status is Status.OUT_OF_SCOPE:
+            header += (
+                f"\nThis is a no from central marketing. Say plainly that it {NOT_COVERED}. "
+                "Give no reason, no apology, and nothing that suggests it could change later "
+                "— no 'right now', 'at the moment' or 'currently'.\n"
+            )
+        if status in NEXT_STEP and self.pending is None:
+            header += (
+                f"\nNext step: point them to {NEXT_STEP[status][0]}. This is the only person "
+                "or team to send them to. Do not suggest anyone else, and never invent a "
+                "role or a contact.\n"
+            )
+        # Firm about the outcome, gentle about the delivery. This used to say
+        # "do not soften a no", which was aimed at a reply hinting a no might
+        # change and instead produced "Unfortunately... it would need extra
+        # resources we don't currently have": accurate, and cold.
         return header + (
-            "\nSay this outcome in plain language. Do not reinterpret it, do not soften a "
-            "no, and do not quote these headings."
+            "\nSay this outcome in plain language, clearly and kindly. Do not reinterpret it "
+            "or hint that it might change. Do not quote these headings."
         )
 
     def _quote_block(self) -> str:

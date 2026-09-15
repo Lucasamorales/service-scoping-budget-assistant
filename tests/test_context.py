@@ -192,3 +192,66 @@ def test_no_question_ever_produces_a_briefing_without_an_instruction(pipeline) -
                 "What you can do for this person",
             )
         ), question
+
+
+class TestANoPointsSomewhereReal:
+    """A verdict that leaves central marketing nothing to do still needs a next
+    step, or the model invents one. "QR code reports" came back out of scope with
+    a suggestion to chat to "your project manager", a role these venues do not
+    have, wrapped in "Unfortunately... it would need extra resources we don't
+    currently have"."""
+
+    OUT = "can someone send me the QR report"
+    LOCAL = "who looks after our instagram posts"
+
+    def test_an_out_of_scope_briefing_names_the_account_manager(self, pipeline) -> None:
+        text = briefing(pipeline, self.OUT)
+        assert "Status code: out_of_scope" in text
+        assert "Next step: point them to their Account Manager" in text
+        assert "never invent a role or a contact" in text
+
+    def test_an_out_of_scope_briefing_asks_for_a_plain_no(self, pipeline) -> None:
+        from app.orchestrator.facts import NOT_COVERED
+
+        text = briefing(pipeline, self.OUT)
+        assert NOT_COVERED in text
+        assert "Give no reason, no apology" in text
+        assert "right now" in text, "the time words are named so they are avoided"
+
+    def test_a_local_briefing_names_the_local_team(self, pipeline) -> None:
+        text = briefing(pipeline, self.LOCAL)
+        assert "Status code: local" in text
+        assert "Next step: point them to their local site or operations team" in text
+
+    def test_the_no_guidance_is_only_for_out_of_scope(self, pipeline) -> None:
+        """Local is not a no from anyone; the local team does the work. Telling
+        the model to withhold the reason there would withhold the answer."""
+        assert "This is a no from central marketing" not in briefing(pipeline, self.LOCAL)
+
+    def test_an_answer_with_its_own_offer_gets_no_competing_next_step(
+        self, pipeline
+    ) -> None:
+        """In scope and quote required carry an email offer. A second next step
+        beside it would leave the reader choosing between two."""
+        assert "Next step:" not in briefing(pipeline, "can we order some merch")
+
+    def test_the_old_instruction_that_made_a_no_cold_is_gone(self, pipeline) -> None:
+        assert "do not soften a no" not in briefing(pipeline, self.OUT)
+
+
+class TestTheReplyWithoutAModelPointsSomewhereReal:
+    """The deterministic reply is what ships when the model is off or its reply
+    is rejected. It follows the same table the model is briefed from."""
+
+    def test_out_of_scope_routes_to_the_account_manager(self, pipeline) -> None:
+        text = pipeline.answer("can someone send me the QR report").text
+        assert "Account Manager" in text
+        assert "project manager" not in text.lower()
+
+    def test_out_of_scope_gives_no_reason(self, pipeline) -> None:
+        text = pipeline.answer("can someone send me the QR report").text
+        assert "resources" not in text.lower()
+
+    def test_local_routes_to_the_local_team(self, pipeline) -> None:
+        text = pipeline.answer("who looks after our instagram posts").text
+        assert "local site or operations team" in text

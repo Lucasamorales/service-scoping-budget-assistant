@@ -26,7 +26,7 @@ from app.core.types import ServiceItem, Status
 from app.knowledge.catalog import ServiceCatalog
 from app.knowledge.retriever import RetrievalResult
 from app.knowledge.summary import one_line
-from app.orchestrator.facts import FactPack
+from app.orchestrator.facts import NEXT_STEP, NOT_COVERED, FactPack
 from app.orchestrator.history import HistoryTurn
 from app.orchestrator.plan import Capability, Plan
 from app.orchestrator.resolver import Outcome, Resolution, ScopeResolver
@@ -260,14 +260,23 @@ class Executor:
             pack = replace(pack, satisfied=satisfied)
             return self._apply_flow(pack, scope_flow) if scope_flow is not None else pack
 
-        # Local / out of scope: a verdict and a reason, no CTA to offer.
+        # Local / out of scope: a verdict, the corpus's reason, and where to go
+        # instead. The verdict is still described in the documents' own words;
+        # the next step comes from the same table the model is briefed from, so
+        # a reply without a model points somewhere real too.
         meaning = resolution.status_meaning or ""
+        if item.status is Status.OUT_OF_SCOPE:
+            # Said the way the model is told to say it, not with the corpus's
+            # reason — see NOT_COVERED for why the reason is left out.
+            verdict_line = f"**{item.display_name}** {NOT_COVERED}."
+        else:
+            verdict_line = f"**{item.display_name}** — {meaning}".strip()
+        if item.status in NEXT_STEP:
+            verdict_line = f"{verdict_line.rstrip('.')}. {NEXT_STEP[item.status][1]}"
         return replace(
             pack,
             satisfied=satisfied,
-            fallback_text=_join(
-                pack.fallback_text, f"**{item.display_name}** — {meaning}".strip()
-            ),
+            fallback_text=_join(pack.fallback_text, verdict_line),
         )
 
     def _quote_flow(

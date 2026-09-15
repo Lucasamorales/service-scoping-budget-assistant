@@ -860,6 +860,22 @@
       "expectVerdict": "local",
       "critical": true,
       "note": "Reported live on 15 Sep 2026. CST is the Customer satisfaction tracker, which the local team runs. The acronym appeared nowhere in that item's document, so the only item that could match was Supermetrics license (pulls data for all reports, including CST), in scope — and the requester was told central marketing covers it. Fixed in the corpus by adding CST to the tracker's Also known as, which is what that field is for; not in code, which would be hardcoding an answer."
+    },
+    {
+      "id": "scope-out-of-scope-routes-to-account-manager",
+      "message": "Can someone send me the QR report?",
+      "expect": [
+        "scope"
+      ],
+      "expectVerdict": "out_of_scope",
+      "mustInclude": [
+        "Account Manager"
+      ],
+      "mustNotInclude": [
+        "project manager",
+        "additional resources"
+      ],
+      "note": "Reported live on 15 Sep 2026. An out-of-scope verdict had no next step, while the system prompt asks for one after every answer, so the model invented 'your project manager' — a role these venues do not have — and repeated the corpus's reason as 'it would need extra resources we don't currently have'. A no now points to the Account Manager and gives no reason."
     }
   ]
 }
