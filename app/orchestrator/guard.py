@@ -15,6 +15,10 @@ having a model at all, so this looks for the failures that actually cost money:
 - **A verdict turned upside down.** Saying "free of charge" about something that
   needs a purchase order is the single most expensive sentence this product can
   produce.
+- **A verdict for a service nobody looked up.** One message can ask about two
+  services, and only one is checked. "Good news on the goals dashboard
+  though, that's something we can definitely help with" gives a verdict no
+  lookup produced, and would be a free promise for anything chargeable.
 - **The right figures about the wrong country.** A budget answer that names a
   country the lookup was not about is wrong even when every number in it is
   real, and it reads exactly as authoritative as a correct one.
@@ -27,8 +31,10 @@ from dataclasses import dataclass
 
 import structlog
 
+from app.core.keys import content_tokens
 from app.core.types import Status
 from app.orchestrator.facts import FactPack, figures_in
+from app.orchestrator.resolver import STEM_LENGTH
 
 __all__ = ["Violation", "inspect"]
 
@@ -62,6 +68,21 @@ _LOCAL_CLAIM = re.compile(
     r"\b(your local (site|team)|local site|ops team|handled locally|sits with (your|the) local)\b",
     re.IGNORECASE,
 )
+_ASSURANCE_CLAIM = re.compile(
+    r"\b(good news|can (definitely |certainly |absolutely )?help( you)? with|"
+    r"(we|central marketing|the central marketing team) (can|could|will) "
+    r"(do|handle|cover|sort|take care of)|(is|that'?s|it'?s) covered|we cover|"
+    r"happy to help with)\b",
+    re.IGNORECASE,
+)
+"""Reassurance that works as a verdict without using a verdict word.
+
+Only consulted beside a service that was not looked up. On its own "we can
+help with that" is ordinary friendliness; next to a service nobody checked it
+is a promise, and the one this was written for was exactly that."""
+
+_CLAUSE_BREAK = re.compile(r"(?<=[.!?;])\s+")
+
 _SENT_CLAIM = re.compile(
     r"\b(i'?ve sent|i have sent|email (has been |was )?sent|sent to)\b",
     re.IGNORECASE,
@@ -105,12 +126,57 @@ def inspect(text: str, facts: FactPack) -> Violation | None:
     if verdict := _contradicted_verdict(text, facts):
         return Violation("verdict", verdict)
 
+    if unchecked := _verdict_for_unchecked_service(text, facts):
+        return Violation("verdict", unchecked)
+
     if _SENT_CLAIM.search(text) and facts.email is None:
         return Violation("mail", "the reply claims an email was sent; none was")
 
     if place := _wrong_country(text, facts):
         return Violation("place", place)
 
+    return None
+
+
+def _stems(text: str) -> set[str]:
+    return {token[:STEM_LENGTH] for token in content_tokens(text)}
+
+
+def _verdict_for_unchecked_service(text: str, facts: FactPack) -> str | None:
+    """A verdict or reassurance given beside a service that was never looked up.
+
+    The services to watch for are the ones the planner listed as asked about but
+    not looked up, in the user's own words, so this matches those words rather
+    than guessing from the whole catalogue — which, measured, confused
+    "international" with Translation & localisation.
+
+    A clause counts as being about one of them when it carries at least half of
+    that phrase's words, not counting words the looked-up service shares. The
+    clause after it is read too, because the reply this was written for named
+    the service in one sentence and promised it in the next — unless that next
+    clause is plainly about the looked-up service, whose verdict belongs there.
+    """
+    others = facts.plan.slots.other_services
+    if not others or facts.scope is None:
+        return None
+    looked_up: set[str] = set()
+    for candidate in facts.scope.candidates:
+        looked_up |= _stems(candidate.item.item)
+    claims = (_FREE_CLAIM, _CHARGE_CLAIM, _REFUSAL_CLAIM, _LOCAL_CLAIM, _ASSURANCE_CLAIM)
+    clauses = [c for c in _CLAUSE_BREAK.split(text.strip()) if c]
+    for phrase in others:
+        words = _stems(phrase) - looked_up
+        if not words:
+            continue
+        needed = max(1, (len(words) + 1) // 2)
+        for index, clause in enumerate(clauses):
+            if len(words & _stems(clause)) < needed:
+                continue
+            window = [clause]
+            if index + 1 < len(clauses) and not (_stems(clauses[index + 1]) & looked_up):
+                window.append(clauses[index + 1])
+            if any(claim.search(part) for part in window for claim in claims):
+                return f"the reply gives a verdict for {phrase!r}, which was not looked up"
     return None
 
 

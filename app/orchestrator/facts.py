@@ -215,6 +215,16 @@ class FactPack:
 
         if self.scope is not None:
             blocks.append(self._scope_block())
+            if self.plan.slots.other_services:
+                asked = "\n".join(f"- {phrase}" for phrase in self.plan.slots.other_services)
+                blocks.append(
+                    "## Also asked about, and not looked up\n\n"
+                    f"{asked}\n\n"
+                    "Only the service above was checked. Give no verdict for these: do not "
+                    "say whether they are covered, free, chargeable or handled locally, and "
+                    "do not say central marketing can help with them. Say you have not "
+                    "checked them yet and ask them to send each one as its own question."
+                )
 
         if self.quote is not None:
             blocks.append(self._quote_block())

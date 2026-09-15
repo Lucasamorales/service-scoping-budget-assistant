@@ -21,6 +21,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field, replace
 from enum import StrEnum
+from typing import Any
 
 from app.core.types import Status
 
@@ -109,6 +110,18 @@ class Slots:
     section: str | None = None
     status_filter: str | None = None
 
+    other_services: tuple[str, ...] = ()
+    """Further services the same message asks about, in the user's own words.
+
+    Only the service_phrase is looked up. These exist so the answer can say it
+    has not checked them rather than guess: "I need the QR reports and access to
+    the international goals dashboard" was answered about QR code reports, and
+    the model added unprompted that the dashboard was "something central
+    marketing can definitely help with" — a verdict nothing looked up. It
+    happened to be true; for a service that needs a quote it would have been a
+    free promise. Every entry is checked to appear in the message, so these can
+    only ever be words the user typed."""
+
     @property
     def status(self) -> Status | None:
         return status_filter_from(self.status_filter)
@@ -124,6 +137,7 @@ class Slots:
                 ("month", self.month),
                 ("section", self.section),
                 ("status_filter", self.status_filter),
+                ("other_services", " | ".join(self.other_services)),
             )
             if value
         }
@@ -163,7 +177,9 @@ class Plan:
     def needs_a_service(self) -> bool:
         return any(capability.needs_a_service for capability in self.capabilities)
 
-    def with_slots(self, **updates: str | None) -> Plan:
+    def with_slots(self, **updates: Any) -> Plan:
+        # Any, not str | None: other_services is a tuple, and a narrower
+        # annotation made every slot update fail type-checking.
         return replace(self, slots=replace(self.slots, **updates))
 
     def explain(self) -> str:

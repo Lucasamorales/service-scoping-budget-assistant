@@ -137,6 +137,13 @@ class Executor:
             pack = self._scope(
                 pack, question, plan, route, identity, resolution, retrieval
             )
+            if plan.slots.other_services and pack.scope is not None:
+                pack = replace(
+                    pack,
+                    fallback_text=_join(
+                        pack.fallback_text, _not_yet_checked(plan.slots.other_services)
+                    ),
+                )
 
         if plan.wants(Capability.BUDGET):
             pack = self._budget(pack, question, plan, state, identity)
@@ -494,6 +501,20 @@ def _role_wanted(question: str) -> str | None:
 def _is_thanks(message: str) -> bool:
     return any(
         word in message.lower() for word in ("thanks", "thank you", "cheers", "ta ", "great")
+    )
+
+
+def _not_yet_checked(phrases: tuple[str, ...]) -> str:
+    """Name what was asked but not looked up, and how to get it checked.
+
+    In the user's own words, since those are the only words known to mean what
+    they meant; naming a catalogue item here would be the guess this avoids.
+    """
+    named = " and ".join(f"**{phrase}**" for phrase in phrases)
+    each = "that" if len(phrases) == 1 else "each one"
+    return (
+        f"You also asked about {named}. I haven't checked {each} yet, so send "
+        f"{each} as its own question and I'll look it up."
     )
 
 

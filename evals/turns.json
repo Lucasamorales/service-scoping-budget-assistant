@@ -876,6 +876,20 @@
         "additional resources"
       ],
       "note": "Reported live on 15 Sep 2026. An out-of-scope verdict had no next step, while the system prompt asks for one after every answer, so the model invented 'your project manager' — a role these venues do not have — and repeated the corpus's reason as 'it would need extra resources we don't currently have'. A no now points to the Account Manager and gives no reason."
+    },
+    {
+      "id": "scope-two-services-only-one-verdict",
+      "message": "I need the QR reports and access to the international goals dashboard",
+      "expect": [
+        "scope"
+      ],
+      "expectVerdict": "out_of_scope",
+      "mustNotInclude": [
+        "definitely help",
+        "good news"
+      ],
+      "knownFailure": "Passes in the deployed configuration and fails offline. Splitting one message into the service to look up and the others it mentions is the model planner's job; the rule planner hands the resolver the whole sentence, which names two services and so is asked about instead of answered. Asking is the safe failure direction, and no verdict for the second service is given either way.",
+      "note": "Reported live on 15 Sep 2026. The QR reports were looked up and correctly came back out of scope; the reply then added 'Good news on the international goals dashboard though! That's something the central marketing team can definitely help with.' Nothing looked the dashboard up. The planner now lists the second service, the briefing forbids a verdict for it, and the guard rejects one."
     }
   ]
 }

@@ -214,6 +214,10 @@ _SCHEMA_CAPABILITIES = (
 confirmation are not here: all three are decided by rule before the planner
 runs."""
 
+# ``other_services`` is described under Slots but deliberately left out of the
+# JSON template. With it in the template, "what about july" in a budget thread
+# was planned as scope three times in three (budget-sticky-month-only); without
+# it, three in three correct, and the two-service split still made every time.
 _INSTRUCTION = """\
 You route an internal Acme marketing assistant. You do NOT answer the user.
 
@@ -256,6 +260,10 @@ Slots — copy words from the message, never invent:
                   they ask for only free / only chargeable / only local things
 - reading         one short clause naming what you think they are asking about,
                   in their words, or null
+- other_services  [] unless service_phrase is set and the message names more
+                  than one; then the words for the rest ("the QR reports and
+                  the goals dashboard": service_phrase "QR reports",
+                  other_services ["goals dashboard"])
 
 Rules:
 - Never state a verdict, a price, a budget figure or an opinion. You select
@@ -419,14 +427,49 @@ def _slots_from(parsed: dict[str, Any], message: str, rules: Plan) -> Slots:
         "out_of_scope",
     }:
         status = None
+    service_phrase = _clean(parsed.get("service_phrase")) or message
     return Slots(
-        service_phrase=_clean(parsed.get("service_phrase")) or message,
+        service_phrase=service_phrase,
         branch=rules.slots.branch or _clean(parsed.get("branch")),
         country=rules.slots.country or _clean(parsed.get("country")),
         month=rules.slots.month or _clean(parsed.get("month")),
         section=rules.slots.section or _clean(parsed.get("section")),
         status_filter=rules.slots.status_filter or (status.lower() if status else None),
+        other_services=_other_services(parsed.get("other_services"), message, service_phrase),
     )
+
+
+MAX_OTHER_SERVICES = 3
+"""More than this and the message is a list, not a request; the answer would be a
+wall of "ask me about this separately"."""
+
+
+def _other_services(raw: Any, message: str, service_phrase: str) -> tuple[str, ...]:
+    """Further services named in the message, keeping only words the user typed.
+
+    The model is told to copy these from the message, and here that is enforced
+    rather than trusted: a phrase that does not appear in the message is dropped.
+    What survives is only ever used to say something has *not* been checked, so a
+    missed one costs a turn and an invented one cannot happen.
+    """
+    if not isinstance(raw, list):
+        return ()
+    haystack = " ".join(message.lower().split())
+    primary = " ".join(service_phrase.lower().split())
+    kept: list[str] = []
+    for entry in raw:
+        phrase = _clean(entry)
+        if phrase is None:
+            continue
+        normalised = " ".join(phrase.lower().split())
+        if normalised not in haystack or normalised == primary:
+            continue
+        if normalised in (" ".join(k.lower().split()) for k in kept):
+            continue
+        kept.append(phrase)
+        if len(kept) == MAX_OTHER_SERVICES:
+            break
+    return tuple(kept)
 
 
 def _clean(value: Any) -> str | None:
