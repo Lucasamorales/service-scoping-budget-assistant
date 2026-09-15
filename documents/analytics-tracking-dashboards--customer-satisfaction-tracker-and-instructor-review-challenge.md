@@ -4,7 +4,7 @@
 **Item:** Customer satisfaction tracker and instructor review challenge
 **Status code:** Local
 **Status meaning:** Taken by local or operation teams
-**Also known as:** customer feedback system, instructor evaluation tool, satisfaction survey, review process, trainer assessment
+**Also known as:** CST, customer feedback system, instructor evaluation tool, satisfaction survey, review process, trainer assessment
 
 ## Summary
 The customer satisfaction tracker and instructor review challenge is a part of the Analytics, tracking & dashboards section and is managed by local or operations teams.

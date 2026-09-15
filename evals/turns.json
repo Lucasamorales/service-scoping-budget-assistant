@@ -849,6 +849,17 @@
       "expectCandidate": "copywriting--emails",
       "critical": true,
       "note": "The other side of the email fix, and the guard against overcorrecting it. Writing an email is what Emails (Copywriting) is, and it is free, so this must never be quoted — a false price misleads about money exactly as a false 'free' does. Answering in scope and asking which service is meant are both acceptable; if it asks, the copywriting item has to be one of the options. Offline the full message answers Emails outright. With the model planner it is reduced to 'write an email', which leads at 0.70 with Ad hoc email requests close behind, and is asked about: an honest reading of an uncertain request, and better than the handover it received before the fix."
+    },
+    {
+      "id": "scope-cst-is-the-local-tracker",
+      "message": "I want to know the status of the CST",
+      "expect": [
+        "scope"
+      ],
+      "expectItem": "analytics-tracking-dashboards--customer-satisfaction-tracker-and-instructor-review-challenge",
+      "expectVerdict": "local",
+      "critical": true,
+      "note": "Reported live on 15 Sep 2026. CST is the Customer satisfaction tracker, which the local team runs. The acronym appeared nowhere in that item's document, so the only item that could match was Supermetrics license (pulls data for all reports, including CST), in scope — and the requester was told central marketing covers it. Fixed in the corpus by adding CST to the tracker's Also known as, which is what that field is for; not in code, which would be hardcoding an answer."
     }
   ]
 }
