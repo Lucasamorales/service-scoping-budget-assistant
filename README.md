@@ -610,14 +610,25 @@ other number here: until 26 Aug 2026 the suite scored 51/51 while a request to s
 posts was being answered from *Marketing calendars* — the right tool on the wrong item, which no
 capability assertion can see.
 
-On the rules planner it currently scores **68/74 (92%), 0 of 14 critical failures, with 6
-recorded known failures**. Those six are what remains of the defects found by the 26 August
+On the rules planner it currently scores **70/78 (90%), 0 of 18 critical failures, with 8
+recorded known failures**; with the model planner and embeddings, which is what production runs,
+**73/78**. Six known failures are what remains of the defects found by the 26 August
 golden-question round: each one names the task that will fix it, stays visible in every run, and
 does not gate CI — see [`docs/REMEDIATION.md`](docs/REMEDIATION.md). A case that starts passing
-is reported so its marker gets removed, which is how the count came down.
+is reported so its marker gets removed, which is how the count came down. The other two pass in
+production and fail offline by design: the guard that catches them needs embeddings, because on
+keyword scores alone the requests it should question and the ones it must not overlap. See
+`_check_for_costlier_lookalike` in [`app/orchestrator/resolver.py`](app/orchestrator/resolver.py).
 
 The set includes the phrases that used to fail in production: "what's left for london", "who is
-my account manager", "do you handle translating our web pages", "what do I get for free".
+my account manager", "do you handle translating our web pages", "what do I get for free", and
+"I need to send an email about an upcoming event" — which used to be called free of charge when
+the service it describes needs a quote.
+
+Two assertions exist for requests like that last one, where more than one outcome is acceptable.
+`forbidVerdict` names the answer a turn must never give, and `expectCandidate` names the option a
+question must include: asking "Emails or Automation?" would satisfy an outcome check while still
+hiding the service that costs money.
 
 All 92 documents parse into a typed registry with zero errors — 89 of them service items,
 across 12 sections, with 434 searchable phrases. The resolver returns a verdict, a clarifying

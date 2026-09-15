@@ -131,6 +131,50 @@ what anyone meant. Requiring two words did not help, because "web pages" is two
 common words. Phrases anchored by something distinctive - Billboards, Merch,
 POS - still settle a request on the spot; the rest defer to scoring."""
 
+WEAK_FREE_VERDICT = 0.73
+"""Confidence below which an in-scope answer is not trusted on its own.
+
+A free verdict is the expensive one to get wrong. Telling somebody a chargeable
+service is covered costs real money when the invoice arrives; asking which of
+two services they meant costs a click. So a weak "in scope" has to survive a
+second look at what else the request could have been, and a strong one does not.
+
+The failure this exists for: "I need to send an email about an upcoming event"
+answered Emails (Copywriting), in scope, at 0.51-0.69 — the top of a flat
+cluster of eleven email services, barely clear of :data:`MIN_CONFIDENCE`. Ad hoc
+email requests, which needs a quote and lists event invitations as an example,
+sat just below the floor and was never looked at.
+
+Swept with embeddings on against every retrieval and turn prompt, and against the
+phrases the model planner actually produced for those turns — which score
+differently from the raw messages, and are what production resolves. The
+requests that should have been questioned led at 0.52-0.69; every in-scope answer
+that must stay an answer, and that has a costlier service anywhere near it, led
+at 0.77 or above. Set between the two."""
+
+COSTLIER_LOOKALIKE = 0.73
+"""How close a chargeable or venue-handled service must read, as a fraction of a
+weak in-scope leader's confidence, to put the verdict to the user.
+
+Deliberately does not ask whether the request *named* the service, which is the
+test :data:`MIN_RIVAL_COVERAGE` applies. That test is exactly what missed the
+email case: the request said "email", Ad hoc email requests is named mostly by
+other words, and it was rejected at 0.2 coverage. A lookalike is a service that
+means nearly the same thing, not one that shares the words.
+
+Measured alongside :data:`WEAK_FREE_VERDICT`, among weak leaders only. Requests
+that should have been questioned had their costlier lookalike at 0.76-0.86 of the
+leader; in-scope answers that must stand had theirs at 0.69 or below — Campaign
+wrap-ups against Radio ads is the nearest, at 0.69. Set between the two."""
+
+LOOKALIKE_DEPTH = 8
+"""How far down the ranking to look for a costlier lookalike.
+
+Deeper than the candidates the resolver keeps, because the point is to find what
+the ordinary admission rules discarded: in the email case the quoted service was
+fifth of six. Costs nothing extra — retrieval scores every chunk and truncates,
+so this is the same search with a longer tail kept."""
+
 
 class Outcome(StrEnum):
     RESOLVED = "resolved"
@@ -370,13 +414,17 @@ class ScopeResolver:
         # rival before promoting it.
         resolution = self._resolve_by_phrase(query, tokens)
         hits: tuple[ScoredChunk, ...] = ()
+        ranked: tuple[ScoredChunk, ...] = ()
         semantic = False
         if resolution is None:
-            hits, semantic = self._retrieve(query)
+            hits, semantic, ranked = self._retrieve(query)
             resolution = self._resolve_by_keyword(query, hits)
-        return self._check_for_disagreement(resolution, tokens, hits, semantic)
+        resolution = self._check_for_disagreement(resolution, tokens, hits, semantic)
+        return self._check_for_costlier_lookalike(resolution, ranked, semantic)
 
-    def _retrieve(self, query: str) -> tuple[tuple[ScoredChunk, ...], bool]:
+    def _retrieve(
+        self, query: str
+    ) -> tuple[tuple[ScoredChunk, ...], bool, tuple[ScoredChunk, ...]]:
         """Hits worth considering at all, best first, and whether they are
         semantic.
 
@@ -389,19 +437,23 @@ class ScopeResolver:
         :meth:`_check_for_disagreement`.
         """
         if self._retriever is None:
-            return (), False
+            return (), False, ()
         vector = self._query_vector(query)
         result = self._retriever.retrieve(
-            query, limit=MAX_CANDIDATES + 1, query_vector=vector
+            query, limit=max(MAX_CANDIDATES + 1, LOOKALIKE_DEPTH), query_vector=vector
         )
+        # The admission rules see exactly the slice they always saw. Retrieval
+        # sorts every chunk and truncates, so the first MAX_CANDIDATES + 1 of a
+        # longer list are the same hits a shorter request returns; only the
+        # lookalike check reads past them.
         hits = tuple(
             hit
-            for hit in result.hits
+            for hit in result.hits[: MAX_CANDIDATES + 1]
             if hit.chunk.item_id
             and hit.confidence >= MIN_CONFIDENCE
             and _is_evidence(hit, self._frequency_of(hit))
         )
-        return hits, "dense" in result.mode
+        return hits, "dense" in result.mode, tuple(result.hits)
 
     def _check_for_disagreement(
         self,
@@ -498,6 +550,100 @@ class ScopeResolver:
             candidates=candidates[:MAX_CANDIDATES],
             matched_phrase=resolution.matched_phrase,
             method=f"{resolution.method}+rival",
+        )
+
+    def _check_for_costlier_lookalike(
+        self,
+        resolution: Resolution,
+        ranked: tuple[ScoredChunk, ...],
+        semantic: bool,
+    ) -> Resolution:
+        """Put a weak "in scope" to the user when a costlier service reads alike.
+
+        The disagreement check above catches a request that *names* two services.
+        This catches one that names neither clearly, lands on a free item by a
+        hair, and has a chargeable or venue-handled service reading almost the
+        same — which no amount of naming will surface, because the words that
+        identify that service were never typed.
+
+        One-directional on purpose. It questions an in-scope answer and never a
+        costly one: see :data:`WEAK_FREE_VERDICT` for why those two mistakes are
+        not the same size. And it leaves a phrase match alone, since a request
+        that spelled out a service's declared name has already said which it
+        meant.
+
+        **Only when retrieval was semantic**, for the reason the disagreement
+        check gives. On keyword scores the two populations overlap: a request
+        for the marketing calendar would be questioned while one of the email
+        cases this exists for would still be answered. Without embeddings the
+        resolver keeps its old behaviour rather than trading one wrong answer
+        for another.
+        """
+        if not semantic or not ranked:
+            return resolution
+        if not resolution.decided or resolution.status is not Status.IN_SCOPE:
+            return resolution
+        if resolution.method != "keyword":
+            return resolution
+
+        chosen = {candidate.item.item_id for candidate in resolution.candidates}
+        leading = [hit for hit in ranked if hit.chunk.item_id in chosen]
+        lead = max((hit.confidence for hit in leading), default=0.0)
+        if lead <= 0.0 or lead >= WEAK_FREE_VERDICT:
+            return resolution
+
+        # The words that made the leader the leader. A lookalike has to be read
+        # from some of the same ones, or it is not a second reading of this
+        # request at all — it is a different subject that happens to share a
+        # word. "Heart Radio campaign wrap-up" put Radio ads within reach of
+        # Campaign wrap-ups on the word "radio" alone, and questioning it would
+        # have undone the fix for exactly that coincidence. The email case
+        # passes this on "email", which is the thing both services are about.
+        evidence = {term for hit in leading for term in hit.matched}
+
+        floor = lead * COSTLIER_LOOKALIKE
+        lookalikes: dict[str, Candidate] = {}
+        for hit in ranked:
+            item_id = hit.chunk.item_id
+            if not item_id or item_id in chosen or item_id in lookalikes:
+                continue
+            if hit.confidence < floor:
+                continue
+            if not evidence.intersection(hit.matched):
+                continue
+            item = self._catalog.get(item_id)
+            if item is None or item.status is Status.IN_SCOPE:
+                continue
+            lookalikes[item_id] = Candidate(
+                item=item,
+                score=hit.score,
+                reason="reads nearly the same, and is not free",
+            )
+
+        if not lookalikes:
+            return resolution
+
+        logger.info(
+            "resolver.costlier_lookalike",
+            query=resolution.query,
+            chose=resolution.candidates[0].item.display_name,
+            lead=round(lead, 3),
+            lookalikes=[candidate.item.display_name for candidate in lookalikes.values()],
+        )
+        # The leader, then what it could be mistaken for, then anything it had
+        # agreed with. Trimming happens after, and in this order the question
+        # can never lose the one option that makes it a question: an AGREED
+        # set of four free services plus a lookalike, trimmed from the end,
+        # would otherwise drop the lookalike and ask about four things that
+        # all say the same.
+        leader, *agreed = resolution.candidates
+        candidates = (leader, *lookalikes.values(), *agreed)
+        return Resolution(
+            Outcome.AMBIGUOUS,
+            resolution.query,
+            candidates=candidates[:MAX_CANDIDATES],
+            matched_phrase=resolution.matched_phrase,
+            method=f"{resolution.method}+lookalike",
         )
 
     def _resolve_by_phrase(self, query: str, tokens: tuple[str, ...]) -> Resolution | None:

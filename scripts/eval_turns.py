@@ -89,6 +89,22 @@ class CaseResult:
     expect_item: str | None
     expect_verdict: Status | None
     expect_outcome: Outcome | None
+    forbid_verdict: Status | None
+    """A verdict this turn must never state, whatever else it does.
+
+    For requests where more than one outcome is acceptable — asking, handing
+    over, or naming the costly service — but one is never acceptable. "Send an
+    email about our event" may be asked about or quoted; it must not be called
+    free. ``expectVerdict`` cannot say that, because it demands one answer."""
+
+    expect_candidate: str | None
+    """An item that must be among the options whenever the turn asks.
+
+    A question is only safe if it offers the reading that changes the answer.
+    Asking "Emails or Automation of flows?" would satisfy an outcome assertion
+    while still hiding the service that needs a quote. Not checked when the
+    turn does not ask."""
+
     known_failure: str | None
     """Why this case is expected to fail, and which task will fix it.
 
@@ -189,13 +205,39 @@ class CaseResult:
         return None if actual is self.expect_outcome else actual.value
 
     @property
+    def forbidden_verdict(self) -> str | None:
+        """The forbidden verdict, when the turn stated it anyway."""
+        if self.forbid_verdict is None:
+            return None
+        actual = self.answer.resolution.status
+        return actual.value if actual is self.forbid_verdict else None
+
+    @property
+    def missing_candidate(self) -> str | None:
+        """What the turn offered instead, when it asked without the key option."""
+        if self.expect_candidate is None:
+            return None
+        resolution = self.answer.resolution
+        if resolution.outcome is not Outcome.AMBIGUOUS:
+            return None
+        if self.expect_candidate in self.named_items:
+            return None
+        return ", ".join(self.named_items) or "nothing"
+
+    @property
     def routed(self) -> bool:
         return not self.missing and not self.forbidden_hits
 
     @property
     def identified(self) -> bool:
         """Whether the turn decided on the right service and verdict."""
-        return not (self.wrong_item or self.wrong_verdict or self.wrong_outcome)
+        return not (
+            self.wrong_item
+            or self.wrong_verdict
+            or self.wrong_outcome
+            or self.forbidden_verdict
+            or self.missing_candidate
+        )
 
     @property
     def worded(self) -> bool:
@@ -272,6 +314,12 @@ def _force_utf8_output() -> None:
 
 def _run(case: dict[str, Any], pipeline: Pipeline) -> CaseResult:
     message = str(case["message"])
+    candidate = case.get("expectCandidate")
+    # Checked up front for the same reason _verdict raises: this assertion only
+    # runs when the turn asks, so a misspelt item id would pass silently on
+    # every run that happened not to ask.
+    if candidate is not None and pipeline.catalog.get(candidate) is None:
+        raise ValueError(f"Unknown expectCandidate {candidate!r} in case {case['id']!r}")
     answer = pipeline.answer(
         message,
         _state_from(case.get("state")),
@@ -287,6 +335,8 @@ def _run(case: dict[str, Any], pipeline: Pipeline) -> CaseResult:
         expect_item=case.get("expectItem"),
         expect_verdict=_verdict(case.get("expectVerdict")),
         expect_outcome=_outcome(case.get("expectOutcome")),
+        forbid_verdict=_verdict(case.get("forbidVerdict")),
+        expect_candidate=case.get("expectCandidate"),
         known_failure=case.get("knownFailure"),
         critical=bool(case.get("critical", False)),
         answer=answer,
@@ -310,6 +360,10 @@ def _report(result: CaseResult) -> None:
         print(f"         expected verdict {result.expect_verdict}; said {wrong}")
     if wrong := result.wrong_outcome:
         print(f"         expected to {result.expect_outcome}; it {wrong}")
+    if wrong := result.forbidden_verdict:
+        print(f"         must never say {wrong}; it did")
+    if wrong := result.missing_candidate:
+        print(f"         asked without offering {result.expect_candidate}; offered {wrong}")
     if result.absent_text:
         print(f"         reply is missing {result.absent_text}")
     if result.present_text:

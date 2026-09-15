@@ -15,7 +15,7 @@ import pytest
 from app.core.types import Chunk, DocType, Status
 from app.knowledge.chunking import chunk_service_item
 from app.knowledge.index import KnowledgeIndex
-from app.knowledge.retriever import InMemoryRetriever, ScoredChunk
+from app.knowledge.retriever import InMemoryRetriever, RetrievalResult, ScoredChunk
 from app.orchestrator.resolver import (
     MAX_CANDIDATES,
     Outcome,
@@ -334,3 +334,167 @@ class TestTheDisagreementGuardNeedsCorroboration:
         assert resolution.status is None
         named = {candidate.item.item_id for candidate in resolution.candidates}
         assert "copywriting--translation-localisation" in named
+
+
+class _FixedRetriever:
+    """Returns exactly the ranking a test sets up, as retrieval would.
+
+    The costlier-lookalike guard runs only on semantic retrieval, and turns on
+    confidences and matched words the keyword index in these tests cannot be
+    made to produce on demand. So the ranking is stated outright, sorted by
+    confidence the way the real retriever sorts it, and truncated to the limit
+    asked for — which is also the property that lets the guard read further
+    down than the admission rules without changing what they see.
+    """
+
+    def __init__(self, hits: list[ScoredChunk], mode: str = "keyword+dense") -> None:
+        self._hits = sorted(hits, key=lambda hit: hit.confidence, reverse=True)
+        self._mode = mode
+
+    def retrieve(self, query: str, *, limit: int = 5, **_: object) -> RetrievalResult:
+        return RetrievalResult(hits=tuple(self._hits[:limit]), mode=self._mode)
+
+
+EMAILS = "copywriting--emails"
+AD_HOC = "email-marketing-sms--ad-hoc-email-requests-typically-4-5-per-month"
+AUTOMATION = "email-marketing-sms--automation-of-all-other-flows-i-e-vouchers-and-birthdays"
+TRANSACTIONAL = "email-marketing-sms--transactional-sms-emails"
+TEMPLATES = "email-marketing-sms--email-template-creation"
+PROMOTIONAL = "email-marketing-sms--promotional-campaign-planning-sms-email"
+RADIO_ADS = "renders-and-other-designs-for-venue-exteriors--radio-ads"
+
+# Words no document declares as a name, so the phrase path never settles the
+# request and every decision below comes from the ranking the test supplies.
+UNNAMED = "flurbish gronkle"
+
+
+def _scored(item_id: str, confidence: float, *matched: str) -> ScoredChunk:
+    chunk = Chunk(
+        chunk_id=f"{item_id}:0",
+        content="irrelevant",
+        source=f"{item_id}.md",
+        doc_type=DocType.SERVICE_ITEM,
+        chunk_index=0,
+        item_id=item_id,
+    )
+    return ScoredChunk(
+        chunk, score=confidence * 3, matched=matched, coverage=0.5, confidence=confidence
+    )
+
+
+def _resolve(corpus, hits: list[ScoredChunk], mode: str = "keyword+dense"):
+    return ScopeResolver(corpus.catalog, _FixedRetriever(hits, mode)).resolve(UNNAMED)
+
+
+class TestAWeakFreeVerdictIsQuestionedWhenACostlierServiceReadsAlike:
+    """Reported live: "I need to send an email about an upcoming event" was
+    answered Emails (Copywriting), no extra cost, while Ad hoc email requests —
+    which needs a quote and lists event invitations as an example — sat just
+    below the confidence floor and was never looked at."""
+
+    def test_the_live_case_is_put_to_the_user(self, corpus) -> None:
+        resolution = _resolve(corpus, [
+            _scored(EMAILS, 0.57, "send", "email"),
+            _scored(AUTOMATION, 0.48, "send", "email"),
+            _scored(PROMOTIONAL, 0.46, "send", "email"),
+            _scored(AD_HOC, 0.435, "email", "event"),
+        ])
+        assert resolution.outcome is Outcome.AMBIGUOUS
+        assert resolution.status is None, "no verdict may be stated"
+        offered = [candidate.item.item_id for candidate in resolution.candidates]
+        assert offered[0] == EMAILS, "the leader still leads"
+        assert AD_HOC in offered
+        assert resolution.method.endswith("+lookalike")
+
+    def test_a_service_that_only_shares_a_stray_word_is_not_raised(self, corpus) -> None:
+        """Heart Radio campaign wrap-up: Radio ads came within reach on the word
+        radio alone. It shares nothing with what made the leader lead, so it is
+        a different subject, not a second reading of this one."""
+        resolution = _resolve(corpus, [
+            _scored(EMAILS, 0.60, "campaign", "wrap"),
+            _scored(RADIO_ADS, 0.47, "radio", "advert"),
+        ])
+        assert resolution.outcome is Outcome.RESOLVED
+        assert resolution.status is Status.IN_SCOPE
+
+    def test_a_strong_free_verdict_stands(self, corpus) -> None:
+        resolution = _resolve(corpus, [
+            _scored(EMAILS, 0.85, "write", "email"),
+            _scored(AD_HOC, 0.70, "email", "event"),
+        ])
+        assert resolution.outcome is Outcome.RESOLVED
+
+    def test_a_distant_lookalike_is_not_raised(self, corpus) -> None:
+        resolution = _resolve(corpus, [
+            _scored(EMAILS, 0.60, "send", "email"),
+            _scored(AD_HOC, 0.40, "email", "event"),
+        ])
+        assert resolution.outcome is Outcome.RESOLVED
+
+    def test_only_a_free_verdict_is_questioned(self, corpus) -> None:
+        """One-directional. Calling a chargeable service free costs money when
+        the invoice arrives; the reverse costs a conversation."""
+        # The free service sits where it would raise a question under a free
+        # leader — close, sharing "email" — but below the ordinary rival floor,
+        # so nothing except this guard could turn it into one.
+        resolution = _resolve(corpus, [
+            _scored(AD_HOC, 0.60, "email", "event"),
+            _scored(EMAILS, 0.48, "send", "email"),
+        ])
+        assert resolution.outcome is Outcome.RESOLVED
+        assert resolution.status is Status.QUOTE_REQUIRED
+
+    def test_keyword_scores_alone_do_not_trigger_it(self, corpus) -> None:
+        """Offline the populations overlap: the same rule would question a
+        request for the marketing calendar and still answer an email case. So
+        without embeddings the resolver keeps its old behaviour."""
+        ranking = [_scored(EMAILS, 0.57, "send", "email"), _scored(AD_HOC, 0.45, "email", "event")]
+        # The same ranking, so the mode is the only thing that differs.
+        assert _resolve(corpus, ranking, mode="keyword").outcome is Outcome.RESOLVED
+        assert _resolve(corpus, ranking).outcome is Outcome.AMBIGUOUS
+
+    def test_an_agreed_answer_is_questioned_too(self, corpus) -> None:
+        """The most dangerous variant. Can you send an email for our event agreed
+        on two free services and answered without asking at all."""
+        resolution = _resolve(corpus, [
+            _scored(EMAILS, 0.68, "send", "email"),
+            _scored(AUTOMATION, 0.60, "send", "email"),
+            _scored(AD_HOC, 0.54, "email", "event"),
+        ])
+        assert resolution.outcome is Outcome.AMBIGUOUS
+        assert resolution.method.endswith("+lookalike"), "the ordinary rules agreed"
+        assert AD_HOC in {candidate.item.item_id for candidate in resolution.candidates}
+
+    def test_the_lookalike_survives_trimming_a_crowded_agreement(self, corpus) -> None:
+        """Four free services agreeing plus one lookalike is five options.
+        Trimmed from the end, the one option that makes it a question would be
+        the one dropped, leaving a question about four things that agree."""
+        resolution = _resolve(corpus, [
+            _scored(EMAILS, 0.70, "send", "email"),
+            _scored(AUTOMATION, 0.66, "send", "email"),
+            _scored(TRANSACTIONAL, 0.64, "send", "email"),
+            _scored(TEMPLATES, 0.62, "send", "email"),
+            _scored(AD_HOC, 0.55, "email", "event"),
+        ])
+        assert resolution.outcome is Outcome.AMBIGUOUS
+        assert resolution.method.endswith("+lookalike")
+        offered = [candidate.item.item_id for candidate in resolution.candidates]
+        assert len(offered) == MAX_CANDIDATES
+        assert AD_HOC in offered
+
+    def test_it_reads_past_the_hits_the_admission_rules_keep(self, corpus) -> None:
+        """In the live case the quoted service was fifth of six. The admission
+        rules still see only the first MAX_CANDIDATES + 1; a hit further down
+        must be able to raise the question without becoming a contender."""
+        resolution = _resolve(corpus, [
+            _scored(EMAILS, 0.60, "send", "email"),
+            _scored(AUTOMATION, 0.49, "send", "email"),
+            _scored(TRANSACTIONAL, 0.48, "send", "email"),
+            _scored(TEMPLATES, 0.47, "send", "email"),
+            _scored(PROMOTIONAL, 0.46, "send", "email"),
+            _scored(AD_HOC, 0.45, "email", "event"),
+        ])
+        offered = [candidate.item.item_id for candidate in resolution.candidates]
+        assert resolution.outcome is Outcome.AMBIGUOUS
+        assert resolution.method.endswith("+lookalike")
+        assert offered[:2] == [EMAILS, AD_HOC]

@@ -815,6 +815,40 @@
       ],
       "critical": true,
       "note": "P0. 'schedule' must reach an item named 'Content scheduling'. The risk is telling an AM that central marketing owns work the DB marks Local, so the reply has to name the local team. It previously banned the substrings 'free of charge' and 'no extra cost' instead, which was wrong: the document says 'Extra cost or quote required: No' and answers its own question with 'No extra cost is required as it is included in the local scope'. A grounded reply quoting its source was failing the assertion. It only ever passed because the deterministic wording is terse; the live composer echoes the document and tripped it on the first nightly run."
+    },
+    {
+      "id": "scope-email-event-live-report",
+      "message": "I need to send an email about an upcoming event at the O2 that might help us bring more footfall",
+      "forbidVerdict": "in_scope",
+      "expectCandidate": "email-marketing-sms--ad-hoc-email-requests-typically-4-5-per-month",
+      "critical": true,
+      "note": "Reported live on 15 Sep 2026. Eleven services mention email and they do not share a verdict: Emails (Copywriting) is in scope, Ad hoc email requests needs a quote and lists event invitations as an example. The request names neither clearly, and the resolver used to settle on Emails by a hair and tell the requester it came at no extra cost. Asking or quoting are both acceptable; calling it free is not, and a question that leaves out the quoted service is not an answer. This is the message exactly as it was typed."
+    },
+    {
+      "id": "scope-email-event-short",
+      "message": "send an email about an upcoming event",
+      "forbidVerdict": "in_scope",
+      "expectCandidate": "email-marketing-sms--ad-hoc-email-requests-typically-4-5-per-month",
+      "critical": true,
+      "knownFailure": "Passes in the deployed configuration and fails offline. The guard that catches this compares how closely a chargeable service reads against a weak in-scope leader, and on keyword scores alone the two populations overlap: offline, questioning this request would also question 'Can you send us this month's marketing calendar?', which must stay an answer. So the guard runs only with embeddings, where they separate cleanly (weak leaders at 0.52-0.69 against 0.77 and up). Recorded rather than tuned away, as clarify-no-invented-price is, because the offline mode is a fallback.",
+      "note": "Reported live on 15 Sep 2026. Eleven services mention email and they do not share a verdict: Emails (Copywriting) is in scope, Ad hoc email requests needs a quote and lists event invitations as an example. The request names neither clearly, and the resolver used to settle on Emails by a hair and tell the requester it came at no extra cost. Asking or quoting are both acceptable; calling it free is not, and a question that leaves out the quoted service is not an answer. The phrase the model planner reduced the live message to."
+    },
+    {
+      "id": "scope-email-event-agreed",
+      "message": "can you send an email for our event",
+      "forbidVerdict": "in_scope",
+      "expectCandidate": "email-marketing-sms--ad-hoc-email-requests-typically-4-5-per-month",
+      "critical": true,
+      "knownFailure": "Passes in the deployed configuration and fails offline. The guard that catches this compares how closely a chargeable service reads against a weak in-scope leader, and on keyword scores alone the two populations overlap: offline, questioning this request would also question 'Can you send us this month's marketing calendar?', which must stay an answer. So the guard runs only with embeddings, where they separate cleanly (weak leaders at 0.52-0.69 against 0.77 and up). Recorded rather than tuned away, as clarify-no-invented-price is, because the offline mode is a fallback.",
+      "note": "Reported live on 15 Sep 2026. Eleven services mention email and they do not share a verdict: Emails (Copywriting) is in scope, Ad hoc email requests needs a quote and lists event invitations as an example. The request names neither clearly, and the resolver used to settle on Emails by a hair and tell the requester it came at no extra cost. Asking or quoting are both acceptable; calling it free is not, and a question that leaves out the quoted service is not an answer. The dangerous variant: two free services agreed, so it answered in scope without asking at all, and the quoted one had been cut by the rival floor."
+    },
+    {
+      "id": "scope-email-write-never-quoted",
+      "message": "can you write an email for us",
+      "forbidVerdict": "quote_required",
+      "expectCandidate": "copywriting--emails",
+      "critical": true,
+      "note": "The other side of the email fix, and the guard against overcorrecting it. Writing an email is what Emails (Copywriting) is, and it is free, so this must never be quoted — a false price misleads about money exactly as a false 'free' does. Answering in scope and asking which service is meant are both acceptable; if it asks, the copywriting item has to be one of the options. Offline the full message answers Emails outright. With the model planner it is reduced to 'write an email', which leads at 0.70 with Ad hoc email requests close behind, and is asked about: an honest reading of an uncertain request, and better than the handover it received before the fix."
     }
   ]
 }
