@@ -10,7 +10,7 @@
 Emails are part of the copywriting section and fall within our capabilities and scope.
 
 ## What This Item Covers
-Emails refer to written messages sent electronically. They are used for communication between individuals or organizations. In practice, they can include promotional materials, newsletters, transactional notifications, and more.
+Emails covers writing the copy for marketing emails: the subject line, preview text, body copy and call to action. It is the words themselves, drafted and edited ready to use. Sending an email out, scheduling it, or running an email campaign are separate services and are not part of this item.
 
 ## What the "Y" Status Means for This Item
 The central marketing team handles emails. Emails are included in our scope without any additional cost or need for a quote. Requesters should expect to work with the central marketing team to create and send emails.
