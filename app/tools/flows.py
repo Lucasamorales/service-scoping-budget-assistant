@@ -329,9 +329,13 @@ def _ask_country(
         for name in choices
     )
     if again:
+        # Listed from the matrix, not spelled out here: the names used to be a
+        # literal string, which stopped being true the moment a country was
+        # added to the directory.
+        typed = ", ".join(choices[:-1]) + f", or {choices[-1]}" if len(choices) > 1 else ""
         text = (
             "I still need your country so I know who to email. "
-            "Pick one below, or type it (UK, France, Canada, or Australia)."
+            f"Pick one below, or type it ({typed})."
         )
     else:
         text = "Which country are you in? I’ll route this to the right person."

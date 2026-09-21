@@ -1,0 +1,29 @@
+{
+  "contacts": [
+    {
+      "countries": ["United Kingdom", "UK", "England", "Scotland", "Wales", "France", "International"],
+      "name": "Sammy",
+      "email": "samantha@example.com",
+      "role": "account_manager"
+    },
+    {
+      "countries": ["United Kingdom", "UK", "England", "Scotland", "Wales", "France", "International"],
+      "name": "Sammy",
+      "email": "samantha@example.com",
+      "role": "country_manager"
+    },
+    {
+      "countries": ["Canada", "Australia"],
+      "name": "Gabby",
+      "email": "gabriel.robinson@example.com",
+      "role": "account_manager"
+    },
+    {
+      "countries": ["Canada", "Australia"],
+      "name": "Gabby",
+      "email": "gabriel.robinson@example.com",
+      "role": "country_manager"
+    }
+  ],
+  "notes": "Live recipients, production only — CONTACTS_PATH points here from deploy_cloud_run.ps1. Sammy takes the UK, France and anything outside the four countries; Gabby takes Canada and Australia. Each appears twice because the two CTAs resolve by role: the scope and out-of-scope offers ask for the Account Manager, the purchase-order offer for the Country Manager. Local and test runs keep the agency stand-ins in country_ams.json, so a dev machine can never email these people."
+}

@@ -28,6 +28,10 @@ _CANONICAL_COUNTRIES = (
     "France",
     "Canada",
     "Australia",
+    # The bucket for a site outside the four. Without it, someone in a country
+    # the matrix does not name is asked which country they are in and has no
+    # true answer to give, so the email they were offered can never be sent.
+    "International",
 )
 
 

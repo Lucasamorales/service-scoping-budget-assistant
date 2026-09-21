@@ -209,12 +209,16 @@ Invoke-GCloud projects add-iam-policy-binding $ProjectId `
     --role "roles/datastore.user" `
     --quiet | Out-Null
 
+# The live recipients ship only here. The default path in config.py is the
+# the agency stand-ins, so a dev machine, a test run or a forgotten script cannot
+# email Sammy or Gabby: reaching them takes a deploy.
 $envVars = @(
     "ENVIRONMENT=production",
     "GCP_PROJECT_ID=$ProjectId",
     "AUDIT_BACKEND=auto",
     "USE_LLM_PLANNER=true",
-    "USE_LLM_COMPOSER=true"
+    "USE_LLM_COMPOSER=true",
+    "CONTACTS_PATH=fixtures/contacts/production.json"
 )
 if (-not [string]::IsNullOrWhiteSpace($sheetId)) {
     $envVars += "BUDGET_SPREADSHEET_ID=$sheetId"

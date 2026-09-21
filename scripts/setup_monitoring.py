@@ -48,6 +48,7 @@ from __future__ import annotations
 import argparse
 import subprocess
 import sys
+from collections.abc import Sequence
 from typing import Any
 from urllib.parse import urlparse
 
@@ -55,7 +56,10 @@ import httpx
 
 DEFAULT_PROJECT = "your-gcp-project"
 DEFAULT_SERVICE_URL = "https://your-service-url.a.run.app"
-DEFAULT_EMAIL = "robin@example.com"
+DEFAULT_EMAILS = ("robin@example.com", "charlie@example.com")
+"""Who is paged. More than one on purpose: an alert with a single recipient
+goes quiet whenever that person is on leave, and nothing else is watching
+this service."""
 
 MONITORING = "https://monitoring.googleapis.com/v3"
 LOGGING = "https://logging.googleapis.com/v2"
@@ -64,6 +68,8 @@ LOGGING = "https://logging.googleapis.com/v2"
 REGIONS = ["USA_OREGON", "USA_IOWA", "EUROPE", "SOUTH_AMERICA"]
 
 CHANNEL_NAME = "Acme scoping — email"
+"""A prefix now, not the whole name: one channel per address, each suffixed
+with that address, so adding a recipient never rewrites an existing one."""
 
 # Each health flag worth watching, with the substring that proves it.
 HEALTH_CHECKS: tuple[tuple[str, str, str], ...] = (
@@ -119,6 +125,24 @@ class Api:
         response.raise_for_status()
         return dict(response.json())
 
+    def patch(
+        self, url: str, body: dict[str, Any], *, mask: str, what: str
+    ) -> dict[str, Any] | None:
+        if self.dry_run:
+            print(f"  would update  {what}")
+            return None
+        response = httpx.patch(
+            url,
+            headers=self._headers,
+            params={"updateMask": mask},
+            json=body,
+            timeout=60.0,
+        )
+        if response.status_code >= 400:
+            raise SystemExit(f"Updating {what} failed ({response.status_code}):\n{response.text}")
+        print(f"  updated       {what}")
+        return dict(response.json())
+
     def post(self, url: str, body: dict[str, Any], *, what: str) -> dict[str, Any] | None:
         if self.dry_run:
             print(f"  would create  {what}")
@@ -130,26 +154,39 @@ class Api:
         return dict(response.json())
 
 
-def ensure_channel(api: Api, email: str) -> str | None:
-    """The address alerts go to. Everything else references it."""
+def ensure_channels(api: Api, emails: Sequence[str]) -> list[str]:
+    """The addresses alerts go to. Every policy references all of them.
+
+    Matched on the address rather than the display name, so the single channel
+    created when there was one recipient is adopted instead of duplicated.
+    """
     existing = api.get(f"{MONITORING}/projects/{api.project}/notificationChannels")
-    for channel in existing.get("notificationChannels", []):
-        if channel.get("displayName") == CHANNEL_NAME:
-            where = channel["labels"].get("email_address")
-            print(f"  exists        notification channel -> {where}")
-            return str(channel["name"])
-    created = api.post(
-        f"{MONITORING}/projects/{api.project}/notificationChannels",
-        {
-            "type": "email",
-            "displayName": CHANNEL_NAME,
-            "description": "Alerts for the Acme scoping assistant.",
-            "labels": {"email_address": email},
-            "enabled": True,
-        },
-        what=f"notification channel -> {email}",
-    )
-    return str(created["name"]) if created else None
+    by_email = {
+        channel.get("labels", {}).get("email_address"): str(channel["name"])
+        for channel in existing.get("notificationChannels", [])
+        if channel.get("type") == "email"
+    }
+    names: list[str] = []
+    for email in emails:
+        found = by_email.get(email)
+        if found:
+            print(f"  exists        notification channel -> {email}")
+            names.append(found)
+            continue
+        created = api.post(
+            f"{MONITORING}/projects/{api.project}/notificationChannels",
+            {
+                "type": "email",
+                "displayName": f"{CHANNEL_NAME} ({email})",
+                "description": "Alerts for the Acme scoping assistant.",
+                "labels": {"email_address": email},
+                "enabled": True,
+            },
+            what=f"notification channel -> {email}",
+        )
+        if created:
+            names.append(str(created["name"]))
+    return names
 
 
 def ensure_uptime_check(api: Api, host: str, display: str, content: str) -> str | None:
@@ -201,10 +238,26 @@ def ensure_log_metric(api: Api, name: str, description: str, filter_: str, **ext
 
 
 def ensure_policy(api: Api, display: str, body: dict[str, Any]) -> None:
+    """Create the policy, or bring an existing one's recipients up to date.
+
+    Only the recipient list is reconciled, not the condition: a threshold someone
+    tuned by hand in the console is theirs to keep. Recipients are different —
+    adding an address to this script and finding the alerts still go to one
+    person is how an on-call list quietly stops being true.
+    """
     existing = api.get(f"{MONITORING}/projects/{api.project}/alertPolicies")
+    wanted = list(body.get("notificationChannels", []))
     for policy in existing.get("alertPolicies", []):
         if policy.get("displayName") == display:
-            print(f"  exists        alert policy '{display}'")
+            if sorted(policy.get("notificationChannels", [])) != sorted(wanted):
+                api.patch(
+                    f"{MONITORING}/{policy['name']}",
+                    {"notificationChannels": wanted},
+                    mask="notificationChannels",
+                    what=f"alert policy '{display}' recipients",
+                )
+            else:
+                print(f"  exists        alert policy '{display}'")
             return
     api.post(
         f"{MONITORING}/projects/{api.project}/alertPolicies",
@@ -213,7 +266,9 @@ def ensure_policy(api: Api, display: str, body: dict[str, Any]) -> None:
     )
 
 
-def uptime_policy(check_id: str, display: str, why: str, channel: str | None) -> dict[str, Any]:
+def uptime_policy(
+    check_id: str, display: str, why: str, channels: Sequence[str]
+) -> dict[str, Any]:
     """Page when a check fails from several places at once.
 
     Two consecutive failures rather than one: a single missed probe from one
@@ -247,7 +302,7 @@ def uptime_policy(check_id: str, display: str, why: str, channel: str | None) ->
                 },
             }
         ],
-        "notificationChannels": [channel] if channel else [],
+        "notificationChannels": list(channels),
         "alertStrategy": {"autoClose": "1800s"},
     }
 
@@ -256,7 +311,11 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--project", default=DEFAULT_PROJECT)
     parser.add_argument("--service-url", default=DEFAULT_SERVICE_URL)
-    parser.add_argument("--email", default=DEFAULT_EMAIL, help="Where alerts are sent.")
+    parser.add_argument(
+        "--email",
+        action="append",
+        help="Where alerts are sent. Repeatable; defaults to the team addresses.",
+    )
     parser.add_argument(
         "--dry-run", action="store_true", help="Print what would be created and stop."
     )
@@ -266,10 +325,11 @@ def main() -> int:
     if not host:
         raise SystemExit(f"--service-url must be absolute, got {args.service_url!r}")
 
+    emails = tuple(args.email) if args.email else DEFAULT_EMAILS
     api = Api(args.project, dry_run=args.dry_run)
-    print(f"Project: {args.project}\nService: {host}\nAlerts:  {args.email}\n")
+    print(f"Project: {args.project}\nService: {host}\nAlerts:  {', '.join(emails)}\n")
 
-    channel = ensure_channel(api, args.email)
+    channels = ensure_channels(api, emails)
 
     for display, content, why in HEALTH_CHECKS:
         name = ensure_uptime_check(api, host, display, content)
@@ -278,7 +338,7 @@ def main() -> int:
             ensure_policy(
                 api,
                 f"{display} — alert",
-                uptime_policy(check_id, display, why, channel),
+                uptime_policy(check_id, display, why, channels),
             )
 
     ensure_log_metric(
@@ -319,7 +379,7 @@ def main() -> int:
                     },
                 }
             ],
-            "notificationChannels": [channel] if channel else [],
+            "notificationChannels": list(channels),
             "alertStrategy": {"autoClose": "3600s"},
         },
     )
@@ -377,7 +437,7 @@ def main() -> int:
                     },
                 }
             ],
-            "notificationChannels": [channel] if channel else [],
+            "notificationChannels": list(channels),
             "alertStrategy": {"autoClose": "3600s"},
         },
     )
