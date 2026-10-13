@@ -17,13 +17,13 @@ from typing import Any
 import structlog
 
 __all__ = [
+    "TAB_BRANCHES",
     "TAB_CAPS",
     "TAB_DB",
     "TAB_FISCAL",
     "TAB_PRICING",
     "TAB_ROSTER",
     "TAB_SCOPE",
-    "TAB_BRANCHES",
     "SheetsError",
     "fetch_sheet_values",
     "quote_sheet_title",

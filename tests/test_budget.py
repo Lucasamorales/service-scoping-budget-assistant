@@ -173,7 +173,7 @@ class TestMissingCapIsUnknown:
         from datetime import date as _date
 
         from app.core.keys import branch_key
-        from app.store.budget import SpendLine, BranchRef, _snapshot, _WorkbookData
+        from app.store.budget import BranchRef, SpendLine, _snapshot, _WorkbookData
 
         branch = BranchRef(
             key=branch_key("Acme Nowhere"),
@@ -211,7 +211,7 @@ class TestMissingCapIsUnknown:
         assert snap.remaining == pytest.approx(448.32)
 
     def test_an_unknown_cap_is_said_rather_than_shown_as_zero(self) -> None:
-        from app.store.budget import BudgetSnapshot, BranchRef
+        from app.store.budget import BranchRef, BudgetSnapshot
         from app.tools.budget import _format_snapshot
 
         snap = BudgetSnapshot(

@@ -12,9 +12,9 @@ from app.core.keys import normalize_term
 from app.core.money import format_money
 from app.store.budget import (
     MONTHS,
+    BranchRef,
     BudgetSnapshot,
     BudgetStore,
-    BranchRef,
     canonical_month,
 )
 

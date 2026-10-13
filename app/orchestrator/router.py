@@ -25,7 +25,7 @@ from enum import StrEnum
 
 import structlog
 
-from app.core.keys import content_tokens, normalize_term, branch_key
+from app.core.keys import branch_key, content_tokens, normalize_term
 from app.tools.catalog import wants_service_list
 from app.tools.flows import is_affirmative
 

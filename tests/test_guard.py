@@ -10,7 +10,7 @@ from __future__ import annotations
 from app.orchestrator.facts import FactPack
 from app.orchestrator.guard import inspect
 from app.orchestrator.plan import Capability, Plan
-from app.store.budget import BudgetSnapshot, BranchRef
+from app.store.budget import BranchRef, BudgetSnapshot
 from app.tools.budget import BudgetToolResult
 
 MILTON_KEYNES = BranchRef(

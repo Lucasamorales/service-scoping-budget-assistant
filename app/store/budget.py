@@ -26,17 +26,17 @@ from typing import Protocol
 
 import structlog
 
-from app.core.keys import normalize_term, branch_key
+from app.core.keys import branch_key, normalize_term
 from app.store.sheets_client import REFRESH_WAIT_SECONDS
 
 __all__ = [
     "MONTHS",
+    "BranchRef",
     "BudgetSnapshot",
     "BudgetStore",
     "FiscalMonth",
     "SheetsBudgetStore",
     "SpendLine",
-    "BranchRef",
     "XlsxBudgetStore",
     "build_budget_store",
     "canonical_month",
@@ -470,10 +470,10 @@ def _load_workbook(path: Path) -> _WorkbookData:
 
 def _load_sheets(spreadsheet_id: str, *, credentials_path: str = "") -> _WorkbookData:
     from app.store.sheets_client import (
+        TAB_BRANCHES,
         TAB_CAPS,
         TAB_DB,
         TAB_FISCAL,
-        TAB_BRANCHES,
         SheetsError,
         fetch_sheet_values,
     )

@@ -10,13 +10,13 @@ import pytest
 
 from app.core.keys import (
     STOPWORDS,
+    branch_key,
     content_tokens,
     normalize_term,
     service_key,
     slugify,
     stem,
     tokenize,
-    branch_key,
 )
 
 
