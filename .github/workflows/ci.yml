@@ -86,6 +86,13 @@ jobs:
           git diff --exit-code -- widget/dist \
             || { echo "::error::widget/dist is stale. Run 'npm run build' in widget/ and commit."; exit 1; }
 
+      - name: Widget tests
+        # The widget's API client, markdown and storage, run as shipped. No
+        # test framework: Node runs the TypeScript directly.
+        run: |
+          cd widget
+          npm test
+
       - name: Tests
         run: python -m pytest -q
 
