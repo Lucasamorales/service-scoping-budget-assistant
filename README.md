@@ -1,73 +1,24 @@
 # Acme Scoping Assistant and Budget Tracker
 
+> **Placeholders:** "Acme" is an example client and its branches, people, contacts, budgets and rate
+> card are sample data. The logo is a placeholder and the fonts are Inter (SIL Open Font License).
+> Replace the documents in `documents/`, the workbook and the fixtures with your own before use.
+
 A decision-support assistant for Acme marketing requests across 13 branches in 4 countries.
 It answers whether a requested service is in scope, refused, handled locally, or needs a quote,
 checks the branch's remaining budget, and drafts the follow-up email for a human to approve.
-
 
 Somebody at a venue asks in their own words. They get a verdict, the price if there is one, and
 a way to send the request onward — in one turn, without reading a scope document.
 
 ## What it looks like
 
-Every picture here is taken from a running instance by
-[`scripts/capture_screenshots.py`](scripts/capture_screenshots.py), so none of them can drift
-from what the thing actually does. Retake the set with the service running:
+The screenshots are not checked in. Take a fresh set from a running instance:
 
 ```powershell
 .\.venv\Scripts\python.exe -m pip install -e ".[docs]"   # once, for Playwright
 .\.venv\Scripts\python.exe -m scripts.capture_screenshots
 ```
-
-### Asking
-
-<table>
-<tr>
-<td width="50%"><img src="docs/images/01-start.png" alt="The opening screen"></td>
-<td width="50%"><img src="docs/images/03-context.png" alt="The context box"></td>
-</tr>
-<tr>
-<td><b>Three example requests to start from</b>, and a link into the full service list for
-anyone who would rather browse.</td>
-<td><b>Nothing is emailed without a reason.</b> Saying yes opens this before anything sends, and
-the server refuses the send if it arrives empty — a rule the browser keeps is not a rule.</td>
-</tr>
-</table>
-
-### Looking it up
-
-
-All 89 services, grouped by verdict rather than by department, because the verdict is the
-question being asked. The panel sits **beside** the conversation rather than over it, so it can
-stay open while somebody keeps typing.
-
-Search covers the summaries as well as the names — "waiver" and "landlord" appear only in the
-prose — and every word has to match, in any order. Results open themselves and the counts read
-`3 of 42`, so nobody has to click into each heading to find which one held the match.
-
-### The handoff
-
-<table>
-<tr>
-<td width="52%"><img src="docs/images/06-email.png" alt="The request email"></td>
-<td width="48%"><img src="docs/images/07-pdf.png" alt="The first page of the attached PDF"></td>
-</tr>
-<tr>
-<td><b>What the Country Manager receives.</b> The amount and the ask carry the page; the
-requester's own words sit above the details. HTML and plain text are rendered from one set of
-values, so the two can never say different things.</td>
-<td><b>The whole conversation, attached.</b> Built from the audit log rather than the browser's
-clipped history, with the verdict on each turn that reached one.
-<a href="docs/images/conversation.pdf">Open the sample</a>.</td>
-</tr>
-</table>
-
-### On a phone
-
-<img src="docs/images/05-narrow.png" alt="The service list as a drawer on a narrow screen" width="360">
-
-Below the width where both fit side by side, the service list becomes a drawer over the
-conversation instead.
 
 ## The one idea this rests on
 
