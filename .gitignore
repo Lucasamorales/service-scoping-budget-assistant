@@ -24,6 +24,9 @@ graphify-out/
 .mypy_cache/
 .ruff_cache/
 .coverage
+# Parts of the coverage report; only the combined coverage/lcov.info is kept
+coverage/python.lcov
+coverage/widget.lcov
 htmlcov/
 
 .DS_Store
