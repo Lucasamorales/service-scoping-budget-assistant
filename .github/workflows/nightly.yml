@@ -29,8 +29,10 @@ jobs:
   deployed:
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    # Without a key there is nothing to test that CI has not already covered.
-    if: ${{ github.repository_owner == 'Studio-example' }}
+    # Costs money and needs a Gemini key, so it runs only where somebody has
+    # switched it on: set the repository variable RUN_NIGHTLY to "true" and add
+    # the GEMINI_API_KEY secret. Anywhere else the schedule fires and skips.
+    if: ${{ vars.RUN_NIGHTLY == 'true' }}
 
     steps:
       - uses: actions/checkout@v4

@@ -41,6 +41,9 @@ dev = [
     "pytest-asyncio>=0.24",
     "ruff>=0.7",
     "mypy>=1.13",
+    # Measures what the tests and the eval harnesses exercise, for
+    # scripts/coverage.sh. Dev only.
+    "pytest-cov>=6.0",
     # Reads back the PDF the request emails attach. The layout tests assert
     # what actually landed on each page — a pagination rule can only be checked
     # by looking at the pages it produced.

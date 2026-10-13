@@ -4,7 +4,9 @@
   "version": "0.1.0",
   "scripts": {
     "build": "esbuild src/chat.ts --bundle --outfile=dist/acme-chat.js --format=esm --target=es2022 --minify",
-    "watch": "esbuild src/chat.ts --bundle --outfile=dist/acme-chat.js --format=esm --target=es2022 --watch"
+    "watch": "esbuild src/chat.ts --bundle --outfile=dist/acme-chat.js --format=esm --target=es2022 --watch",
+    "test": "node --experimental-strip-types --test \"test/*.test.ts\"",
+    "coverage": "node --experimental-strip-types --test --experimental-test-coverage --test-coverage-exclude=\"test/**\" --test-reporter=lcov --test-reporter-destination=../coverage/widget.lcov --test-reporter=spec --test-reporter-destination=stdout \"test/*.test.ts\""
   },
   "devDependencies": {
     "esbuild": "^0.25.0",
