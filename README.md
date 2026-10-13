@@ -64,6 +64,32 @@ verdict), see [`docs/ASSESSMENT-AND-PLAN.md`](docs/ASSESSMENT-AND-PLAN.md).
 For integrations and incidents, see [`docs/ASSESSMENT-HANDOFF.md`](docs/ASSESSMENT-HANDOFF.md).
 To clone this onto another PC or deploy to Cloud Run, see [`docs/HOSTING.md`](docs/HOSTING.md).
 
+## Tests, coverage and CI
+
+```powershell
+.\.venv\Scripts\python.exe -m scripts.build_index
+.\.venv\Scripts\python.exe -m pytest -q
+```
+
+The widget has its own tests, run with Node 22:
+
+```powershell
+cd widget; npm ci; npm test
+```
+
+`scripts/coverage.sh` (bash) runs everything CI runs under coverage and writes one report,
+`coverage/lcov.info`, for the Python service, the command-line harnesses and the widget.
+
+GitHub Actions runs on every pull request and every push to `main`: ruff, mypy, the catalogue
+check, the index build, the widget build and tests, pytest and the four evals
+(`.github/workflows/ci.yml`). A second workflow runs the evals against live Gemini once a day,
+but only where the repository variable `RUN_NIGHTLY` is `true` and a `GEMINI_API_KEY` secret
+exists, because it costs money.
+
+Folder guides: [`app/`](app/README.md), [`widget/`](widget/README.md),
+[`scripts/`](scripts/README.md), [`tests/`](tests/README.md). Licence: proprietary, see
+[`LICENSE`](LICENSE).
+
 ## Commands
 
 ```powershell
